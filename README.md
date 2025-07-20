@@ -21,7 +21,7 @@ The foundation library that provides:
 - Custom provider framework
 - Caching support
 
-### [EasyReasy.EnvironmentVariable](EasyReasy.EnvironmentVariable/README.md)
+### [EasyReasy.EnvironmentVariables](EasyReasy.EnvironmentVariables/README.md)
 Environment variable management with:
 - Startup-time validation of environment variables
 - Type-safe environment variable access
