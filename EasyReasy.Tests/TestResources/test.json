@@ -1,0 +1,10 @@
+{
+  "name": "test",
+  "description": "A test JSON file for embedded resource testing",
+  "version": "1.0.0",
+  "features": [
+    "text reading",
+    "json parsing",
+    "embedded resources"
+  ]
+} 
