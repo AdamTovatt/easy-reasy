@@ -1,5 +1,7 @@
 # EasyReasy.ByteShelfProvider
 
+[![NuGet](https://img.shields.io/badge/nuget-EasyReasy.ByteShelfProvider-blue.svg)](https://www.nuget.org/packages/EasyReasy.ByteShelfProvider)
+
 A resource provider for EasyReasy that integrates with ByteShelf, enabling access to files stored in ByteShelf's hierarchical subtenant structure.
 
 ## Overview

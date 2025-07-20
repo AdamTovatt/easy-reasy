@@ -13,6 +13,8 @@ EasyReasy consists of three core projects that work together to provide a comple
 ## Core Projects
 
 ### [EasyReasy](EasyReasy/README.md)
+[![NuGet](https://img.shields.io/badge/nuget-EasyReasy-blue.svg)](https://www.nuget.org/packages/EasyReasy)
+
 The foundation library that provides:
 - Resource abstraction and management
 - Resource collections with provider specification
@@ -22,6 +24,8 @@ The foundation library that provides:
 - Caching support
 
 ### [EasyReasy.EnvironmentVariables](EasyReasy.EnvironmentVariables/README.md)
+[![NuGet](https://img.shields.io/badge/nuget-EasyReasy.EnvironmentVariables-blue.svg)](https://www.nuget.org/packages/EasyReasy.EnvironmentVariables)
+
 Environment variable management with:
 - Startup-time validation of environment variables
 - Type-safe environment variable access
@@ -30,6 +34,8 @@ Environment variable management with:
 - File-based environment variable loading
 
 ### [EasyReasy.ByteShelfProvider](EasyReasy.ByteShelfProvider/README.md)
+[![NuGet](https://img.shields.io/badge/nuget-EasyReasy.ByteShelfProvider-blue.svg)](https://www.nuget.org/packages/EasyReasy.ByteShelfProvider)
+
 ByteShelf integration providing:
 - Remote file access via ByteShelf API
 - Hierarchical subtenant navigation
