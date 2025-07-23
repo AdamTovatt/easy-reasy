@@ -10,6 +10,10 @@ namespace EasyReasy
         /// </summary>
         public string Path { get; }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="Resource"/> struct with the specified file path.
+        /// </summary>
+        /// <param name="path">The file path of the resource.</param>
         public Resource(string path)
         {
             ArgumentException.ThrowIfNullOrEmpty(path);

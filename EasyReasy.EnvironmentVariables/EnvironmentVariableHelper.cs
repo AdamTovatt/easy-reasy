@@ -15,19 +15,17 @@ namespace EasyReasy.EnvironmentVariables
         /// <param name="minLength">The minimum length requirement for the value.</param>
         /// <returns>The environment variable value.</returns>
         /// <exception cref="InvalidOperationException">Thrown when the environment variable is missing or doesn't meet minimum length requirements.</exception>
-        public static string GetVariableValue(string variableName, int minLength = 0)
+        public static string GetVariableValue(
+            VariableName variableName,
+            int minLength = 0)
         {
-            string? value = Environment.GetEnvironmentVariable(variableName);
+            string? value = Environment.GetEnvironmentVariable(variableName.Name);
 
             if (string.IsNullOrWhiteSpace(value))
-            {
-                throw new InvalidOperationException($"Environment variable '{variableName}' is not set or is empty.");
-            }
+                throw new InvalidOperationException($"Environment variable '{variableName.Name}' is not set or is empty.");
 
             if (value.Length < minLength)
-            {
-                throw new InvalidOperationException($"Environment variable '{variableName}' has length {value.Length} but minimum required length is {minLength}.");
-            }
+                throw new InvalidOperationException($"Environment variable '{variableName.Name}' has length {value.Length} but minimum required length is {minLength}.");
 
             return value;
         }
@@ -42,7 +40,7 @@ namespace EasyReasy.EnvironmentVariables
         /// <param name="filePath">The path to the file containing environment variables.</param>
         /// <exception cref="FileNotFoundException">Thrown when the specified file does not exist.</exception>
         /// <exception cref="InvalidOperationException">Thrown when the file format is invalid.</exception>
-        public static void LoadFromFile(string filePath)
+        public static void LoadVariablesFromFile(string filePath)
         {
             if (!File.Exists(filePath))
             {
@@ -112,19 +110,16 @@ namespace EasyReasy.EnvironmentVariables
                     EnvironmentVariableNameAttribute? attribute = field.GetCustomAttribute<EnvironmentVariableNameAttribute>();
                     if (attribute != null)
                     {
-                        string? fieldValue = field.GetValue(null) as string;
+                        VariableName? fieldValue = field.GetValue(null) as VariableName?;
                         if (fieldValue != null)
                         {
                             try
                             {
-                                // Try to get the environment variable
-                                string value = GetVariableValue(fieldValue, attribute.MinLength);
-
-                                // If we get here, the variable exists and meets minimum length
+                                string value = GetVariableValue(fieldValue.Value, attribute.MinLength);
                             }
                             catch (InvalidOperationException ex)
                             {
-                                errors.AppendLine($"---> Environment Variable '{fieldValue}' ({type.Name}.{field.Name}): {ex.Message}");
+                                errors.AppendLine($"---> Environment Variable '{fieldValue.Value.Name}' ({type.Name}.{field.Name}): {ex.Message}");
                             }
                         }
                     }

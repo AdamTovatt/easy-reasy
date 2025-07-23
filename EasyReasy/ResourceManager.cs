@@ -4,6 +4,9 @@ using System.Text;
 
 namespace EasyReasy
 {
+    /// <summary>
+    /// Manages resource collections and providers, and provides methods for resource access and validation.
+    /// </summary>
     public class ResourceManager
     {
         private readonly Dictionary<Type, IResourceProvider> providers = new Dictionary<Type, IResourceProvider>();

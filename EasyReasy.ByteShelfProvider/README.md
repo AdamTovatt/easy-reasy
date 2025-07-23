@@ -129,6 +129,7 @@ The provider throws appropriate exceptions for common scenarios:
 
 ## Example: ASP.NET Core Integration
 
+(Using `EasyReasy.EnvironmentVariables`)
 ```csharp
 // Program.cs
 builder.Services.AddSingleton<ResourceManager>(serviceProvider =>
@@ -137,8 +138,8 @@ builder.Services.AddSingleton<ResourceManager>(serviceProvider =>
     
     PredefinedResourceProvider provider = ByteShelfResourceProvider.CreatePredefined(
         resourceCollectionType: typeof(MyResources),
-        baseUrl: EnvironmentVariableHelper.GetVariableValue(EnvironmentVariable.ByteShelfBaseUrl),
-        apiKey: EnvironmentVariableHelper.GetVariableValue(EnvironmentVariable.ByteShelfApiKey),
+        baseUrl: EnvironmentVariable.ByteShelfBaseUrl.GetValue(),
+        apiKey: EnvironmentVariable.ByteShelfApiKey.GetValue(),
         cache: new FileSystemCache(storagePath: "ByteShelfCache"));
     
     resourceManager.RegisterProvider(provider);

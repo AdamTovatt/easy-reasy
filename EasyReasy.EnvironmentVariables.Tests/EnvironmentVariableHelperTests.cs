@@ -6,6 +6,8 @@ namespace EasyReasy.EnvironmentVariables.Tests
         private const string TestVariableName = "TEST_ENV_VARIABLE";
         private const string TestConfigFile = "test_config.env";
 
+        private static readonly VariableName TestVariable = new VariableName(TestVariableName);
+
         [TestCleanup]
         public void Cleanup()
         {
@@ -34,7 +36,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, expectedValue);
 
             // Act
-            string result = EnvironmentVariableHelper.GetVariableValue(TestVariableName);
+            string result = EnvironmentVariableHelper.GetVariableValue(TestVariable);
 
             // Assert
             Assert.AreEqual(expectedValue, result);
@@ -44,7 +46,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
         public void GetEnvironmentVariable_WithMissingVariable_ThrowsInvalidOperationException()
         {
             // Act & Assert
-            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue("NON_EXISTENT_VARIABLE"));
+            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue(new VariableName("NON_EXISTENT_VARIABLE")));
         }
 
         [TestMethod]
@@ -54,7 +56,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, "");
 
             // Act & Assert
-            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue(TestVariableName));
+            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue(TestVariable));
         }
 
         [TestMethod]
@@ -64,7 +66,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, "   ");
 
             // Act & Assert
-            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue(TestVariableName));
+            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue(TestVariable));
         }
 
         [TestMethod]
@@ -75,7 +77,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, expectedValue);
 
             // Act
-            string result = EnvironmentVariableHelper.GetVariableValue(TestVariableName, 5);
+            string result = EnvironmentVariableHelper.GetVariableValue(TestVariable, 5);
 
             // Assert
             Assert.AreEqual(expectedValue, result);
@@ -88,7 +90,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, "short");
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue(TestVariableName, 10));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue(TestVariable, 10));
             Assert.IsTrue(exception.Message.Contains("minimum required length is 10"));
         }
 
@@ -100,14 +102,14 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, expectedValue);
 
             // Act
-            string result = EnvironmentVariableHelper.GetVariableValue(TestVariableName, 5);
+            string result = EnvironmentVariableHelper.GetVariableValue(TestVariable, 5);
 
             // Assert
             Assert.AreEqual(expectedValue, result);
         }
 
         [TestMethod]
-        public void LoadFromFile_WithValidFile_SetsEnvironmentVariables()
+        public void LoadVariablesFromFile_WithValidFile_SetsEnvironmentVariables()
         {
             // Arrange
             string configContent = @"DATABASE_URL=postgresql://localhost:5432/mydb
@@ -116,7 +118,7 @@ DEBUG_MODE=true";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -125,7 +127,7 @@ DEBUG_MODE=true";
         }
 
         [TestMethod]
-        public void LoadFromFile_WithComments_SkipsCommentLines()
+        public void LoadVariablesFromFile_WithComments_SkipsCommentLines()
         {
             // Arrange
             string configContent = @"# This is a comment
@@ -136,7 +138,7 @@ API_KEY=my-secret-key
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -146,7 +148,7 @@ API_KEY=my-secret-key
         }
 
         [TestMethod]
-        public void LoadFromFile_WithEmptyLines_SkipsEmptyLines()
+        public void LoadVariablesFromFile_WithEmptyLines_SkipsEmptyLines()
         {
             // Arrange
             string configContent = @"DATABASE_URL=postgresql://localhost:5432/mydb
@@ -157,7 +159,7 @@ DEBUG_MODE=true";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -166,7 +168,7 @@ DEBUG_MODE=true";
         }
 
         [TestMethod]
-        public void LoadFromFile_WithWhitespaceOnlyLines_SkipsWhitespaceLines()
+        public void LoadVariablesFromFile_WithWhitespaceOnlyLines_SkipsWhitespaceLines()
         {
             // Arrange
             string configContent = @"DATABASE_URL=postgresql://localhost:5432/mydb
@@ -177,7 +179,7 @@ DEBUG_MODE=true";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -186,7 +188,7 @@ DEBUG_MODE=true";
         }
 
         [TestMethod]
-        public void LoadFromFile_WithTrimmedValues_TrimsWhitespace()
+        public void LoadVariablesFromFile_WithTrimmedValues_TrimsWhitespace()
         {
             // Arrange
             string configContent = @"DATABASE_URL = postgresql://localhost:5432/mydb 
@@ -195,7 +197,7 @@ DEBUG_MODE = true ";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -204,7 +206,7 @@ DEBUG_MODE = true ";
         }
 
         [TestMethod]
-        public void LoadFromFile_WithEmptyValue_SetsEmptyValue()
+        public void LoadVariablesFromFile_WithEmptyValue_SetsEmptyValue()
         {
             // Arrange
             string configContent = @"DATABASE_URL=postgresql://localhost:5432/mydb
@@ -213,7 +215,7 @@ DEBUG_MODE=true";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -224,15 +226,15 @@ DEBUG_MODE=true";
         }
 
         [TestMethod]
-        public void LoadFromFile_WithNonExistentFile_ThrowsFileNotFoundException()
+        public void LoadVariablesFromFile_WithNonExistentFile_ThrowsFileNotFoundException()
         {
             // Act & Assert
-            FileNotFoundException exception = Assert.ThrowsException<FileNotFoundException>(() => EnvironmentVariableHelper.LoadFromFile("non-existent-file.env"));
+            FileNotFoundException exception = Assert.ThrowsException<FileNotFoundException>(() => EnvironmentVariableHelper.LoadVariablesFromFile("non-existent-file.env"));
             Assert.IsTrue(exception.Message.Contains("non-existent-file.env"));
         }
 
         [TestMethod]
-        public void LoadFromFile_WithInvalidFormat_ThrowsInvalidOperationException()
+        public void LoadVariablesFromFile_WithInvalidFormat_ThrowsInvalidOperationException()
         {
             // Arrange
             string configContent = @"DATABASE_URL=postgresql://localhost:5432/mydb
@@ -241,13 +243,13 @@ API_KEY=my-secret-key";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.LoadFromFile(TestConfigFile));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile));
             Assert.IsTrue(exception.Message.Contains("Invalid format at line 2"));
             Assert.IsTrue(exception.Message.Contains("Expected format: VARIABLE_NAME=value"));
         }
 
         [TestMethod]
-        public void LoadFromFile_WithEmptyVariableName_ThrowsInvalidOperationException()
+        public void LoadVariablesFromFile_WithEmptyVariableName_ThrowsInvalidOperationException()
         {
             // Arrange
             string configContent = @"DATABASE_URL=postgresql://localhost:5432/mydb
@@ -256,13 +258,13 @@ API_KEY=my-secret-key";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.LoadFromFile(TestConfigFile));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile));
             Assert.IsTrue(exception.Message.Contains("Invalid variable name at line 2"));
             Assert.IsTrue(exception.Message.Contains("Variable name cannot be empty"));
         }
 
         [TestMethod]
-        public void LoadFromFile_WithWhitespaceVariableName_ThrowsInvalidOperationException()
+        public void LoadVariablesFromFile_WithWhitespaceVariableName_ThrowsInvalidOperationException()
         {
             // Arrange
             string configContent = @"DATABASE_URL=postgresql://localhost:5432/mydb
@@ -271,13 +273,13 @@ API_KEY=my-secret-key";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.LoadFromFile(TestConfigFile));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile));
             Assert.IsTrue(exception.Message.Contains("Invalid variable name at line 2"));
             Assert.IsTrue(exception.Message.Contains("Variable name cannot be empty"));
         }
 
         [TestMethod]
-        public void LoadFromFile_WithComplexValues_HandlesSpecialCharacters()
+        public void LoadVariablesFromFile_WithComplexValues_HandlesSpecialCharacters()
         {
             // Arrange
             string configContent = @"DATABASE_URL=postgresql://user:pass@localhost:5432/mydb?sslmode=require
@@ -287,7 +289,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://user:pass@localhost:5432/mydb?sslmode=require", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -452,37 +454,34 @@ PATH_VAR=C:\Program Files\MyApp\bin";
     public static class TestConfiguration
     {
         [EnvironmentVariableName]
-        public static readonly string Variable1 = "TEST_VAR_1";
-
+        public static readonly VariableName Variable1 = new VariableName("TEST_VAR_1");
         [EnvironmentVariableName]
-        public static readonly string Variable2 = "TEST_VAR_2";
+        public static readonly VariableName Variable2 = new VariableName("TEST_VAR_2");
     }
 
     [EnvironmentVariableNameContainer]
     public static class TestConfigurationWithMinLength
     {
         [EnvironmentVariableName(10)]
-        public static readonly string Variable5 = "TEST_VAR_5";
-
+        public static readonly VariableName Variable5 = new VariableName("TEST_VAR_5");
         [EnvironmentVariableName(10)]
-        public static readonly string Variable6 = "TEST_VAR_6";
+        public static readonly VariableName Variable6 = new VariableName("TEST_VAR_6");
     }
 
     [EnvironmentVariableNameContainer]
     public static class TestEmptyConfiguration
     {
-        // No fields with EnvironmentVariableNameAttribute
     }
 
     [EnvironmentVariableNameContainer]
     public static class TestConfigurationWithoutAttributeFields
     {
-        public static readonly string VariableWithoutAttribute = "TEST_VAR_WITHOUT_ATTRIBUTE";
+        public static readonly VariableName VariableWithoutAttribute = new VariableName("TEST_VAR_WITHOUT_ATTRIBUTE");
     }
 
     public static class TestConfigurationWithoutAttribute
     {
         [EnvironmentVariableName]
-        public static readonly string Variable1 = "TEST_VAR_1";
+        public static readonly VariableName Variable1 = new VariableName("TEST_VAR_1");
     }
 }

@@ -52,8 +52,8 @@ In ASP.NET Core applications, register the ResourceManager as a singleton:
 // In Program.cs or Startup.cs
 PredefinedResourceProvider modelsProvider = ByteShelfResourceProvider.CreatePredefined(
     resourceCollectionType: typeof(Resources.Models),
-    baseUrl: EnvironmentVariableHelper.GetVariableValue(EnvironmentVariable.ByteShelfUrl),
-    apiKey: EnvironmentVariableHelper.GetVariableValue(EnvironmentVariable.ByteShelfApiKey));
+    baseUrl: EnvironmentVariable.ByteShelfUrl.GetValue(),
+    apiKey: EnvironmentVariable.ByteShelfApiKey.GetValue());
 
 ResourceManager resourceManager = await ResourceManager.CreateInstanceAsync(modelsProvider);
 builder.Services.AddSingleton(resourceManager);

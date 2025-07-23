@@ -5,10 +5,18 @@ namespace EasyReasy
     /// </summary>
     public class FileSystemCache : IResourceCache
     {
+        /// <summary>
+        /// Gets the root directory where cached files are stored.
+        /// </summary>
         public string StoragePath => storagePath;
 
         private readonly string storagePath;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="FileSystemCache"/> class with the specified storage path.
+        /// </summary>
+        /// <param name="storagePath">The root directory for cached files.</param>
+        /// <exception cref="ArgumentException">Thrown if the storage path is null or whitespace.</exception>
         public FileSystemCache(string storagePath)
         {
             if (string.IsNullOrWhiteSpace(storagePath))
@@ -18,12 +26,22 @@ namespace EasyReasy
             Directory.CreateDirectory(storagePath);
         }
 
+        /// <summary>
+        /// Gets the directory path for a given file within the cache.
+        /// </summary>
+        /// <param name="filePath">The relative file path within the cache.</param>
+        /// <returns>The directory path for the file.</returns>
         public string GetStorageDirectoryForFile(string filePath)
         {
             string fullPath = Path.Combine(storagePath, filePath);
             return Path.GetDirectoryName(fullPath) ?? storagePath;
         }
 
+        /// <summary>
+        /// Checks if a resource exists in the cache.
+        /// </summary>
+        /// <param name="resourcePath">The path of the resource to check.</param>
+        /// <returns>True if the resource exists; otherwise, false.</returns>
         public async Task<bool> ExistsAsync(string resourcePath)
         {
             await Task.CompletedTask;
@@ -31,6 +49,12 @@ namespace EasyReasy
             return File.Exists(filePath);
         }
 
+        /// <summary>
+        /// Gets a read-only stream for a cached resource.
+        /// </summary>
+        /// <param name="resourcePath">The path of the resource to retrieve.</param>
+        /// <returns>A stream for reading the cached resource.</returns>
+        /// <exception cref="FileNotFoundException">Thrown if the resource does not exist in the cache.</exception>
         public async Task<Stream> GetStreamAsync(string resourcePath)
         {
             await Task.CompletedTask;
@@ -58,6 +82,12 @@ namespace EasyReasy
             return new DateTimeOffset(File.GetLastWriteTimeUtc(filePath), TimeSpan.Zero);
         }
 
+        /// <summary>
+        /// Stores a resource in the cache from the provided stream.
+        /// </summary>
+        /// <param name="resourcePath">The path of the resource to store.</param>
+        /// <param name="content">The stream containing the resource data.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         public async Task StoreAsync(string resourcePath, Stream content)
         {
             string filePath = GetFilePath(resourcePath);

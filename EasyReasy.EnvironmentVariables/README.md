@@ -28,13 +28,13 @@ Define your environment variables in configuration classes and validate them at 
 public static class EnvironmentVariable
 {
     [EnvironmentVariableName(minLength: 10)]
-    public static readonly string DatabaseUrl = "DATABASE_URL";
+    public static readonly VariableName DatabaseUrl = new VariableName("DATABASE_URL");
     
     [EnvironmentVariableName(minLength: 20)]
-    public static readonly string ApiKey = "API_KEY";
+    public static readonly VariableName ApiKey = new VariableName("API_KEY");
     
     [EnvironmentVariableName]
-    public static readonly string DebugMode = "DEBUG_MODE";
+    public static readonly VariableName DebugMode = new VariableName("DEBUG_MODE");
 }
 ```
 
@@ -56,69 +56,19 @@ This will throw an `InvalidOperationException` with detailed error messages if a
 Get environment variables with built-in validation:
 
 ```csharp
-string databaseUrl = EnvironmentVariableHelper.GetVariableValue("DATABASE_URL", minLength: 10);
-string apiKey = EnvironmentVariableHelper.GetVariableValue("API_KEY");
+string databaseUrl = EnvironmentVariable.DatabaseUrl.GetValue(minLength: 10);
+string apiKey = EnvironmentVariable.ApiKey.GetValue();
 ```
 
-> **Note**: The `minLength` parameter in `GetVariable()` will override any minimum length requirement set on the variable definition in your configuration class.
+> **Note:** The `GetValue()` method is an extension method for `VariableName` that internally calls `EnvironmentVariableHelper.GetVariableValue`. If you prefer, you can also call `EnvironmentVariableHelper.GetVariableValue(EnvironmentVariable.DatabaseUrl, minLength: 10)` directly.
 
 ### Loading from Files
 
 Load environment variables from `.env` files and set them in the running program:
 
 ```csharp
-EnvironmentVariableHelper.LoadFromFile("config.env");
+EnvironmentVariableHelper.LoadVariablesFromFile("config.env");
 ```
 
 File format:
 ```
-DATABASE_URL=postgresql://localhost:5432/mydb
-API_KEY=my-secret-key
-DEBUG_MODE=true
-# Comments are supported
-```
-
-> **Note**: This is particularly useful in unit tests where environment variables need to be configured for testing but can't be in the code, and there's no `launchSettings.json` file or built-in way like ASP.NET Core web API applications have.
-
-## Attributes
-
-### EnvironmentVariableNameContainerAttribute
-
-Marks a class as a container for environment variable definitions. Required for validation.
-
-### EnvironmentVariableNameAttribute
-
-Marks individual fields as environment variable names with optional minimum length validation:
-
-```csharp
-[EnvironmentVariableName] // No minimum length
-public static readonly string DebugMode = "DEBUG_MODE";
-
-[EnvironmentVariableName(minLength: 10)] // Minimum 10 characters
-public static readonly string ApiKey = "API_KEY";
-```
-
-> **Note**: Minimum length validation is useful for both security (ensuring sensitive variables meet length requirements) and validation (preventing placeholder values like `"url"` for a URL that should be a proper URL). Empty strings are never valid regardless of the minimum length setting.
-
-## Error Handling
-
-The library provides clear, actionable error messages:
-
-```
-Environment variable validation failed:
----> Environment Variable 'DATABASE_URL' (EnvironmentVariable.DatabaseUrl): Environment variable 'DATABASE_URL' is not set or is empty.
----> Environment Variable 'API_KEY' (EnvironmentVariable.ApiKey): Environment variable 'API_KEY' has length 8 but minimum required length is 20.
-
-This validation ensures all required environment variables are properly configured before the application starts.
-Please check your environment configuration and ensure all required variables are set.
-```
-
-## Best Practices
-
-1. **Validate early**: Call `ValidateVariableNamesIn()` at application startup
-2. **Use meaningful names**: Define environment variable names as constants
-3. **Set minimum lengths**: Use `minLength` parameter for security-sensitive variables
-4. **Group related variables**: Use separate configuration classes for different concerns
-5. **Document requirements**: Add XML comments to explain what each variable is for
-
- 
