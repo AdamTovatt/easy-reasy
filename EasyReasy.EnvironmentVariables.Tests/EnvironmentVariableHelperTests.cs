@@ -1,7 +1,7 @@
 namespace EasyReasy.EnvironmentVariables.Tests
 {
     [TestClass]
-    public class EnvironmentVariableTests
+    public class EnvironmentVariableHelperTests
     {
         private const string TestVariableName = "TEST_ENV_VARIABLE";
         private const string TestConfigFile = "test_config.env";
@@ -34,7 +34,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, expectedValue);
 
             // Act
-            string result = EnvironmentVariables.GetVariable(TestVariableName);
+            string result = EnvironmentVariableHelper.GetVariableValue(TestVariableName);
 
             // Assert
             Assert.AreEqual(expectedValue, result);
@@ -44,7 +44,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
         public void GetEnvironmentVariable_WithMissingVariable_ThrowsInvalidOperationException()
         {
             // Act & Assert
-            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.GetVariable("NON_EXISTENT_VARIABLE"));
+            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue("NON_EXISTENT_VARIABLE"));
         }
 
         [TestMethod]
@@ -54,7 +54,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, "");
 
             // Act & Assert
-            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.GetVariable(TestVariableName));
+            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue(TestVariableName));
         }
 
         [TestMethod]
@@ -64,7 +64,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, "   ");
 
             // Act & Assert
-            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.GetVariable(TestVariableName));
+            Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue(TestVariableName));
         }
 
         [TestMethod]
@@ -75,7 +75,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, expectedValue);
 
             // Act
-            string result = EnvironmentVariables.GetVariable(TestVariableName, 5);
+            string result = EnvironmentVariableHelper.GetVariableValue(TestVariableName, 5);
 
             // Assert
             Assert.AreEqual(expectedValue, result);
@@ -88,7 +88,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, "short");
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.GetVariable(TestVariableName, 10));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.GetVariableValue(TestVariableName, 10));
             Assert.IsTrue(exception.Message.Contains("minimum required length is 10"));
         }
 
@@ -100,7 +100,7 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable(TestVariableName, expectedValue);
 
             // Act
-            string result = EnvironmentVariables.GetVariable(TestVariableName, 5);
+            string result = EnvironmentVariableHelper.GetVariableValue(TestVariableName, 5);
 
             // Assert
             Assert.AreEqual(expectedValue, result);
@@ -116,7 +116,7 @@ DEBUG_MODE=true";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariables.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -136,7 +136,7 @@ API_KEY=my-secret-key
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariables.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -157,7 +157,7 @@ DEBUG_MODE=true";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariables.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -177,7 +177,7 @@ DEBUG_MODE=true";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariables.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -195,7 +195,7 @@ DEBUG_MODE = true ";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariables.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -213,7 +213,7 @@ DEBUG_MODE=true";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariables.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -227,7 +227,7 @@ DEBUG_MODE=true";
         public void LoadFromFile_WithNonExistentFile_ThrowsFileNotFoundException()
         {
             // Act & Assert
-            FileNotFoundException exception = Assert.ThrowsException<FileNotFoundException>(() => EnvironmentVariables.LoadFromFile("non-existent-file.env"));
+            FileNotFoundException exception = Assert.ThrowsException<FileNotFoundException>(() => EnvironmentVariableHelper.LoadFromFile("non-existent-file.env"));
             Assert.IsTrue(exception.Message.Contains("non-existent-file.env"));
         }
 
@@ -241,7 +241,7 @@ API_KEY=my-secret-key";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.LoadFromFile(TestConfigFile));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.LoadFromFile(TestConfigFile));
             Assert.IsTrue(exception.Message.Contains("Invalid format at line 2"));
             Assert.IsTrue(exception.Message.Contains("Expected format: VARIABLE_NAME=value"));
         }
@@ -256,7 +256,7 @@ API_KEY=my-secret-key";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.LoadFromFile(TestConfigFile));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.LoadFromFile(TestConfigFile));
             Assert.IsTrue(exception.Message.Contains("Invalid variable name at line 2"));
             Assert.IsTrue(exception.Message.Contains("Variable name cannot be empty"));
         }
@@ -271,7 +271,7 @@ API_KEY=my-secret-key";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.LoadFromFile(TestConfigFile));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.LoadFromFile(TestConfigFile));
             Assert.IsTrue(exception.Message.Contains("Invalid variable name at line 2"));
             Assert.IsTrue(exception.Message.Contains("Variable name cannot be empty"));
         }
@@ -287,7 +287,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             File.WriteAllText(TestConfigFile, configContent);
 
             // Act
-            EnvironmentVariables.LoadFromFile(TestConfigFile);
+            EnvironmentVariableHelper.LoadFromFile(TestConfigFile);
 
             // Assert
             Assert.AreEqual("postgresql://user:pass@localhost:5432/mydb?sslmode=require", Environment.GetEnvironmentVariable("DATABASE_URL"));
@@ -304,7 +304,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             Environment.SetEnvironmentVariable("TEST_VAR_2", "another-valid-value");
 
             // Act & Assert
-            EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfiguration));
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfiguration));
         }
 
         [TestMethod]
@@ -315,7 +315,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             // TEST_VAR_2 is not set
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfiguration)));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfiguration)));
             Assert.IsTrue(exception.Message.Contains("TEST_VAR_2"));
             Assert.IsTrue(exception.Message.Contains("is not set or is empty"));
         }
@@ -328,7 +328,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             Environment.SetEnvironmentVariable("TEST_VAR_2", "");
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfiguration)));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfiguration)));
             Assert.IsTrue(exception.Message.Contains("TEST_VAR_2"));
             Assert.IsTrue(exception.Message.Contains("is not set or is empty"));
         }
@@ -341,7 +341,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             Environment.SetEnvironmentVariable("TEST_VAR_2", "   ");
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfiguration)));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfiguration)));
             Assert.IsTrue(exception.Message.Contains("TEST_VAR_2"));
             Assert.IsTrue(exception.Message.Contains("is not set or is empty"));
         }
@@ -354,7 +354,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             Environment.SetEnvironmentVariable("TEST_VAR_6", "another-long-value");
 
             // Act & Assert
-            EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfigurationWithMinLength));
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfigurationWithMinLength));
         }
 
         [TestMethod]
@@ -365,7 +365,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             Environment.SetEnvironmentVariable("TEST_VAR_6", "another-long-value");
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfigurationWithMinLength)));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfigurationWithMinLength)));
             Assert.IsTrue(exception.Message.Contains("TEST_VAR_5"));
             Assert.IsTrue(exception.Message.Contains("minimum required length is 10"));
         }
@@ -378,7 +378,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             Environment.SetEnvironmentVariable("TEST_VAR_6", "another-long-value");
 
             // Act & Assert
-            EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfigurationWithMinLength));
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfigurationWithMinLength));
         }
 
         [TestMethod]
@@ -391,7 +391,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             Environment.SetEnvironmentVariable("TEST_VAR_6", "another-long-value");
 
             // Act & Assert
-            EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfiguration), typeof(TestConfigurationWithMinLength));
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfiguration), typeof(TestConfigurationWithMinLength));
         }
 
         [TestMethod]
@@ -404,7 +404,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             // TEST_VAR_6 is not set
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfiguration), typeof(TestConfigurationWithMinLength)));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfiguration), typeof(TestConfigurationWithMinLength)));
             Assert.IsTrue(exception.Message.Contains("TEST_VAR_6"));
             Assert.IsTrue(exception.Message.Contains("is not set or is empty"));
         }
@@ -419,7 +419,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             // TEST_VAR_6 is not set
 
             // Act & Assert
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfiguration), typeof(TestConfigurationWithMinLength)));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfiguration), typeof(TestConfigurationWithMinLength)));
             Assert.IsTrue(exception.Message.Contains("TEST_VAR_2"));
             Assert.IsTrue(exception.Message.Contains("TEST_VAR_5"));
             Assert.IsTrue(exception.Message.Contains("TEST_VAR_6"));
@@ -429,7 +429,7 @@ PATH_VAR=C:\Program Files\MyApp\bin";
         public void ValidateVariableNamesIn_WithTypeNotMarkedWithContainerAttribute_ThrowsArgumentException()
         {
             // Act & Assert
-            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfigurationWithoutAttribute)));
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfigurationWithoutAttribute)));
             Assert.IsTrue(exception.Message.Contains("is not marked with EnvironmentVariableNameContainerAttribute"));
         }
 
@@ -437,14 +437,14 @@ PATH_VAR=C:\Program Files\MyApp\bin";
         public void ValidateVariableNamesIn_WithEmptyConfiguration_DoesNotThrow()
         {
             // Act & Assert
-            EnvironmentVariables.ValidateVariableNamesIn(typeof(TestEmptyConfiguration));
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestEmptyConfiguration));
         }
 
         [TestMethod]
         public void ValidateVariableNamesIn_WithConfigurationWithoutAttributeFields_DoesNotThrow()
         {
             // Act & Assert
-            EnvironmentVariables.ValidateVariableNamesIn(typeof(TestConfigurationWithoutAttributeFields));
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfigurationWithoutAttributeFields));
         }
     }
 

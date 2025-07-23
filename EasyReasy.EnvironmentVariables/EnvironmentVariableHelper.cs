@@ -6,7 +6,7 @@ namespace EasyReasy.EnvironmentVariables
     /// <summary>
     /// Helper class for environment variable validation and retrieval.
     /// </summary>
-    public static class EnvironmentVariables
+    public static class EnvironmentVariableHelper
     {
         /// <summary>
         /// Gets an environment variable value with validation.
@@ -15,7 +15,7 @@ namespace EasyReasy.EnvironmentVariables
         /// <param name="minLength">The minimum length requirement for the value.</param>
         /// <returns>The environment variable value.</returns>
         /// <exception cref="InvalidOperationException">Thrown when the environment variable is missing or doesn't meet minimum length requirements.</exception>
-        public static string GetVariable(string variableName, int minLength = 0)
+        public static string GetVariableValue(string variableName, int minLength = 0)
         {
             string? value = Environment.GetEnvironmentVariable(variableName);
 
@@ -118,7 +118,7 @@ namespace EasyReasy.EnvironmentVariables
                             try
                             {
                                 // Try to get the environment variable
-                                string value = GetVariable(fieldValue, attribute.MinLength);
+                                string value = GetVariableValue(fieldValue, attribute.MinLength);
 
                                 // If we get here, the variable exists and meets minimum length
                             }

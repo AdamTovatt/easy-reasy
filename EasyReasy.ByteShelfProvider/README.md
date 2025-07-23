@@ -137,8 +137,8 @@ builder.Services.AddSingleton<ResourceManager>(serviceProvider =>
     
     PredefinedResourceProvider provider = ByteShelfResourceProvider.CreatePredefined(
         resourceCollectionType: typeof(MyResources),
-        baseUrl: EnvironmentVariables.GetVariable(EnvironmentVariable.ByteShelfBaseUrl),
-        apiKey: EnvironmentVariables.GetVariable(EnvironmentVariable.ByteShelfApiKey),
+        baseUrl: EnvironmentVariableHelper.GetVariableValue(EnvironmentVariable.ByteShelfBaseUrl),
+        apiKey: EnvironmentVariableHelper.GetVariableValue(EnvironmentVariable.ByteShelfApiKey),
         cache: new FileSystemCache(storagePath: "ByteShelfCache"));
     
     resourceManager.RegisterProvider(provider);

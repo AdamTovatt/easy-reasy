@@ -44,7 +44,7 @@ Validate all environment variables at application startup:
 
 ```csharp
 // In Program.cs or Startup.cs
-EnvironmentVariables.ValidateVariableNamesIn(typeof(EnvironmentVariable));
+EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(EnvironmentVariable));
 ```
 
 This validates all environment variables defined in the `EnvironmentVariable` class. You can pass any number of configuration classes, but it's recommended to use only one to keep all environment variable definitions in one place.
@@ -56,8 +56,8 @@ This will throw an `InvalidOperationException` with detailed error messages if a
 Get environment variables with built-in validation:
 
 ```csharp
-string databaseUrl = EnvironmentVariables.GetVariable("DATABASE_URL", minLength: 10);
-string apiKey = EnvironmentVariables.GetVariable("API_KEY");
+string databaseUrl = EnvironmentVariableHelper.GetVariableValue("DATABASE_URL", minLength: 10);
+string apiKey = EnvironmentVariableHelper.GetVariableValue("API_KEY");
 ```
 
 > **Note**: The `minLength` parameter in `GetVariable()` will override any minimum length requirement set on the variable definition in your configuration class.
@@ -67,7 +67,7 @@ string apiKey = EnvironmentVariables.GetVariable("API_KEY");
 Load environment variables from `.env` files and set them in the running program:
 
 ```csharp
-EnvironmentVariables.LoadFromFile("config.env");
+EnvironmentVariableHelper.LoadFromFile("config.env");
 ```
 
 File format:
