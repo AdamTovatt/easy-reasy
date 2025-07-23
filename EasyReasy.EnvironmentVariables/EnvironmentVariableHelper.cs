@@ -108,6 +108,7 @@ namespace EasyReasy.EnvironmentVariables
                 foreach (FieldInfo field in fields)
                 {
                     EnvironmentVariableNameAttribute? attribute = field.GetCustomAttribute<EnvironmentVariableNameAttribute>();
+
                     if (attribute != null)
                     {
                         VariableName? fieldValue = field.GetValue(null) as VariableName?;
@@ -123,6 +124,21 @@ namespace EasyReasy.EnvironmentVariables
                             }
                         }
                     }
+
+                    EnvironmentVariableNameRangeAttribute? rangeAttribute = field.GetCustomAttribute<EnvironmentVariableNameRangeAttribute>();
+
+                    if (rangeAttribute != null)
+                    {
+                        VariableNameRange? rangeValue = field.GetValue(null) as VariableNameRange?;
+                        if (rangeValue != null)
+                        {
+                            List<string> values = GetAllVariableValuesInRange(rangeValue.Value);
+                            if (values.Count < rangeAttribute.MinCount)
+                            {
+                                errors.AppendLine($"---> Environment Variable Range '{rangeValue.Value.Prefix}' ({type.Name}.{field.Name}): Minimum count of {rangeAttribute.MinCount} not met. Found {values.Count}.");
+                            }
+                        }
+                    }
                 }
             }
 
@@ -135,6 +151,28 @@ namespace EasyReasy.EnvironmentVariables
 
                 throw new InvalidOperationException(errorMessageBuilder.ToString());
             }
+        }
+
+        /// <summary>
+        /// Gets all values for environment variables whose names start with the specified prefix.
+        /// </summary>
+        /// <param name="range">The variable name range.</param>
+        /// <returns>A list of values for all found variables in the range.</returns>
+        public static List<string> GetAllVariableValuesInRange(VariableNameRange range)
+        {
+            List<string> values = new List<string>();
+
+            foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+            {
+                if (entry.Key is string key && key.StartsWith(range.Prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    string? value = entry.Value as string;
+                    if (!string.IsNullOrWhiteSpace(value))
+                        values.Add(value);
+                }
+            }
+
+            return values;
         }
     }
 }

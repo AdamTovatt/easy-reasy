@@ -448,6 +448,121 @@ PATH_VAR=C:\Program Files\MyApp\bin";
             // Act & Assert
             EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfigurationWithoutAttributeFields));
         }
+
+        [TestMethod]
+        public void GetAllVariableValuesInRange_ReturnsAllMatchingValues()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("RANGE_TEST_A", "valueA");
+            Environment.SetEnvironmentVariable("RANGE_TEST_B", "valueB");
+            Environment.SetEnvironmentVariable("RANGE_TEST_C", "valueC");
+            VariableNameRange range = new VariableNameRange("RANGE_TEST");
+
+            // Act
+            List<string> values = EnvironmentVariableHelper.GetAllVariableValuesInRange(range);
+
+            // Assert
+            CollectionAssert.AreEquivalent(new[] { "valueA", "valueB", "valueC" }, values);
+        }
+
+        [TestMethod]
+        public void VariableNameRange_GetAllValues_ExtensionMethod_Works()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("RANGE_EXT_1", "foo");
+            Environment.SetEnvironmentVariable("RANGE_EXT_2", "bar");
+            VariableNameRange range = new VariableNameRange("RANGE_EXT");
+
+            // Act
+            List<string> values = range.GetAllValues();
+
+            // Assert
+            CollectionAssert.AreEquivalent(new[] { "foo", "bar" }, values);
+        }
+
+        [TestMethod]
+        public void ValidateVariableNamesIn_WithRange_MinimumCountEnforced()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("RANGE_MIN_1", "one");
+            // Only one variable set, but minCount is 2
+
+            // Define a config class for this test
+            Type configType = typeof(TestRangeConfig);
+
+            // Act & Assert
+            InvalidOperationException ex = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.ValidateVariableNamesIn(configType));
+            Assert.IsTrue(ex.Message.Contains("RANGE_MIN"));
+            Assert.IsTrue(ex.Message.Contains("Minimum count of 2 not met"));
+        }
+
+        [TestMethod]
+        public void ValidateVariableNamesIn_WithRange_MinimumCountSatisfied_DoesNotThrow()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("RANGE_MIN_1", "one");
+            Environment.SetEnvironmentVariable("RANGE_MIN_2", "two");
+
+            // Act & Assert
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestRangeConfig));
+        }
+
+        [EnvironmentVariableNameContainer]
+        public static class TestRangeConfig
+        {
+            [EnvironmentVariableNameRange(2)]
+            public static readonly VariableNameRange Range = new VariableNameRange("RANGE_MIN");
+        }
+
+        [TestMethod]
+        public void ValidateVariableNamesIn_WithMixedConfig_BothValid_DoesNotThrow()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("MIXED_SINGLE", "single-value");
+            Environment.SetEnvironmentVariable("MIXED_RANGE_1", "range1");
+            Environment.SetEnvironmentVariable("MIXED_RANGE_2", "range2");
+
+            // Act & Assert
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(MixedConfig));
+        }
+
+        [TestMethod]
+        public void ValidateVariableNamesIn_WithMixedConfig_MissingSingle_ThrowsForSingleOnly()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("MIXED_SINGLE", null);
+            Environment.SetEnvironmentVariable("MIXED_RANGE_1", "range1");
+            Environment.SetEnvironmentVariable("MIXED_RANGE_2", "range2");
+
+            // Act & Assert
+            InvalidOperationException ex = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(MixedConfig)));
+            Assert.IsTrue(ex.Message.Contains("MIXED_SINGLE"));
+            Assert.IsFalse(ex.Message.Contains("MIXED_RANGE"));
+        }
+
+        [TestMethod]
+        public void ValidateVariableNamesIn_WithMixedConfig_MissingRange_ThrowsForRangeOnly()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("MIXED_SINGLE", "single-value");
+            Environment.SetEnvironmentVariable("MIXED_RANGE_1", null);
+            Environment.SetEnvironmentVariable("MIXED_RANGE_2", null);
+
+            // Act & Assert
+            InvalidOperationException ex = Assert.ThrowsException<InvalidOperationException>(() => EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(MixedConfig)));
+            Assert.IsTrue(ex.Message.Contains("MIXED_RANGE"));
+            Assert.IsFalse(ex.Message.Contains("MIXED_SINGLE"));
+        }
+
+        [EnvironmentVariableNameContainer]
+        public static class MixedConfig
+        {
+            [EnvironmentVariableName]
+            public static readonly VariableName Single = new VariableName("MIXED_SINGLE");
+
+            [EnvironmentVariableNameRange(2)]
+            public static readonly VariableNameRange Range = new VariableNameRange("MIXED_RANGE");
+        }
     }
 
     [EnvironmentVariableNameContainer]
