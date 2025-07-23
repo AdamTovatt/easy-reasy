@@ -62,6 +62,42 @@ string apiKey = EnvironmentVariable.ApiKey.GetValue();
 
 > **Note:** The `GetValue()` method is an extension method for `VariableName` that internally calls `EnvironmentVariableHelper.GetVariableValue`. If you prefer, you can also call `EnvironmentVariableHelper.GetVariableValue(EnvironmentVariable.DatabaseUrl, minLength: 10)` directly.
 
+### Environment Variable Ranges
+
+You can declare a range of environment variables that share a common prefix. This is useful for cases like multiple file paths, API keys, etc.
+
+```csharp
+[EnvironmentVariableNameContainer]
+public static class EnvironmentVariable
+{
+    // This declares a range of names (use with VariableNameRange)
+    [EnvironmentVariableNameRange(minCount: 2)]
+    public static readonly VariableNameRange FilePaths = new VariableNameRange("FILE_PATH");
+
+    // "Normal" variable names can also exist in the same file
+    [EnvironmentVariableName(minLength: 10)]
+    public static readonly VariableName DatabaseUrl = new VariableName("DATABASE_URL");
+}
+```
+
+This will match all environment variables whose names start with `FILE_PATH` (e.g., `FILE_PATH1`, `FILE_PATH_A`, `FILE_PATH_01`, etc.).
+
+> Both `[EnvironmentVariableNameRange]` and `[EnvironmentVariableName]` can of course be used in the same file. Just make sure to use the correct types (`VariableNameRange` for the ranges and `VariableName` for the normal names).
+
+#### Retrieving All Values in a Range
+
+You can retrieve all values for a range using either the helper or the extension method:
+
+```csharp
+List<string> filePaths = EnvironmentVariableHelper.GetAllVariableValuesInRange(EnvironmentVariable.FilePaths);
+// or
+List<string> filePaths = EnvironmentVariable.FilePaths.GetAllValues();
+```
+
+#### Validation
+
+If you specify `minCount` in the attribute, validation will ensure at least that many variables with the prefix are present and non-empty. If not, a clear error message will be thrown at startup.
+
 ### Loading from Files
 
 Load environment variables from `.env` files and set them in the running program:
@@ -72,3 +108,12 @@ EnvironmentVariableHelper.LoadVariablesFromFile("config.env");
 
 File format:
 ```
+DATABASE_URL=postgresql://localhost:5432/mydb
+API_KEY=my-secret-key
+DEBUG_MODE=true
+FILE_PATH1=/path/to/file1
+FILE_PATH2=/path/to/file2
+# Comments are supported
+```
+
+> **Note:** This is particularly useful in unit tests where environment variables need to be configured for testing but can't be in the code, and there's no `launchSettings.json` file or built-in way like ASP.NET Core web API applications have.
