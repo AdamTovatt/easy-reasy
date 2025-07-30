@@ -1,5 +1,7 @@
 # EasyReasy.EnvironmentVariables
 
+[← Back to EasyReasy System](../README.md)
+
 [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.EnvironmentVariables-blue.svg)](https://www.nuget.org/packages/EasyReasy.EnvironmentVariables)
 
 A lightweight .NET library for environment variable validation and management with startup-time safety.

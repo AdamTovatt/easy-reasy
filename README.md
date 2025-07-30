@@ -15,33 +15,22 @@ EasyReasy consists of three core projects that work together to provide a comple
 ### [EasyReasy](EasyReasy/README.md)
 [![NuGet](https://img.shields.io/badge/nuget-EasyReasy-blue.svg)](https://www.nuget.org/packages/EasyReasy)
 
-The foundation library that provides:
-- Resource abstraction and management
-- Resource collections with provider specification
-- ResourceManager for startup-time validation
-- Embedded resource provider
-- Custom provider framework
-- Caching support
+The foundation library providing resource abstraction, management, and startup-time validation with embedded file support and custom provider framework.
 
 ### [EasyReasy.EnvironmentVariables](EasyReasy.EnvironmentVariables/README.md)
 [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.EnvironmentVariables-blue.svg)](https://www.nuget.org/packages/EasyReasy.EnvironmentVariables)
 
-Environment variable management with:
-- Startup-time validation of environment variables
-- Type-safe environment variable access
-- Minimum length validation
-- Safe retrieval with error handling
-- File-based environment variable loading
+Environment variable management with startup-time validation, type-safe access, and minimum length validation for safe retrieval.
 
 ### [EasyReasy.ByteShelfProvider](EasyReasy.ByteShelfProvider/README.md)
 [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.ByteShelfProvider-blue.svg)](https://www.nuget.org/packages/EasyReasy.ByteShelfProvider)
 
-ByteShelf integration providing:
-- Remote file access via ByteShelf API
-- Hierarchical subtenant navigation
-- Optional local caching
-- Path mapping to ByteShelf structure
-- Latest file version selection
+ByteShelf integration providing remote file access via API with hierarchical subtenant navigation and optional local caching.
+
+### [EasyReasy.Auth](EasyReasy.Auth/README.md)
+[![NuGet](https://img.shields.io/badge/nuget-EasyReasy.Auth-blue.svg)](https://www.nuget.org/packages/EasyReasy.Auth)
+
+JWT authentication and claims handling with automatic endpoints, claims injection middleware, and progressive delay protection.
 
 ## Key Benefits
 

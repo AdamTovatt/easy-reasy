@@ -1,5 +1,7 @@
 # EasyReasy
 
+[← Back to EasyReasy System](../README.md)
+
 [![NuGet](https://img.shields.io/badge/nuget-EasyReasy-blue.svg)](https://www.nuget.org/packages/EasyReasy)
 
 A lightweight .NET library for managing and accessing resources from various sources with startup-time validation and runtime safety.

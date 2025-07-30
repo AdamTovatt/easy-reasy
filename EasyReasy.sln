@@ -15,6 +15,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.EnvironmentVariab
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.EnvironmentVariables.Tests", "EasyReasy.EnvironmentVariables.Tests\EasyReasy.EnvironmentVariables.Tests.csproj", "{B196BD11-36E6-4AC3-93EB-A371C27F182E}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth", "EasyReasy.Auth\EasyReasy.Auth.csproj", "{259F020F-8E6A-490C-8A89-023E85B9B986}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Tests", "EasyReasy.Auth.Tests\EasyReasy.Auth.Tests.csproj", "{8F761197-B6E7-4118-8469-FBFC9487A658}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -45,6 +49,14 @@ Global
 		{B196BD11-36E6-4AC3-93EB-A371C27F182E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B196BD11-36E6-4AC3-93EB-A371C27F182E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B196BD11-36E6-4AC3-93EB-A371C27F182E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{259F020F-8E6A-490C-8A89-023E85B9B986}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{259F020F-8E6A-490C-8A89-023E85B9B986}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{259F020F-8E6A-490C-8A89-023E85B9B986}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{259F020F-8E6A-490C-8A89-023E85B9B986}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8F761197-B6E7-4118-8469-FBFC9487A658}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8F761197-B6E7-4118-8469-FBFC9487A658}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8F761197-B6E7-4118-8469-FBFC9487A658}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8F761197-B6E7-4118-8469-FBFC9487A658}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
