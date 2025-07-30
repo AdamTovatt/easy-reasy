@@ -10,6 +10,23 @@ A lightweight .NET library for managing and accessing resources from various sou
 
 EasyReasy provides a unified way to access resources from different sources (embedded files, remote APIs, environment variables, etc.) while ensuring they exist at startup, preventing runtime errors during execution.
 
+## Quick Start
+
+```csharp
+// Define resources
+[ResourceCollection(typeof(EmbeddedResourceProvider))]
+public static class AppResources
+{
+    public static readonly Resource ConfigFile = new Resource("config/appsettings.json");
+}
+
+// Initialize with validation
+ResourceManager resourceManager = await ResourceManager.CreateInstanceAsync();
+
+// Access safely
+string config = await resourceManager.ReadAsStringAsync(AppResources.ConfigFile);
+```
+
 ## Core Concepts
 
 ### Resource
