@@ -87,6 +87,11 @@ namespace EasyReasy.ByteShelfProvider
             }
         }
 
+        /// <summary>
+        /// Checks if a resource exists in ByteShelf or cache.
+        /// </summary>
+        /// <param name="resource">The resource to check.</param>
+        /// <returns>True if the resource exists; otherwise, false.</returns>
         public async Task<bool> ResourceExistsAsync(Resource resource)
         {
             // First check if it exists in cache and is not stale
@@ -114,6 +119,12 @@ namespace EasyReasy.ByteShelfProvider
             return files.Any(f => string.Equals(f.OriginalFilename, fileName, StringComparison.OrdinalIgnoreCase));
         }
 
+        /// <summary>
+        /// Gets a stream for the specified resource from ByteShelf or cache.
+        /// </summary>
+        /// <param name="resource">The resource to get.</param>
+        /// <returns>A stream containing the resource content.</returns>
+        /// <exception cref="FileNotFoundException">Thrown when the resource is not found in ByteShelf.</exception>
         public async Task<Stream> GetResourceStreamAsync(Resource resource)
         {
             // First check if it exists in cache and is not stale

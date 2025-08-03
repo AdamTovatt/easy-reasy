@@ -7,8 +7,15 @@ namespace EasyReasy.Auth
     /// </summary>
     public class ApiKeyAuthRequest
     {
+        /// <summary>
+        /// Gets the API key for authentication.
+        /// </summary>
         public string ApiKey { get; }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ApiKeyAuthRequest"/> class.
+        /// </summary>
+        /// <param name="apiKey">The API key for authentication.</param>
         public ApiKeyAuthRequest(string apiKey)
         {
             ApiKey = apiKey;

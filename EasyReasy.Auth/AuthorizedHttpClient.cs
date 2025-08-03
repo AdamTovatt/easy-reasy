@@ -10,7 +10,14 @@ namespace EasyReasy.Auth
         /// </summary>
         public enum AuthType
         {
+            /// <summary>
+            /// API key authentication.
+            /// </summary>
             ApiKey,
+            
+            /// <summary>
+            /// Username/password authentication.
+            /// </summary>
             UsernamePassword
         }
 

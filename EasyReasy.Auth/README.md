@@ -150,6 +150,69 @@ string? tenantId2 = HttpContext.GetClaimValue(EasyReasyClaim.TenantId);
 string? issuer = HttpContext.GetClaimValue(EasyReasyClaim.Issuer);
 ```
 
+### 5. Password Hashing
+
+The library includes a secure password hasher using PBKDF2 with HMAC-SHA512. The `IPasswordHasher` interface provides these methods:
+
+```csharp
+public interface IPasswordHasher
+{
+    // Hash password with username as additional salt
+    string HashPassword(string password, string username);
+    
+    // Validate password with username as additional salt
+    bool ValidatePassword(string password, string passwordHash, string username);
+}
+```
+
+Use it in your `IAuthRequestValidationService` implementation:
+
+```csharp
+public class MyAuthService : IAuthRequestValidationService
+{
+    private readonly IPasswordHasher _passwordHasher;
+
+    public MyAuthService(IPasswordHasher passwordHasher)
+    {
+        _passwordHasher = passwordHasher;
+    }
+
+    public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService)
+    {
+        // Get user from database
+        var user = await _userRepository.GetByUsernameAsync(request.Username);
+        if (user == null) return null;
+
+        // Validate password using username as additional salt
+        if (!_passwordHasher.ValidatePassword(request.Password, user.PasswordHash, request.Username))
+            return null;
+
+        // Create JWT token...
+        DateTime expiresAt = DateTime.UtcNow.AddHours(1);
+        string token = jwtTokenService.CreateToken(
+            subject: user.Id,
+            authType: "user",
+            additionalClaims: new[] { new Claim("tenant_id", user.TenantId) },
+            roles: user.Roles.ToArray(),
+            expiresAt: expiresAt);
+
+        return new AuthResponse(token, expiresAt.ToString("o"));
+    }
+}
+```
+
+Register the password hasher in `Program.cs`:
+
+```csharp
+builder.Services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
+```
+
+**Key Features:**
+- Uses PBKDF2 with HMAC-SHA512 and 100,000 iterations
+- Username as additional salt for extra security
+- Versioned hash format for future compatibility
+- Constant-time comparison to prevent timing attacks
+
 ## Advanced Configuration
 
 ### Opting Out of Automatic Service Registration
@@ -196,6 +259,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **JWT token service**: Issue tokens with custom claims, roles, and optional issuer
 - **Automatic auth endpoints**: Create API key and username/password authentication endpoints with minimal code
 - **Flexible validation**: Implement `IAuthRequestValidationService` to handle any authentication logic (database, external APIs, etc.)
+- **Secure password hashing**: PBKDF2 with HMAC-SHA512, username-based salt, and constant-time comparison
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
 - **Claim access**: Retrieve any claim value by key or enum via `GetClaimValue()`
