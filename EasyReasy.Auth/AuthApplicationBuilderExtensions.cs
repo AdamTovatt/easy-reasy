@@ -34,9 +34,9 @@ namespace EasyReasy.Auth
             this WebApplication app, 
             IAuthRequestValidationService validationService)
         {
-            app.MapPost("/api/auth/apikey", async (ApiKeyAuthRequest request, IJwtTokenService jwtTokenService) =>
+            app.MapPost("/api/auth/apikey", async (ApiKeyAuthRequest request, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
-                AuthResponse? response = await validationService.ValidateApiKeyRequestAsync(request, jwtTokenService);
+                AuthResponse? response = await validationService.ValidateApiKeyRequestAsync(request, jwtTokenService, httpContext);
                 return response != null ? Results.Ok(response) : Results.Unauthorized();
             });
 
@@ -53,9 +53,9 @@ namespace EasyReasy.Auth
             this WebApplication app, 
             IAuthRequestValidationService validationService)
         {
-            app.MapPost("/api/auth/login", async (LoginAuthRequest request, IJwtTokenService jwtTokenService) =>
+            app.MapPost("/api/auth/login", async (LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
-                AuthResponse? response = await validationService.ValidateLoginRequestAsync(request, jwtTokenService);
+                AuthResponse? response = await validationService.ValidateLoginRequestAsync(request, jwtTokenService, httpContext);
                 return response != null ? Results.Ok(response) : Results.Unauthorized();
             });
 

@@ -62,37 +62,51 @@ The library can automatically create authentication endpoints for you. First, im
 ```csharp
 public class MyAuthService : IAuthRequestValidationService
 {
-    public async Task<AuthResponse?> ValidateApiKeyRequestAsync(ApiKeyAuthRequest request, IJwtTokenService jwtTokenService)
+    public async Task<AuthResponse?> ValidateApiKeyRequestAsync(ApiKeyAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
     {
         // Validate API key (e.g., check database, external service, etc.)
         var user = await _userRepository.GetByApiKeyAsync(request.ApiKey);
         if (user == null) return null;
+
+        // Extract tenant ID from header if available
+        string? tenantId = user.TenantId;
+        if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out var headerTenantId) == true)
+        {
+            tenantId = headerTenantId.ToString();
+        }
 
         // Create JWT token
         DateTime expiresAt = DateTime.UtcNow.AddHours(1);
         string token = jwtTokenService.CreateToken(
             subject: user.Id,
             authType: "apikey",
-            additionalClaims: new[] { new Claim("tenant_id", user.TenantId) },
+            additionalClaims: new[] { new Claim("tenant_id", tenantId) },
             roles: user.Roles.ToArray(),
             expiresAt: expiresAt);
 
         return new AuthResponse(token, expiresAt.ToString("o"));
     }
 
-    public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService)
+    public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
     {
         // Validate username/password (e.g., check database, hash password, etc.)
         var user = await _userRepository.GetByUsernameAsync(request.Username);
         if (user == null || !VerifyPassword(request.Password, user.PasswordHash)) 
             return null;
 
+        // Extract tenant ID from header if available
+        string? tenantId = user.TenantId;
+        if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out var headerTenantId) == true)
+        {
+            tenantId = headerTenantId.ToString();
+        }
+
         // Create JWT token
         DateTime expiresAt = DateTime.UtcNow.AddHours(1);
         string token = jwtTokenService.CreateToken(
             subject: user.Id,
             authType: "user",
-            additionalClaims: new[] { new Claim("tenant_id", user.TenantId) },
+            additionalClaims: new[] { new Claim("tenant_id", tenantId) },
             roles: user.Roles.ToArray(),
             expiresAt: expiresAt);
 
@@ -136,7 +150,70 @@ Both endpoints return:
 - `200 OK` with `AuthResponse` (token + expiration) on success
 - `401 Unauthorized` on invalid credentials
 
-### 4. Access claims and roles in controllers
+### 4. Accessing HTTP Context in Validation
+
+The `IAuthRequestValidationService` methods now receive an optional `HttpContext` parameter, allowing you to access request headers, query parameters, and other HTTP context information during authentication. This is particularly useful for multi-tenant applications.
+
+**Example: Extracting Tenant ID from Headers**
+```csharp
+public async Task<AuthResponse?> ValidateApiKeyRequestAsync(ApiKeyAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
+{
+    // Validate API key
+    var user = await _userRepository.GetByApiKeyAsync(request.ApiKey);
+    if (user == null) return null;
+
+    // Extract tenant ID from header
+    string? tenantId = null;
+    if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out var headerTenantId) == true)
+    {
+        tenantId = headerTenantId.ToString();
+    }
+
+    // Create JWT token with tenant information
+    DateTime expiresAt = DateTime.UtcNow.AddHours(1);
+    string token = jwtTokenService.CreateToken(
+        subject: user.Id,
+        authType: "apikey",
+        additionalClaims: new[] { new Claim("tenant_id", tenantId) },
+        roles: user.Roles.ToArray(),
+        expiresAt: expiresAt);
+
+    return new AuthResponse(token, expiresAt.ToString("o"));
+}
+```
+
+**Example: Accessing Query Parameters**
+```csharp
+public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
+{
+    // Validate credentials
+    var user = await _userRepository.GetByUsernameAsync(request.Username);
+    if (user == null || !VerifyPassword(request.Password, user.PasswordHash)) 
+        return null;
+
+    // Extract organization from query parameter
+    string? organization = httpContext?.Request.Query["org"].ToString();
+
+    // Create JWT token with organization information
+    DateTime expiresAt = DateTime.UtcNow.AddHours(1);
+    string token = jwtTokenService.CreateToken(
+        subject: user.Id,
+        authType: "user",
+        additionalClaims: new[] 
+        { 
+            new Claim("tenant_id", user.TenantId),
+            new Claim("organization", organization)
+        },
+        roles: user.Roles.ToArray(),
+        expiresAt: expiresAt);
+
+    return new AuthResponse(token, expiresAt.ToString("o"));
+}
+```
+
+**Backward Compatibility**: The `HttpContext` parameter is optional and defaults to `null`, so existing implementations will continue to work without modification.
+
+### 5. Access claims and roles in controllers
 
 ```csharp
 string? userId = HttpContext.GetUserId();
@@ -177,7 +254,7 @@ public class MyAuthService : IAuthRequestValidationService
         _passwordHasher = passwordHasher;
     }
 
-    public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService)
+    public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
     {
         // Get user from database
         var user = await _userRepository.GetByUsernameAsync(request.Username);
