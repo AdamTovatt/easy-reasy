@@ -25,4 +25,4 @@ namespace EasyReasy.Auth
         /// <returns>An AuthResponse with the JWT token if valid, null if invalid.</returns>
         Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null);
     }
-} 
+}

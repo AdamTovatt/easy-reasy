@@ -1,5 +1,3 @@
-using System;
-
 namespace EasyReasy.EnvironmentVariables
 {
     /// <summary>
@@ -22,4 +20,4 @@ namespace EasyReasy.EnvironmentVariables
             MinCount = minCount;
         }
     }
-} 
+}

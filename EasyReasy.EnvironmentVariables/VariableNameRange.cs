@@ -19,4 +19,4 @@ namespace EasyReasy.EnvironmentVariables
             Prefix = prefix;
         }
     }
-} 
+}

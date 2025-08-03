@@ -299,6 +299,56 @@ PATH_VAR=C:\Program Files\MyApp\bin";
         }
 
         [TestMethod]
+        public void LoadVariablesFromString_WithValidContent_SetsEnvironmentVariables()
+        {
+            // Arrange
+            string configContent = @"DATABASE_URL=postgresql://localhost:5432/mydb
+API_KEY=my-secret-key
+DEBUG_MODE=true";
+
+            // Act
+            EnvironmentVariableHelper.LoadVariablesFromString(configContent);
+
+            // Assert
+            Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
+            Assert.AreEqual("my-secret-key", Environment.GetEnvironmentVariable("API_KEY"));
+            Assert.AreEqual("true", Environment.GetEnvironmentVariable("DEBUG_MODE"));
+        }
+
+        [TestMethod]
+        public void LoadVariablesFromString_WithEmptyContent_DoesNothing()
+        {
+            // Act & Assert - should not throw
+            EnvironmentVariableHelper.LoadVariablesFromString("");
+            EnvironmentVariableHelper.LoadVariablesFromString(null!);
+        }
+
+        [TestMethod]
+        public void LoadVariablesFromStream_WithValidContent_SetsEnvironmentVariables()
+        {
+            // Arrange
+            string configContent = @"DATABASE_URL=postgresql://localhost:5432/mydb
+API_KEY=my-secret-key
+DEBUG_MODE=true";
+            using MemoryStream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(configContent));
+
+            // Act
+            EnvironmentVariableHelper.LoadVariablesFromStream(stream);
+
+            // Assert
+            Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
+            Assert.AreEqual("my-secret-key", Environment.GetEnvironmentVariable("API_KEY"));
+            Assert.AreEqual("true", Environment.GetEnvironmentVariable("DEBUG_MODE"));
+        }
+
+        [TestMethod]
+        public void LoadVariablesFromStream_WithNullStream_ThrowsArgumentNullException()
+        {
+            // Act & Assert
+            Assert.ThrowsException<ArgumentNullException>(() => EnvironmentVariableHelper.LoadVariablesFromStream(null!));
+        }
+
+        [TestMethod]
         public void ValidateVariableNamesIn_WithValidConfiguration_DoesNotThrow()
         {
             // Arrange
@@ -562,6 +612,199 @@ PATH_VAR=C:\Program Files\MyApp\bin";
 
             [EnvironmentVariableNameRange(2)]
             public static readonly VariableNameRange Range = new VariableNameRange("MIXED_RANGE");
+        }
+
+        [TestMethod]
+        public void SystemdServiceFilePreprocessor_WithValidSystemdFile_ExtractsEnvironmentVariables()
+        {
+            // Arrange
+            string systemdContent = @"[Unit]
+Description=My Application Service
+After=network.target
+
+[Service]
+Type=simple
+User=myapp
+Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
+Environment=""API_KEY=my-secret-key""
+Environment=""DEBUG_MODE=true""
+ExecStart=/usr/bin/myapp
+Restart=always
+
+[Install]
+WantedBy=multi-user.target";
+
+            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
+
+            // Act
+            string result = preprocessor.Preprocess(systemdContent);
+
+            // Assert
+            string expected = @"DATABASE_URL=postgresql://localhost:5432/mydb
+API_KEY=my-secret-key
+DEBUG_MODE=true
+";
+            Assert.AreEqual(expected, result);
+        }
+
+        [TestMethod]
+        public void SystemdServiceFilePreprocessor_WithMultipleVariablesOnOneLine_HandlesCorrectly()
+        {
+            // Arrange
+            string systemdContent = @"[Service]
+Environment=""VAR1=value1"" ""VAR2=value2"" ""VAR3=value3""
+ExecStart=/usr/bin/myapp";
+
+            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
+
+            // Act
+            string result = preprocessor.Preprocess(systemdContent);
+
+            // Assert
+            string expected = @"VAR1=value1
+VAR2=value2
+VAR3=value3
+";
+            Assert.AreEqual(expected, result);
+        }
+
+        [TestMethod]
+        public void SystemdServiceFilePreprocessor_WithSingleQuotes_HandlesCorrectly()
+        {
+            // Arrange
+            string systemdContent = @"[Service]
+Environment='DATABASE_URL=postgresql://localhost:5432/mydb'
+Environment='API_KEY=my-secret-key'
+ExecStart=/usr/bin/myapp";
+
+            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
+
+            // Act
+            string result = preprocessor.Preprocess(systemdContent);
+
+            // Assert
+            string expected = @"DATABASE_URL=postgresql://localhost:5432/mydb
+API_KEY=my-secret-key
+";
+            Assert.AreEqual(expected, result);
+        }
+
+        [TestMethod]
+        public void SystemdServiceFilePreprocessor_WithNoEnvironmentLines_ReturnsEmpty()
+        {
+            // Arrange
+            string systemdContent = @"[Unit]
+Description=My Application Service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/myapp
+
+[Install]
+WantedBy=multi-user.target";
+
+            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
+
+            // Act
+            string result = preprocessor.Preprocess(systemdContent);
+
+            // Assert
+            Assert.AreEqual(string.Empty, result);
+        }
+
+        [TestMethod]
+        public void SystemdServiceFilePreprocessor_WithComments_SkipsComments()
+        {
+            // Arrange
+            string systemdContent = @"[Service]
+# This is a comment
+Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
+// Another comment
+Environment=""API_KEY=my-secret-key""
+ExecStart=/usr/bin/myapp";
+
+            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
+
+            // Act
+            string result = preprocessor.Preprocess(systemdContent);
+
+            // Assert
+            string expected = @"DATABASE_URL=postgresql://localhost:5432/mydb
+API_KEY=my-secret-key
+";
+            Assert.AreEqual(expected, result);
+        }
+
+        [TestMethod]
+        public void SystemdServiceFilePreprocessor_WithEmptyContent_ReturnsEmpty()
+        {
+            // Arrange
+            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
+
+            // Act
+            string result = preprocessor.Preprocess("");
+
+            // Assert
+            Assert.AreEqual(string.Empty, result);
+        }
+
+        [TestMethod]
+        public void LoadVariablesFromString_WithSystemdPreprocessor_LoadsCorrectly()
+        {
+            // Arrange
+            string systemdContent = @"[Service]
+Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
+Environment=""API_KEY=my-secret-key""
+Environment=""DEBUG_MODE=true""
+ExecStart=/usr/bin/myapp";
+
+            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
+
+            // Act
+            EnvironmentVariableHelper.LoadVariablesFromString(systemdContent, preprocessor);
+
+            // Assert
+            Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
+            Assert.AreEqual("my-secret-key", Environment.GetEnvironmentVariable("API_KEY"));
+            Assert.AreEqual("true", Environment.GetEnvironmentVariable("DEBUG_MODE"));
+        }
+
+        [TestMethod]
+        public void LoadVariablesFromStream_WithSystemdPreprocessor_LoadsCorrectly()
+        {
+            // Arrange
+            string systemdContent = @"[Service]
+Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
+Environment=""API_KEY=my-secret-key""
+ExecStart=/usr/bin/myapp";
+            using MemoryStream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(systemdContent));
+            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
+
+            // Act
+            EnvironmentVariableHelper.LoadVariablesFromStream(stream, preprocessor);
+
+            // Assert
+            Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
+            Assert.AreEqual("my-secret-key", Environment.GetEnvironmentVariable("API_KEY"));
+        }
+
+        [TestMethod]
+        public void LoadVariablesFromFile_WithSystemdPreprocessor_LoadsCorrectly()
+        {
+            // Arrange
+            string systemdContent = @"[Service]
+Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
+Environment=""API_KEY=my-secret-key""
+ExecStart=/usr/bin/myapp";
+            File.WriteAllText(TestConfigFile, systemdContent);
+            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
+
+            // Act
+            EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile, preprocessor);
+
+            // Assert
+            Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
+            Assert.AreEqual("my-secret-key", Environment.GetEnvironmentVariable("API_KEY"));
         }
     }
 

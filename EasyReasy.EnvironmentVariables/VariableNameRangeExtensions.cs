@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-
 namespace EasyReasy.EnvironmentVariables
 {
     /// <summary>
@@ -18,4 +15,4 @@ namespace EasyReasy.EnvironmentVariables
             return EnvironmentVariableHelper.GetAllVariableValuesInRange(range);
         }
     }
-} 
+}

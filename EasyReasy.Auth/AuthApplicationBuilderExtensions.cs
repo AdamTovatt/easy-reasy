@@ -31,7 +31,7 @@ namespace EasyReasy.Auth
         /// <param name="validationService">The validation service for API key authentication.</param>
         /// <returns>The web application for chaining.</returns>
         public static WebApplication AddApiAuthEndpoint(
-            this WebApplication app, 
+            this WebApplication app,
             IAuthRequestValidationService validationService)
         {
             app.MapPost("/api/auth/apikey", async (ApiKeyAuthRequest request, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
@@ -50,7 +50,7 @@ namespace EasyReasy.Auth
         /// <param name="validationService">The validation service for username/password authentication.</param>
         /// <returns>The web application for chaining.</returns>
         public static WebApplication AddLoginAuthEndpoint(
-            this WebApplication app, 
+            this WebApplication app,
             IAuthRequestValidationService validationService)
         {
             app.MapPost("/api/auth/login", async (LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
@@ -71,7 +71,7 @@ namespace EasyReasy.Auth
         /// <param name="allowUsernamePassword">Whether to enable username/password authentication. Default is true.</param>
         /// <returns>The web application for chaining.</returns>
         public static WebApplication AddAuthEndpoints(
-            this WebApplication app, 
+            this WebApplication app,
             IAuthRequestValidationService validationService,
             bool allowApiKeys = true,
             bool allowUsernamePassword = true)

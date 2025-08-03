@@ -14,7 +14,7 @@ namespace EasyReasy.Auth
             /// API key authentication.
             /// </summary>
             ApiKey,
-            
+
             /// <summary>
             /// Username/password authentication.
             /// </summary>
@@ -229,4 +229,4 @@ namespace EasyReasy.Auth
             }
         }
     }
-} 
+}

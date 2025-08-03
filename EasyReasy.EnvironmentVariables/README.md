@@ -119,3 +119,58 @@ FILE_PATH2=/path/to/file2
 ```
 
 > **Note:** This is particularly useful in unit tests where environment variables need to be configured for testing but can't be in the code, and there's no `launchSettings.json` file or built-in way like ASP.NET Core web API applications have.
+
+### Loading from Strings and Streams
+
+You can also load environment variables from strings or streams:
+
+```csharp
+// Load from a string
+string configContent = @"DATABASE_URL=postgresql://localhost:5432/mydb
+API_KEY=my-secret-key";
+EnvironmentVariableHelper.LoadVariablesFromString(configContent);
+
+// Load from a stream
+using Stream stream = File.OpenRead("config.env");
+EnvironmentVariableHelper.LoadVariablesFromStream(stream);
+```
+
+### Loading from Linux systemd Service Files
+
+Load environment variables from Linux systemd service files using the built-in preprocessor:
+
+```csharp
+// Load from a systemd service file
+EnvironmentVariableHelper.LoadVariablesFromFile("/etc/systemd/system/myapp.service", new SystemdServiceFilePreprocessor());
+
+// Or load from a string containing systemd service content
+string systemdContent = @"[Service]
+Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
+Environment=""API_KEY=my-secret-key""
+ExecStart=/usr/bin/myapp";
+EnvironmentVariableHelper.LoadVariablesFromString(systemdContent, new SystemdServiceFilePreprocessor());
+```
+
+The `SystemdServiceFilePreprocessor` extracts all `Environment=` lines from the service file and converts them to standard environment variable format. It supports:
+
+- Multiple environment variables on one line: `Environment="VAR1=value1" "VAR2=value2"`
+- Both double and single quotes: `Environment='VAR=value'` or `Environment="VAR=value"`
+- Comments and other systemd directives are automatically ignored
+
+### Custom Preprocessors
+
+You can create custom preprocessors by implementing the `IFileContentPreprocessor` interface:
+
+```csharp
+public class MyCustomPreprocessor : IFileContentPreprocessor
+{
+    public string Preprocess(string content)
+    {
+        // Transform the content as needed
+        return transformedContent;
+    }
+}
+
+// Use your custom preprocessor
+EnvironmentVariableHelper.LoadVariablesFromString(content, new MyCustomPreprocessor());
+```

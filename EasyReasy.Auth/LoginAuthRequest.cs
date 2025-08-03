@@ -11,7 +11,7 @@ namespace EasyReasy.Auth
         /// Gets the username for authentication.
         /// </summary>
         public string Username { get; }
-        
+
         /// <summary>
         /// Gets the password for authentication.
         /// </summary>
@@ -71,4 +71,4 @@ namespace EasyReasy.Auth
             }
         }
     }
-} 
+}

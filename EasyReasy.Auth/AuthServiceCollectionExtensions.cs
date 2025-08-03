@@ -85,7 +85,7 @@ namespace EasyReasy.Auth
         /// <param name="validationService">The validation service instance.</param>
         /// <returns>The service collection for chaining.</returns>
         public static IServiceCollection AddAuthValidationService(
-            this IServiceCollection services, 
+            this IServiceCollection services,
             IAuthRequestValidationService validationService)
         {
             services.AddSingleton(validationService);

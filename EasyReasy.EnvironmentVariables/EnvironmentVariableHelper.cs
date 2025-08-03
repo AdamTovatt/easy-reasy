@@ -42,12 +42,51 @@ namespace EasyReasy.EnvironmentVariables
         /// <exception cref="InvalidOperationException">Thrown when the file format is invalid.</exception>
         public static void LoadVariablesFromFile(string filePath)
         {
+            LoadVariablesFromFile(filePath, null);
+        }
+
+        /// <summary>
+        /// Loads environment variables from a file and sets them using Environment.SetEnvironmentVariable.
+        /// The file content will be preprocessed before parsing.
+        /// </summary>
+        /// <param name="filePath">The path to the file containing environment variables.</param>
+        /// <param name="preprocessor">Optional preprocessor to transform the content before parsing.</param>
+        /// <exception cref="FileNotFoundException">Thrown when the specified file does not exist.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the file format is invalid.</exception>
+        public static void LoadVariablesFromFile(
+            string filePath,
+            IFileContentPreprocessor? preprocessor)
+        {
             if (!File.Exists(filePath))
             {
                 throw new FileNotFoundException($"Environment variables file not found: {filePath}");
             }
 
-            string[] lines = File.ReadAllLines(filePath);
+            string content = File.ReadAllText(filePath);
+            LoadVariablesFromString(content, preprocessor);
+        }
+
+        /// <summary>
+        /// Loads environment variables from a string and sets them using Environment.SetEnvironmentVariable.
+        /// The string should be in the format:
+        /// VARIABLE_NAME1=value1
+        /// VARIABLE_NAME2=value2
+        /// Lines starting with # or // are treated as comments and skipped.
+        /// </summary>
+        /// <param name="content">The string containing environment variables.</param>
+        /// <param name="preprocessor">Optional preprocessor to transform the content before parsing.</param>
+        /// <exception cref="InvalidOperationException">Thrown when the content format is invalid.</exception>
+        public static void LoadVariablesFromString(
+            string content,
+            IFileContentPreprocessor? preprocessor = null)
+        {
+            if (string.IsNullOrWhiteSpace(content))
+                return;
+
+            // Apply preprocessing if provided
+            string processedContent = preprocessor?.Preprocess(content) ?? content;
+
+            string[] lines = processedContent.Split('\n');
             int lineNumber = 0;
 
             foreach (string line in lines)
@@ -82,6 +121,28 @@ namespace EasyReasy.EnvironmentVariables
                 // Set the environment variable
                 Environment.SetEnvironmentVariable(variableName, value);
             }
+        }
+
+        /// <summary>
+        /// Loads environment variables from a stream and sets them using Environment.SetEnvironmentVariable.
+        /// The stream should contain content in the format:
+        /// VARIABLE_NAME1=value1
+        /// VARIABLE_NAME2=value2
+        /// Lines starting with # or // are treated as comments and skipped.
+        /// </summary>
+        /// <param name="stream">The stream containing environment variables.</param>
+        /// <param name="preprocessor">Optional preprocessor to transform the content before parsing.</param>
+        /// <exception cref="InvalidOperationException">Thrown when the stream format is invalid.</exception>
+        public static void LoadVariablesFromStream(
+            Stream stream,
+            IFileContentPreprocessor? preprocessor = null)
+        {
+            if (stream == null)
+                throw new ArgumentNullException(nameof(stream));
+
+            using StreamReader reader = new StreamReader(stream);
+            string content = reader.ReadToEnd();
+            LoadVariablesFromString(content, preprocessor);
         }
 
         /// <summary>

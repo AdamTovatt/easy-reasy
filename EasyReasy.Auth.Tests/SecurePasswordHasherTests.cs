@@ -257,8 +257,6 @@
             Assert.ThrowsException<ArgumentException>(() => _passwordHasher.HashPassword(password, username!));
         }
 
-
-
         [TestMethod]
         public void HashPassword_ShouldGenerateUniqueSalts()
         {

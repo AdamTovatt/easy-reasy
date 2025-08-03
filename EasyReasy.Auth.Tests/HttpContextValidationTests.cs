@@ -14,11 +14,11 @@ namespace EasyReasy.Auth.Tests
         public void ValidateApiKeyRequestAsync_WithHttpContext_ShouldExtractHeaders()
         {
             // Arrange
-            var validationService = new TestHttpContextValidationService();
-            var jwtTokenService = new JwtTokenService(Secret, Issuer);
-            var request = new ApiKeyAuthRequest("test-api-key");
-            
-            var httpContext = new DefaultHttpContext();
+            TestHttpContextValidationService validationService = new TestHttpContextValidationService();
+            JwtTokenService jwtTokenService = new JwtTokenService(Secret, Issuer);
+            ApiKeyAuthRequest request = new ApiKeyAuthRequest("test-api-key");
+
+            DefaultHttpContext httpContext = new DefaultHttpContext();
             httpContext.Request.Headers["X-Tenant-ID"] = "tenant-123";
             httpContext.Request.QueryString = new QueryString("?org=test-org");
 
@@ -28,12 +28,12 @@ namespace EasyReasy.Auth.Tests
             // Assert
             Assert.IsNotNull(response);
             Assert.IsNotNull(response.Token);
-            
+
             // Verify the token contains the extracted header information
-            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-            var token = handler.ReadJwtToken(response.Token);
-            
-            var tenantClaim = token.Claims.FirstOrDefault(c => c.Type == "tenant_id");
+            System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+            System.IdentityModel.Tokens.Jwt.JwtSecurityToken token = handler.ReadJwtToken(response.Token);
+
+            Claim? tenantClaim = token.Claims.FirstOrDefault(c => c.Type == "tenant_id");
             Assert.IsNotNull(tenantClaim);
             Assert.AreEqual("tenant-123", tenantClaim.Value);
         }
@@ -42,11 +42,11 @@ namespace EasyReasy.Auth.Tests
         public void ValidateLoginRequestAsync_WithHttpContext_ShouldExtractHeaders()
         {
             // Arrange
-            var validationService = new TestHttpContextValidationService();
-            var jwtTokenService = new JwtTokenService(Secret, Issuer);
-            var request = new LoginAuthRequest("test-user", "test-password");
-            
-            var httpContext = new DefaultHttpContext();
+            TestHttpContextValidationService validationService = new TestHttpContextValidationService();
+            JwtTokenService jwtTokenService = new JwtTokenService(Secret, Issuer);
+            LoginAuthRequest request = new LoginAuthRequest("test-user", "test-password");
+
+            DefaultHttpContext httpContext = new DefaultHttpContext();
             httpContext.Request.Headers["X-Tenant-ID"] = "tenant-456";
             httpContext.Request.QueryString = new QueryString("?org=test-org");
 
@@ -56,12 +56,12 @@ namespace EasyReasy.Auth.Tests
             // Assert
             Assert.IsNotNull(response);
             Assert.IsNotNull(response.Token);
-            
+
             // Verify the token contains the extracted header information
-            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-            var token = handler.ReadJwtToken(response.Token);
-            
-            var tenantClaim = token.Claims.FirstOrDefault(c => c.Type == "tenant_id");
+            System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+            System.IdentityModel.Tokens.Jwt.JwtSecurityToken token = handler.ReadJwtToken(response.Token);
+
+            Claim? tenantClaim = token.Claims.FirstOrDefault(c => c.Type == "tenant_id");
             Assert.IsNotNull(tenantClaim);
             Assert.AreEqual("tenant-456", tenantClaim.Value);
         }
@@ -70,9 +70,9 @@ namespace EasyReasy.Auth.Tests
         public void ValidateApiKeyRequestAsync_WithoutHttpContext_ShouldWorkBackwardCompatible()
         {
             // Arrange
-            var validationService = new TestHttpContextValidationService();
-            var jwtTokenService = new JwtTokenService(Secret, Issuer);
-            var request = new ApiKeyAuthRequest("test-api-key");
+            TestHttpContextValidationService validationService = new TestHttpContextValidationService();
+            JwtTokenService jwtTokenService = new JwtTokenService(Secret, Issuer);
+            ApiKeyAuthRequest request = new ApiKeyAuthRequest("test-api-key");
 
             // Act
             AuthResponse? response = validationService.ValidateApiKeyRequestAsync(request, jwtTokenService, null).Result;
@@ -80,12 +80,12 @@ namespace EasyReasy.Auth.Tests
             // Assert
             Assert.IsNotNull(response);
             Assert.IsNotNull(response.Token);
-            
+
             // Verify the token contains default tenant information
-            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-            var token = handler.ReadJwtToken(response.Token);
-            
-            var tenantClaim = token.Claims.FirstOrDefault(c => c.Type == "tenant_id");
+            System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+            System.IdentityModel.Tokens.Jwt.JwtSecurityToken token = handler.ReadJwtToken(response.Token);
+
+            Claim? tenantClaim = token.Claims.FirstOrDefault(c => c.Type == "tenant_id");
             Assert.IsNotNull(tenantClaim);
             Assert.AreEqual("default-tenant", tenantClaim.Value);
         }
@@ -94,9 +94,9 @@ namespace EasyReasy.Auth.Tests
         public void ValidateLoginRequestAsync_WithoutHttpContext_ShouldWorkBackwardCompatible()
         {
             // Arrange
-            var validationService = new TestHttpContextValidationService();
-            var jwtTokenService = new JwtTokenService(Secret, Issuer);
-            var request = new LoginAuthRequest("test-user", "test-password");
+            TestHttpContextValidationService validationService = new TestHttpContextValidationService();
+            JwtTokenService jwtTokenService = new JwtTokenService(Secret, Issuer);
+            LoginAuthRequest request = new LoginAuthRequest("test-user", "test-password");
 
             // Act
             AuthResponse? response = validationService.ValidateLoginRequestAsync(request, jwtTokenService, null).Result;
@@ -104,12 +104,12 @@ namespace EasyReasy.Auth.Tests
             // Assert
             Assert.IsNotNull(response);
             Assert.IsNotNull(response.Token);
-            
+
             // Verify the token contains default tenant information
-            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-            var token = handler.ReadJwtToken(response.Token);
-            
-            var tenantClaim = token.Claims.FirstOrDefault(c => c.Type == "tenant_id");
+            System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+            System.IdentityModel.Tokens.Jwt.JwtSecurityToken token = handler.ReadJwtToken(response.Token);
+
+            Claim? tenantClaim = token.Claims.FirstOrDefault(c => c.Type == "tenant_id");
             Assert.IsNotNull(tenantClaim);
             Assert.AreEqual("default-tenant", tenantClaim.Value);
         }
@@ -120,7 +120,7 @@ namespace EasyReasy.Auth.Tests
             {
                 // Extract tenant ID from header if available
                 string tenantId = "default-tenant";
-                if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out var headerTenantId) == true)
+                if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out StringValues headerTenantId) == true)
                 {
                     tenantId = headerTenantId.ToString();
                 }
@@ -141,7 +141,7 @@ namespace EasyReasy.Auth.Tests
             {
                 // Extract tenant ID from header if available
                 string tenantId = "default-tenant";
-                if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out var headerTenantId) == true)
+                if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out StringValues headerTenantId) == true)
                 {
                     tenantId = headerTenantId.ToString();
                 }
@@ -159,4 +159,4 @@ namespace EasyReasy.Auth.Tests
             }
         }
     }
-} 
+}
