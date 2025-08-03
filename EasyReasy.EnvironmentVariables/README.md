@@ -145,16 +145,16 @@ EnvironmentVariableHelper.LoadVariablesFromFile("/etc/systemd/system/myapp.servi
 
 // Or load from a string containing systemd service content
 string systemdContent = @"[Service]
-Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
-Environment=""API_KEY=my-secret-key""
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://localhost:5002
+Environment=BYTESHELF_STORAGE_PATH=/mnt/ssd1/byte-shelf/storage
 ExecStart=/usr/bin/myapp";
 EnvironmentVariableHelper.LoadVariablesFromString(systemdContent, new SystemdServiceFilePreprocessor());
 ```
 
 The `SystemdServiceFilePreprocessor` extracts all `Environment=` lines from the service file and converts them to standard environment variable format. It supports:
 
-- Multiple environment variables on one line: `Environment="VAR1=value1" "VAR2=value2"`
-- Both double and single quotes: `Environment='VAR=value'` or `Environment="VAR=value"`
+- Standard systemd `Environment=KEY=value` format
 - Comments and other systemd directives are automatically ignored
 
 ### Custom Preprocessors

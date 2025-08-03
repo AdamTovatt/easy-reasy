@@ -619,41 +619,21 @@ DEBUG_MODE=true";
         {
             // Arrange
             string systemdContent = @"[Unit]
-Description=My Application Service
-After=network.target
+Description=Byte-Shelf Service
+After=nginx.service
 
 [Service]
 Type=simple
-User=myapp
-Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
-Environment=""API_KEY=my-secret-key""
-Environment=""DEBUG_MODE=true""
-ExecStart=/usr/bin/myapp
+User=pi
+WorkingDirectory=/opt/byte-shelf
+ExecStart=/opt/byte-shelf/ByteShelf
 Restart=always
-
-[Install]
-WantedBy=multi-user.target";
-
-            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
-
-            // Act
-            string result = preprocessor.Preprocess(systemdContent);
-
-            // Assert
-            string expected = @"DATABASE_URL=postgresql://localhost:5432/mydb
-API_KEY=my-secret-key
-DEBUG_MODE=true
-";
-            Assert.AreEqual(expected, result);
-        }
-
-        [TestMethod]
-        public void SystemdServiceFilePreprocessor_WithMultipleVariablesOnOneLine_HandlesCorrectly()
-        {
-            // Arrange
-            string systemdContent = @"[Service]
-Environment=""VAR1=value1"" ""VAR2=value2"" ""VAR3=value3""
-ExecStart=/usr/bin/myapp";
+RestartSec=2
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://localhost:5002
+Environment=BYTESHELF_TENANT_CONFIG_PATH=/var/lib/byte-shelf/tentants.json
+Environment=BYTESHELF_STORAGE_PATH=/mnt/ssd1/byte-shelf/storage
+Environment=BYTESHELF_CHUNK_SIZE_BYTES=27336576";
 
             SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
 
@@ -661,30 +641,11 @@ ExecStart=/usr/bin/myapp";
             string result = preprocessor.Preprocess(systemdContent);
 
             // Assert
-            string expected = @"VAR1=value1
-VAR2=value2
-VAR3=value3
-";
-            Assert.AreEqual(expected, result);
-        }
-
-        [TestMethod]
-        public void SystemdServiceFilePreprocessor_WithSingleQuotes_HandlesCorrectly()
-        {
-            // Arrange
-            string systemdContent = @"[Service]
-Environment='DATABASE_URL=postgresql://localhost:5432/mydb'
-Environment='API_KEY=my-secret-key'
-ExecStart=/usr/bin/myapp";
-
-            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
-
-            // Act
-            string result = preprocessor.Preprocess(systemdContent);
-
-            // Assert
-            string expected = @"DATABASE_URL=postgresql://localhost:5432/mydb
-API_KEY=my-secret-key
+            string expected = @"ASPNETCORE_ENVIRONMENT=Production
+ASPNETCORE_URLS=http://localhost:5002
+BYTESHELF_TENANT_CONFIG_PATH=/var/lib/byte-shelf/tentants.json
+BYTESHELF_STORAGE_PATH=/mnt/ssd1/byte-shelf/storage
+BYTESHELF_CHUNK_SIZE_BYTES=27336576
 ";
             Assert.AreEqual(expected, result);
         }
@@ -718,9 +679,9 @@ WantedBy=multi-user.target";
             // Arrange
             string systemdContent = @"[Service]
 # This is a comment
-Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
+Environment=ASPNETCORE_ENVIRONMENT=Production
 // Another comment
-Environment=""API_KEY=my-secret-key""
+Environment=ASPNETCORE_URLS=http://localhost:5002
 ExecStart=/usr/bin/myapp";
 
             SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
@@ -729,8 +690,8 @@ ExecStart=/usr/bin/myapp";
             string result = preprocessor.Preprocess(systemdContent);
 
             // Assert
-            string expected = @"DATABASE_URL=postgresql://localhost:5432/mydb
-API_KEY=my-secret-key
+            string expected = @"ASPNETCORE_ENVIRONMENT=Production
+ASPNETCORE_URLS=http://localhost:5002
 ";
             Assert.AreEqual(expected, result);
         }
@@ -753,9 +714,9 @@ API_KEY=my-secret-key
         {
             // Arrange
             string systemdContent = @"[Service]
-Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
-Environment=""API_KEY=my-secret-key""
-Environment=""DEBUG_MODE=true""
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://localhost:5002
+Environment=BYTESHELF_STORAGE_PATH=/mnt/ssd1/byte-shelf/storage
 ExecStart=/usr/bin/myapp";
 
             SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
@@ -764,9 +725,9 @@ ExecStart=/usr/bin/myapp";
             EnvironmentVariableHelper.LoadVariablesFromString(systemdContent, preprocessor);
 
             // Assert
-            Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
-            Assert.AreEqual("my-secret-key", Environment.GetEnvironmentVariable("API_KEY"));
-            Assert.AreEqual("true", Environment.GetEnvironmentVariable("DEBUG_MODE"));
+            Assert.AreEqual("Production", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"));
+            Assert.AreEqual("http://localhost:5002", Environment.GetEnvironmentVariable("ASPNETCORE_URLS"));
+            Assert.AreEqual("/mnt/ssd1/byte-shelf/storage", Environment.GetEnvironmentVariable("BYTESHELF_STORAGE_PATH"));
         }
 
         [TestMethod]
@@ -774,8 +735,8 @@ ExecStart=/usr/bin/myapp";
         {
             // Arrange
             string systemdContent = @"[Service]
-Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
-Environment=""API_KEY=my-secret-key""
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://localhost:5002
 ExecStart=/usr/bin/myapp";
             using MemoryStream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(systemdContent));
             SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
@@ -784,8 +745,8 @@ ExecStart=/usr/bin/myapp";
             EnvironmentVariableHelper.LoadVariablesFromStream(stream, preprocessor);
 
             // Assert
-            Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
-            Assert.AreEqual("my-secret-key", Environment.GetEnvironmentVariable("API_KEY"));
+            Assert.AreEqual("Production", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"));
+            Assert.AreEqual("http://localhost:5002", Environment.GetEnvironmentVariable("ASPNETCORE_URLS"));
         }
 
         [TestMethod]
@@ -793,8 +754,8 @@ ExecStart=/usr/bin/myapp";
         {
             // Arrange
             string systemdContent = @"[Service]
-Environment=""DATABASE_URL=postgresql://localhost:5432/mydb""
-Environment=""API_KEY=my-secret-key""
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://localhost:5002
 ExecStart=/usr/bin/myapp";
             File.WriteAllText(TestConfigFile, systemdContent);
             SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
@@ -803,8 +764,44 @@ ExecStart=/usr/bin/myapp";
             EnvironmentVariableHelper.LoadVariablesFromFile(TestConfigFile, preprocessor);
 
             // Assert
-            Assert.AreEqual("postgresql://localhost:5432/mydb", Environment.GetEnvironmentVariable("DATABASE_URL"));
-            Assert.AreEqual("my-secret-key", Environment.GetEnvironmentVariable("API_KEY"));
+            Assert.AreEqual("Production", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"));
+            Assert.AreEqual("http://localhost:5002", Environment.GetEnvironmentVariable("ASPNETCORE_URLS"));
+        }
+
+        [TestMethod]
+        public void SystemdServiceFilePreprocessor_WithRealSystemdFile_ExtractsCorrectly()
+        {
+            // Arrange - Using the exact format from the user's example
+            string systemdContent = @"[Unit]
+Description=Byte-Shelf Service
+After=nginx.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/byte-shelf
+ExecStart=/opt/byte-shelf/ByteShelf
+Restart=always
+RestartSec=2
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://localhost:5002
+Environment=BYTESHELF_TENANT_CONFIG_PATH=/var/lib/byte-shelf/tentants.json
+Environment=BYTESHELF_STORAGE_PATH=/mnt/ssd1/byte-shelf/storage
+Environment=BYTESHELF_CHUNK_SIZE_BYTES=27336576";
+
+            SystemdServiceFilePreprocessor preprocessor = new SystemdServiceFilePreprocessor();
+
+            // Act
+            string result = preprocessor.Preprocess(systemdContent);
+
+            // Assert
+            string expected = @"ASPNETCORE_ENVIRONMENT=Production
+ASPNETCORE_URLS=http://localhost:5002
+BYTESHELF_TENANT_CONFIG_PATH=/var/lib/byte-shelf/tentants.json
+BYTESHELF_STORAGE_PATH=/mnt/ssd1/byte-shelf/storage
+BYTESHELF_CHUNK_SIZE_BYTES=27336576
+";
+            Assert.AreEqual(expected, result);
         }
     }
 

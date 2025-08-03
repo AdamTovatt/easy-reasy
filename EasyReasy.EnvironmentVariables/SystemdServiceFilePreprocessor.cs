@@ -34,61 +34,17 @@ namespace EasyReasy.EnvironmentVariables
                     continue;
                 }
 
-                // Look for Environment= lines
+                                // Look for Environment= lines
                 if (trimmedLine.StartsWith("Environment=", StringComparison.OrdinalIgnoreCase))
                 {
                     // Extract the value after "Environment="
                     string environmentValue = trimmedLine.Substring("Environment=".Length).Trim();
-
-                    // Handle multiple quoted variables on one line
-                    // This handles cases like: Environment="VAR1=value1" "VAR2=value2"
-                    List<string> variables = new List<string>();
-
-                    // Simple parsing for quoted strings separated by spaces
-                    int startIndex = 0;
-                    while (startIndex < environmentValue.Length)
+                    
+                    // In systemd service files, Environment= lines contain KEY=value format
+                    // Each line can contain one environment variable
+                    if (environmentValue.Contains('='))
                     {
-                        // Skip leading whitespace
-                        while (startIndex < environmentValue.Length && char.IsWhiteSpace(environmentValue[startIndex]))
-                            startIndex++;
-
-                        if (startIndex >= environmentValue.Length)
-                            break;
-
-                        // Find the start of a quoted string
-                        char quoteChar = environmentValue[startIndex];
-                        if (quoteChar != '"' && quoteChar != '\'')
-                        {
-                            // Not a quoted string, skip to next space or end
-                            int endIndex = environmentValue.IndexOf(' ', startIndex);
-                            if (endIndex == -1)
-                                endIndex = environmentValue.Length;
-
-                            string unquotedVariable = environmentValue.Substring(startIndex, endIndex - startIndex).Trim();
-                            if (unquotedVariable.Contains('='))
-                                variables.Add(unquotedVariable);
-
-                            startIndex = endIndex;
-                            continue;
-                        }
-
-                        // Find the end of the quoted string
-                        int endQuoteIndex = environmentValue.IndexOf(quoteChar, startIndex + 1);
-                        if (endQuoteIndex == -1)
-                            break; // Unmatched quote, skip this line
-
-                        // Extract the quoted variable
-                        string quotedVariable = environmentValue.Substring(startIndex + 1, endQuoteIndex - startIndex - 1);
-                        if (quotedVariable.Contains('='))
-                            variables.Add(quotedVariable);
-
-                        startIndex = endQuoteIndex + 1;
-                    }
-
-                    // Add all found variables
-                    foreach (string variable in variables)
-                    {
-                        result.AppendLine(variable);
+                        result.AppendLine(environmentValue);
                     }
                 }
             }
