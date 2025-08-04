@@ -34,12 +34,12 @@ namespace EasyReasy.EnvironmentVariables
                     continue;
                 }
 
-                                // Look for Environment= lines
+                // Look for Environment= lines
                 if (trimmedLine.StartsWith("Environment=", StringComparison.OrdinalIgnoreCase))
                 {
                     // Extract the value after "Environment="
                     string environmentValue = trimmedLine.Substring("Environment=".Length).Trim();
-                    
+
                     // In systemd service files, Environment= lines contain KEY=value format
                     // Each line can contain one environment variable
                     if (environmentValue.Contains('='))

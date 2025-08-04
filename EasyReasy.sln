@@ -19,6 +19,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth", "EasyReasy
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Tests", "EasyReasy.Auth.Tests\EasyReasy.Auth.Tests.csproj", "{8F761197-B6E7-4118-8469-FBFC9487A658}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.VectorStorage", "EasyReasy.VectorStorage\EasyReasy.VectorStorage.csproj", "{3B545E2A-A821-4DE9-9D20-C922C191B306}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.VectorStorage.Tests", "EasyReasy.VectorStorage.Tests\EasyReasy.VectorStorage.Tests.csproj", "{D2EA13C4-9644-412B-8353-C53E11334E32}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -57,6 +61,14 @@ Global
 		{8F761197-B6E7-4118-8469-FBFC9487A658}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8F761197-B6E7-4118-8469-FBFC9487A658}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8F761197-B6E7-4118-8469-FBFC9487A658}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3B545E2A-A821-4DE9-9D20-C922C191B306}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3B545E2A-A821-4DE9-9D20-C922C191B306}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3B545E2A-A821-4DE9-9D20-C922C191B306}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3B545E2A-A821-4DE9-9D20-C922C191B306}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D2EA13C4-9644-412B-8353-C53E11334E32}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D2EA13C4-9644-412B-8353-C53E11334E32}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D2EA13C4-9644-412B-8353-C53E11334E32}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D2EA13C4-9644-412B-8353-C53E11334E32}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
