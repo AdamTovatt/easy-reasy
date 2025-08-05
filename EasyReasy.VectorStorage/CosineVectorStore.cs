@@ -5,6 +5,11 @@ using System.Runtime.InteropServices;
 
 namespace EasyReasy.VectorStorage
 {
+    /// <summary>
+    /// A vector store implementation that uses cosine similarity for finding the most similar vectors.
+    /// This implementation is optimized for high-performance similarity searches with support for
+    /// parallel processing and SIMD operations.
+    /// </summary>
     public class CosineVectorStore : IVectorStore
     {
         // Use List for better memory locality during similarity search
@@ -12,6 +17,11 @@ namespace EasyReasy.VectorStorage
         private readonly ReaderWriterLockSlim _lock = new();
         private readonly int _dimension;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CosineVectorStore"/> class with the specified dimension.
+        /// </summary>
+        /// <param name="dimension">The dimension of vectors that will be stored. Must be positive.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when dimension is less than or equal to zero.</exception>
         public CosineVectorStore(int dimension)
         {
             if (dimension <= 0)
@@ -20,6 +30,13 @@ namespace EasyReasy.VectorStorage
             _dimension = dimension;
         }
 
+        /// <summary>
+        /// Adds a vector to the store asynchronously.
+        /// </summary>
+        /// <param name="vector">The vector to add to the store.</param>
+        /// <returns>A task that represents the asynchronous add operation.</returns>
+        /// <exception cref="ArgumentException">Thrown when the vector dimension does not match the store's expected dimension.</exception>
+        /// <exception cref="ArgumentNullException">Thrown when vector is null.</exception>
         public async Task AddAsync(StoredVector vector)
         {
             if (vector.Values.Length != _dimension)
@@ -39,6 +56,11 @@ namespace EasyReasy.VectorStorage
             });
         }
 
+        /// <summary>
+        /// Removes a vector from the store by its ID asynchronously.
+        /// </summary>
+        /// <param name="id">The unique identifier of the vector to remove.</param>
+        /// <returns>A task that represents the asynchronous remove operation. The task result is true if the vector was found and removed; otherwise, false.</returns>
         public async Task<bool> RemoveAsync(Guid id)
         {
             return await Task.Run(() =>
@@ -64,6 +86,14 @@ namespace EasyReasy.VectorStorage
             });
         }
 
+        /// <summary>
+        /// Finds the most similar vectors to the query vector using cosine similarity asynchronously.
+        /// </summary>
+        /// <param name="queryVector">The query vector to find similar vectors for.</param>
+        /// <param name="count">The maximum number of similar vectors to return.</param>
+        /// <returns>A task that represents the asynchronous find operation. The task result contains the most similar vectors ordered by similarity (highest first).</returns>
+        /// <exception cref="ArgumentException">Thrown when queryVector dimension does not match the store's expected dimension, or when count is less than or equal to zero.</exception>
+        /// <exception cref="ArgumentNullException">Thrown when queryVector is null.</exception>
         public async Task<IEnumerable<StoredVector>> FindMostSimilarAsync(float[] queryVector, int count)
         {
             if (queryVector == null || queryVector.Length == 0 || count <= 0)
@@ -149,6 +179,13 @@ namespace EasyReasy.VectorStorage
             return minHeap.GetItems().ToArray();
         }
 
+        /// <summary>
+        /// Saves all vectors in the store to a stream asynchronously.
+        /// </summary>
+        /// <param name="stream">The stream to write the vectors to.</param>
+        /// <returns>A task that represents the asynchronous save operation.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when stream is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when stream is not writable.</exception>
         public async Task SaveAsync(Stream stream)
         {
             if (stream == null)
@@ -181,6 +218,14 @@ namespace EasyReasy.VectorStorage
             });
         }
 
+        /// <summary>
+        /// Loads vectors from a stream into the store asynchronously.
+        /// </summary>
+        /// <param name="stream">The stream to read the vectors from.</param>
+        /// <returns>A task that represents the asynchronous load operation.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when stream is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when stream is not readable.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the loaded vectors have a different dimension than expected by the store.</exception>
         public async Task LoadAsync(Stream stream)
         {
             if (stream == null)
