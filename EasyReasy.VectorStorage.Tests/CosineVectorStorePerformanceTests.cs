@@ -7,7 +7,7 @@ namespace EasyReasy.VectorStorage.Tests
 
         private const int LARGE_DATASET_SIZE = 100_000;
         private const int VECTOR_DIMENSION = 768;
-        private const int SEARCH_QUERY_COUNT = 1_000;
+        private const int SEARCH_QUERY_COUNT = 1_00;
 
         #endregion
 
@@ -260,13 +260,24 @@ namespace EasyReasy.VectorStorage.Tests
         public async Task PerformanceTest_ConcurrentOperations()
         {
             Console.WriteLine($"=== Concurrent Operations Test with {LARGE_DATASET_SIZE:N0} vectors ===");
+            Console.WriteLine($"Vector dimension: {VECTOR_DIMENSION}");
+            Console.WriteLine($"Search queries: {SEARCH_QUERY_COUNT:N0}");
+            Console.WriteLine();
 
-            CosineVectorStore store = new CosineVectorStore(VECTOR_DIMENSION);
+            // Create large dataset
+            Console.WriteLine("Creating large dataset...");
             List<StoredVector> vectors = CreateLargeDataset(LARGE_DATASET_SIZE);
             List<float[]> searchQueries = CreateSearchQueries(SEARCH_QUERY_COUNT);
+            Console.WriteLine($"Created {LARGE_DATASET_SIZE:N0} vectors and {SEARCH_QUERY_COUNT:N0} search queries");
 
-            // Test concurrent insertion
-            Console.WriteLine("\n--- Concurrent Insertion ---");
+            // Test concurrent insertion with memory tracking
+            Console.WriteLine("\n--- Concurrent Insertion Performance ---");
+            CosineVectorStore store = new CosineVectorStore(VECTOR_DIMENSION);
+
+            // Get memory before concurrent insertion
+            long memoryBeforeConcurrentInsertion = GC.GetTotalMemory(true);
+            Console.WriteLine($"Memory before concurrent insertion: {memoryBeforeConcurrentInsertion / 1024 / 1024:N0} MB");
+
             System.Diagnostics.Stopwatch concurrentInsertionTimer = System.Diagnostics.Stopwatch.StartNew();
 
             List<Task> insertionTasks = new List<Task>();
@@ -278,10 +289,23 @@ namespace EasyReasy.VectorStorage.Tests
             await Task.WhenAll(insertionTasks);
 
             concurrentInsertionTimer.Stop();
-            Console.WriteLine($"Concurrent insertion time: {concurrentInsertionTimer.ElapsedMilliseconds:N0} ms");
 
-            // Test concurrent search
-            Console.WriteLine("\n--- Concurrent Search ---");
+            // Get memory after concurrent insertion
+            long memoryAfterConcurrentInsertion = GC.GetTotalMemory(true);
+            long concurrentInsertionMemoryDelta = memoryAfterConcurrentInsertion - memoryBeforeConcurrentInsertion;
+
+            long concurrentInsertionTimeMs = concurrentInsertionTimer.ElapsedMilliseconds;
+            double concurrentInsertionTimePerVectorNs = (double)concurrentInsertionTimer.ElapsedTicks * 1_000_000 / TimeSpan.TicksPerSecond / LARGE_DATASET_SIZE;
+
+            Console.WriteLine($"Memory after concurrent insertion: {memoryAfterConcurrentInsertion / 1024 / 1024:N0} MB");
+            Console.WriteLine($"Memory delta for concurrent insertion: {concurrentInsertionMemoryDelta / 1024 / 1024:N0} MB");
+            Console.WriteLine($"Memory per vector (concurrent): {concurrentInsertionMemoryDelta / (double)LARGE_DATASET_SIZE / 1024 / 1024:F2} MB");
+            Console.WriteLine($"Total concurrent insertion time: {concurrentInsertionTimeMs:N0} ms");
+            Console.WriteLine($"Average time per vector (concurrent): {concurrentInsertionTimePerVectorNs:F2} ns");
+            Console.WriteLine($"Concurrent insertion rate: {LARGE_DATASET_SIZE / (concurrentInsertionTimeMs / 1000.0):F0} vectors/second");
+
+            // Test concurrent search with detailed metrics
+            Console.WriteLine("\n--- Concurrent Search Performance ---");
             System.Diagnostics.Stopwatch concurrentSearchTimer = System.Diagnostics.Stopwatch.StartNew();
 
             List<Task> searchTasks = new List<Task>();
@@ -297,13 +321,70 @@ namespace EasyReasy.VectorStorage.Tests
             await Task.WhenAll(searchTasks);
 
             concurrentSearchTimer.Stop();
-            Console.WriteLine($"Concurrent search time: {concurrentSearchTimer.ElapsedMilliseconds:N0} ms");
 
-            Console.WriteLine("=== Concurrent Operations Test Complete ===");
+            long concurrentSearchTimeMs = concurrentSearchTimer.ElapsedMilliseconds;
+            double concurrentSearchTimePerQueryMs = (double)concurrentSearchTimeMs / SEARCH_QUERY_COUNT;
+            double concurrentSearchTimePerQueryNs = (double)concurrentSearchTimer.ElapsedTicks * 1_000_000 / TimeSpan.TicksPerSecond / SEARCH_QUERY_COUNT;
+
+            Console.WriteLine($"Total concurrent search time for {SEARCH_QUERY_COUNT:N0} queries: {concurrentSearchTimeMs:N0} ms");
+            Console.WriteLine($"Average time per search query (concurrent): {concurrentSearchTimePerQueryMs:F2} ms");
+            Console.WriteLine($"Average time per search query (concurrent): {concurrentSearchTimePerQueryNs:F2} ns");
+            Console.WriteLine($"Concurrent search rate: {SEARCH_QUERY_COUNT / (concurrentSearchTimeMs / 1000.0):F0} queries/second");
+
+            // Compare with sequential operations for reference
+            Console.WriteLine("\n--- Sequential Operations Comparison ---");
+            
+            // Sequential insertion
+            CosineVectorStore sequentialStore = new CosineVectorStore(VECTOR_DIMENSION);
+            System.Diagnostics.Stopwatch sequentialInsertionTimer = System.Diagnostics.Stopwatch.StartNew();
+            
+            foreach (StoredVector vector in vectors)
+            {
+                await sequentialStore.AddAsync(vector);
+            }
+            
+            sequentialInsertionTimer.Stop();
+            long sequentialInsertionTimeMs = sequentialInsertionTimer.ElapsedMilliseconds;
+            double sequentialInsertionTimePerVectorNs = (double)sequentialInsertionTimer.ElapsedTicks * 1_000_000 / TimeSpan.TicksPerSecond / LARGE_DATASET_SIZE;
+            
+            Console.WriteLine($"Sequential insertion time: {sequentialInsertionTimeMs:N0} ms");
+            Console.WriteLine($"Average time per vector (sequential): {sequentialInsertionTimePerVectorNs:F2} ns");
+            Console.WriteLine($"Sequential insertion rate: {LARGE_DATASET_SIZE / (sequentialInsertionTimeMs / 1000.0):F0} vectors/second");
+            
+            // Sequential search
+            System.Diagnostics.Stopwatch sequentialSearchTimer = System.Diagnostics.Stopwatch.StartNew();
+            foreach (float[] query in searchQueries)
+            {
+                IEnumerable<StoredVector> results = await sequentialStore.FindMostSimilarAsync(query, 10);
+                int resultCount = results.Count();
+            }
+            sequentialSearchTimer.Stop();
+            
+            long sequentialSearchTimeMs = sequentialSearchTimer.ElapsedMilliseconds;
+            double sequentialSearchTimePerQueryMs = (double)sequentialSearchTimeMs / SEARCH_QUERY_COUNT;
+            
+            Console.WriteLine($"Sequential search time for {SEARCH_QUERY_COUNT:N0} queries: {sequentialSearchTimeMs:N0} ms");
+            Console.WriteLine($"Average time per search query (sequential): {sequentialSearchTimePerQueryMs:F2} ms");
+            Console.WriteLine($"Sequential search rate: {SEARCH_QUERY_COUNT / (sequentialSearchTimeMs / 1000.0):F0} queries/second");
+
+            // Performance comparison
+            Console.WriteLine("\n--- Performance Comparison ---");
+            double insertionSpeedup = (double)sequentialInsertionTimeMs / concurrentInsertionTimeMs;
+            double searchSpeedup = (double)sequentialSearchTimeMs / concurrentSearchTimeMs;
+            
+            Console.WriteLine($"Insertion speedup (concurrent vs sequential): {insertionSpeedup:F2}x");
+            Console.WriteLine($"Search speedup (concurrent vs sequential): {searchSpeedup:F2}x");
+            Console.WriteLine($"Insertion efficiency: {insertionSpeedup / Environment.ProcessorCount:F2}x per core");
+            Console.WriteLine($"Search efficiency: {searchSpeedup / Environment.ProcessorCount:F2}x per core");
+
+            Console.WriteLine("\n=== Concurrent Operations Test Complete ===");
 
             // Assertions
             Assert.IsTrue(concurrentInsertionTimer.ElapsedMilliseconds > 0);
             Assert.IsTrue(concurrentSearchTimer.ElapsedMilliseconds > 0);
+            Assert.IsTrue(sequentialInsertionTimer.ElapsedMilliseconds > 0);
+            Assert.IsTrue(sequentialSearchTimer.ElapsedMilliseconds > 0);
+            Assert.IsTrue(concurrentInsertionMemoryDelta > 0);
         }
     }
 }
