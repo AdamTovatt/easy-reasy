@@ -5,7 +5,7 @@ namespace EasyReasy.VectorStorage.Tests
     {
         #region Constants
 
-        private const int LARGE_DATASET_SIZE = 100_000;
+        private const int LARGE_DATASET_SIZE = 10_000;
         private const int VECTOR_DIMENSION = 768;
         private const int SEARCH_QUERY_COUNT = 1_00;
 

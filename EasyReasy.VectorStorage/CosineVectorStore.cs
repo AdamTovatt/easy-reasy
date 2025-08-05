@@ -110,7 +110,7 @@ namespace EasyReasy.VectorStorage
                 minHeap.Add(storedVector, similarity);
             }
 
-            return minHeap.GetItems();
+            return minHeap.GetItems().ToArray();
         }
 
         private IEnumerable<StoredVector> FindMostSimilarParallelAsync(float[] queryVector, float queryMagnitude, int count)
@@ -146,7 +146,7 @@ namespace EasyReasy.VectorStorage
                 }
             }
 
-            return minHeap.GetItems();
+            return minHeap.GetItems().ToArray();
         }
 
         public async Task SaveAsync(Stream stream)

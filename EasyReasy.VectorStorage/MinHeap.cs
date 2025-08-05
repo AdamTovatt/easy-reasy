@@ -1,52 +1,70 @@
+using System.Runtime.CompilerServices;
+
 namespace EasyReasy.VectorStorage
 {
     internal class MinHeap<T>
     {
-        private readonly List<(T Item, float Priority)> _heap = new();
+        private readonly T[] _items;
+        private readonly float[] _priorities;
+        private int _count;
         private readonly int _maxSize;
 
         public MinHeap(int maxSize)
         {
             _maxSize = maxSize;
+            _items = new T[maxSize];
+            _priorities = new float[maxSize];
+            _count = 0;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Add(T item, float priority)
         {
-            if (_heap.Count < _maxSize)
+            if (_count < _maxSize)
             {
-                _heap.Add((item, priority));
-                BubbleUp(_heap.Count - 1);
+                _items[_count] = item;
+                _priorities[_count] = priority;
+                BubbleUp(_count);
+                _count++;
             }
-            else if (priority > _heap[0].Priority)
+            else if (priority > _priorities[0])
             {
-                _heap[0] = (item, priority);
+                _items[0] = item;
+                _priorities[0] = priority;
                 BubbleDown(0);
             }
         }
 
-        public List<T> GetItems()
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ReadOnlySpan<T> GetItems()
         {
-            List<T> result = new List<T>(_heap.Count);
-            for (int i = 0; i < _heap.Count; i++)
-            {
-                result.Add(_heap[i].Item);
-            }
-            return result;
+            return new ReadOnlySpan<T>(_items, 0, _count);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void BubbleUp(int index)
         {
             while (index > 0)
             {
                 int parentIndex = (index - 1) / 2;
-                if (_heap[index].Priority >= _heap[parentIndex].Priority)
+                if (_priorities[index] >= _priorities[parentIndex])
                     break;
 
-                (_heap[index], _heap[parentIndex]) = (_heap[parentIndex], _heap[index]);
+                // Swap items
+                T tempItem = _items[index];
+                _items[index] = _items[parentIndex];
+                _items[parentIndex] = tempItem;
+
+                // Swap priorities
+                float tempPriority = _priorities[index];
+                _priorities[index] = _priorities[parentIndex];
+                _priorities[parentIndex] = tempPriority;
+
                 index = parentIndex;
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void BubbleDown(int index)
         {
             while (true)
@@ -55,16 +73,25 @@ namespace EasyReasy.VectorStorage
                 int rightChild = 2 * index + 2;
                 int smallest = index;
 
-                if (leftChild < _heap.Count && _heap[leftChild].Priority < _heap[smallest].Priority)
+                if (leftChild < _count && _priorities[leftChild] < _priorities[smallest])
                     smallest = leftChild;
 
-                if (rightChild < _heap.Count && _heap[rightChild].Priority < _heap[smallest].Priority)
+                if (rightChild < _count && _priorities[rightChild] < _priorities[smallest])
                     smallest = rightChild;
 
                 if (smallest == index)
                     break;
 
-                (_heap[index], _heap[smallest]) = (_heap[smallest], _heap[index]);
+                // Swap items
+                T tempItem = _items[index];
+                _items[index] = _items[smallest];
+                _items[smallest] = tempItem;
+
+                // Swap priorities
+                float tempPriority = _priorities[index];
+                _priorities[index] = _priorities[smallest];
+                _priorities[smallest] = tempPriority;
+
                 index = smallest;
             }
         }
