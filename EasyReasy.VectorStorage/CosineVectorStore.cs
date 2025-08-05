@@ -155,7 +155,7 @@ namespace EasyReasy.VectorStorage
 
         private IEnumerable<StoredVector> FindMostSimilarSequential(float[] queryVector, float queryMagnitude, int count)
         {
-            MinHeap<StoredVector> minHeap = new MinHeap<StoredVector>(count);
+            MinHeap<(int index, float similarity)> minHeap = new MinHeap<(int, float)>(count);
 
             for (int i = 0; i < _count; i++)
             {
@@ -166,24 +166,32 @@ namespace EasyReasy.VectorStorage
                     _vectorValues.AsSpan(startIndex, _dimension),
                     _vectorMagnitudes[i]);
                 
-                // Create StoredVector for result
-                float[] vectorValues = new float[_dimension];
-                Array.Copy(_vectorValues, startIndex, vectorValues, 0, _dimension);
-                StoredVector storedVector = new StoredVector(_vectorIds[i], vectorValues);
-                
-                minHeap.Add(storedVector, similarity);
+                minHeap.Add((i, similarity), similarity);
             }
 
-            return minHeap.GetItems().ToArray();
+            // Only create StoredVector objects for the top-k results
+            var topK = minHeap.GetItems();
+            StoredVector[] results = new StoredVector[topK.Length];
+            
+            for (int i = 0; i < topK.Length; i++)
+            {
+                int index = topK[i].index;
+                int startIndex = index * _dimension;
+                float[] vectorValues = new float[_dimension];
+                Array.Copy(_vectorValues, startIndex, vectorValues, 0, _dimension);
+                results[i] = new StoredVector(_vectorIds[index], vectorValues);
+            }
+            
+            return results;
         }
 
         private IEnumerable<StoredVector> FindMostSimilarParallelAsync(float[] queryVector, float queryMagnitude, int count)
         {
-            ConcurrentBag<List<(StoredVector, float)>> localResults = new ConcurrentBag<List<(StoredVector, float)>>();
+            ConcurrentBag<List<(int index, float similarity)>> localResults = new ConcurrentBag<List<(int, float)>>();
 
             Parallel.ForEach(
                 Partitioner.Create(0, _count),
-                () => new List<(StoredVector, float)>(),
+                () => new List<(int, float)>(),
                 (range, state, local) =>
                 {
                     for (int i = range.Item1; i < range.Item2; i++)
@@ -197,12 +205,7 @@ namespace EasyReasy.VectorStorage
                                 _vectorValues.AsSpan(startIndex, _dimension),
                                 _vectorMagnitudes[i]);
                             
-                            // Create StoredVector for result
-                            float[] vectorValues = new float[_dimension];
-                            Array.Copy(_vectorValues, startIndex, vectorValues, 0, _dimension);
-                            StoredVector storedVector = new StoredVector(_vectorIds[i], vectorValues);
-                            
-                            local.Add((storedVector, similarity));
+                            local.Add((i, similarity));
                         }
                     }
 
@@ -211,16 +214,29 @@ namespace EasyReasy.VectorStorage
                 local => localResults.Add(local));
 
             // Use MinHeap for final selection
-            MinHeap<StoredVector> minHeap = new MinHeap<StoredVector>(count);
-            foreach (List<(StoredVector, float)> local in localResults)
+            MinHeap<(int index, float similarity)> minHeap = new MinHeap<(int, float)>(count);
+            foreach (List<(int index, float similarity)> local in localResults)
             {
-                foreach ((StoredVector vector, float similarity) in local)
+                foreach ((int index, float similarity) in local)
                 {
-                    minHeap.Add(vector, similarity);
+                    minHeap.Add((index, similarity), similarity);
                 }
             }
 
-            return minHeap.GetItems().ToArray();
+            // Only create StoredVector objects for the top-k results
+            var topK = minHeap.GetItems();
+            StoredVector[] results = new StoredVector[topK.Length];
+            
+            for (int i = 0; i < topK.Length; i++)
+            {
+                int index = topK[i].index;
+                int startIndex = index * _dimension;
+                float[] vectorValues = new float[_dimension];
+                Array.Copy(_vectorValues, startIndex, vectorValues, 0, _dimension);
+                results[i] = new StoredVector(_vectorIds[index], vectorValues);
+            }
+            
+            return results;
         }
 
         /// <summary>
