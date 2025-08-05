@@ -1,6 +1,6 @@
 namespace EasyReasy.VectorStorage
 {
-    public interface ICosineVectorStore
+    public interface IVectorStore
     {
         /// <summary>
         /// Saves the current state of the vector store to the provided stream

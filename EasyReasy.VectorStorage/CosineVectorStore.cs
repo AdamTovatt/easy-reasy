@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 
 namespace EasyReasy.VectorStorage
 {
-    public class CosineVectorStore : ICosineVectorStore
+    public class CosineVectorStore : IVectorStore
     {
         // Use List for better memory locality during similarity search
         private readonly List<StoredVector> _vectors = new();
-        private readonly SemaphoreSlim _semaphore = new(1, 1);
+        private readonly ReaderWriterLockSlim _lock = new();
         private readonly int _dimension;
 
         public CosineVectorStore(int dimension)
@@ -25,37 +25,43 @@ namespace EasyReasy.VectorStorage
             if (vector.Values.Length != _dimension)
                 throw new ArgumentException($"Vector must have {_dimension} dimensions.", nameof(vector));
 
-            await _semaphore.WaitAsync();
-            try
+            await Task.Run(() =>
             {
-                _vectors.Add(vector);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                _lock.EnterWriteLock();
+                try
+                {
+                    _vectors.Add(vector);
+                }
+                finally
+                {
+                    _lock.ExitWriteLock();
+                }
+            });
         }
 
         public async Task<bool> RemoveAsync(Guid id)
         {
-            await _semaphore.WaitAsync();
-            try
+            return await Task.Run(() =>
             {
-                for (int i = 0; i < _vectors.Count; i++)
+                _lock.EnterWriteLock();
+                try
                 {
-                    if (_vectors[i].Id == id)
+                    for (int i = 0; i < _vectors.Count; i++)
                     {
-                        _vectors.RemoveAt(i);
-                        return true;
+                        if (_vectors[i].Id == id)
+                        {
+                            _vectors.RemoveAt(i);
+                            return true;
+                        }
                     }
-                }
 
-                return false;
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                    return false;
+                }
+                finally
+                {
+                    _lock.ExitWriteLock();
+                }
+            });
         }
 
         public async Task<IEnumerable<StoredVector>> FindMostSimilarAsync(float[] queryVector, int count)
@@ -70,23 +76,26 @@ namespace EasyReasy.VectorStorage
             if (queryMagnitude == 0)
                 return Enumerable.Empty<StoredVector>();
 
-            await _semaphore.WaitAsync();
-            try
+            return await Task.Run(() =>
             {
-                // Use parallel processing for large datasets
-                if (_vectors.Count > 1000)
+                _lock.EnterReadLock();
+                try
                 {
-                    return await FindMostSimilarParallelAsync(queryVector, queryMagnitude, count);
+                    // Use parallel processing for large datasets
+                    if (_vectors.Count > 1000)
+                    {
+                        return FindMostSimilarParallelAsync(queryVector, queryMagnitude, count);
+                    }
+                    else
+                    {
+                        return FindMostSimilarSequential(queryVector, queryMagnitude, count);
+                    }
                 }
-                else
+                finally
                 {
-                    return FindMostSimilarSequential(queryVector, queryMagnitude, count);
+                    _lock.ExitReadLock();
                 }
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            });
         }
 
         private IEnumerable<StoredVector> FindMostSimilarSequential(float[] queryVector, float queryMagnitude, int count)
@@ -104,40 +113,40 @@ namespace EasyReasy.VectorStorage
             return minHeap.GetItems();
         }
 
-        private async Task<IEnumerable<StoredVector>> FindMostSimilarParallelAsync(float[] queryVector, float queryMagnitude, int count)
+        private IEnumerable<StoredVector> FindMostSimilarParallelAsync(float[] queryVector, float queryMagnitude, int count)
         {
-            return await Task.Run(() =>
-            {
-                List<List<(StoredVector, float)>> localResults = new List<List<(StoredVector, float)>>();
+            ConcurrentBag<List<(StoredVector, float)>> localResults = new ConcurrentBag<List<(StoredVector, float)>>();
 
-                Parallel.ForEach(
-                    Partitioner.Create(0, _vectors.Count),
-                    () => new List<(StoredVector, float)>(),
-                    (range, state, local) =>
+            Parallel.ForEach(
+                Partitioner.Create(0, _vectors.Count),
+                () => new List<(StoredVector, float)>(),
+                (range, state, local) =>
+                {
+                    for (int i = range.Item1; i < range.Item2; i++)
                     {
-                        for (int i = range.Item1; i < range.Item2; i++)
+                        if (i < _vectors.Count)
                         {
                             StoredVector stored = _vectors[i];
                             float sim = CalculateCosineSimilarity(queryVector.AsSpan(), queryMagnitude, stored.GetSpan());
                             local.Add((stored, sim));
                         }
-
-                        return local;
-                    },
-                    local => localResults.Add(local));
-
-                // Use MinHeap for final selection
-                MinHeap<StoredVector> minHeap = new MinHeap<StoredVector>(count);
-                foreach (List<(StoredVector, float)> local in localResults)
-                {
-                    foreach ((StoredVector vector, float similarity) in local)
-                    {
-                        minHeap.Add(vector, similarity);
                     }
-                }
 
-                return minHeap.GetItems();
-            });
+                    return local;
+                },
+                local => localResults.Add(local));
+
+            // Use MinHeap for final selection
+            MinHeap<StoredVector> minHeap = new MinHeap<StoredVector>(count);
+            foreach (List<(StoredVector, float)> local in localResults)
+            {
+                foreach ((StoredVector vector, float similarity) in local)
+                {
+                    minHeap.Add(vector, similarity);
+                }
+            }
+
+            return minHeap.GetItems();
         }
 
         public async Task SaveAsync(Stream stream)
@@ -148,25 +157,28 @@ namespace EasyReasy.VectorStorage
             if (!stream.CanWrite)
                 throw new ArgumentException("Stream must be writable", nameof(stream));
 
-            await _semaphore.WaitAsync();
-            try
+            await Task.Run(() =>
             {
-                using BinaryWriter writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, true);
-
-                writer.Write(_dimension);
-                writer.Write(_vectors.Count);
-
-                foreach (StoredVector vector in _vectors)
+                _lock.EnterReadLock();
+                try
                 {
-                    writer.Write(vector.Id.ToByteArray());
-                    writer.Write(vector.Values.Length);
-                    writer.Write(MemoryMarshal.AsBytes(vector.Values.AsSpan()));
+                    using BinaryWriter writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, true);
+
+                    writer.Write(_dimension);
+                    writer.Write(_vectors.Count);
+
+                    foreach (StoredVector vector in _vectors)
+                    {
+                        writer.Write(vector.Id.ToByteArray());
+                        writer.Write(vector.Values.Length);
+                        writer.Write(MemoryMarshal.AsBytes(vector.Values.AsSpan()));
+                    }
                 }
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                finally
+                {
+                    _lock.ExitReadLock();
+                }
+            });
         }
 
         public async Task LoadAsync(Stream stream)
@@ -177,41 +189,44 @@ namespace EasyReasy.VectorStorage
             if (!stream.CanRead)
                 throw new ArgumentException("Stream must be readable", nameof(stream));
 
-            await _semaphore.WaitAsync();
-            try
+            await Task.Run(() =>
             {
-                using BinaryReader reader = new BinaryReader(stream, System.Text.Encoding.UTF8, true);
-
-                _vectors.Clear();
-
-                int loadedDimension = reader.ReadInt32();
-                if (loadedDimension != _dimension)
-                    throw new InvalidOperationException($"Loaded vectors have dimension {loadedDimension} but store expects dimension {_dimension}.");
-
-                int count = reader.ReadInt32();
-
-                for (int i = 0; i < count; i++)
+                _lock.EnterWriteLock();
+                try
                 {
-                    byte[] idBytes = reader.ReadBytes(16);
-                    Guid id = new Guid(idBytes);
+                    using BinaryReader reader = new BinaryReader(stream, System.Text.Encoding.UTF8, true);
 
-                    int vectorLength = reader.ReadInt32();
-                    if (vectorLength != _dimension)
-                        throw new InvalidOperationException($"Vector at index {i} has dimension {vectorLength} but store expects dimension {_dimension}.");
+                    _vectors.Clear();
 
-                    float[] floatArray = new float[vectorLength];
+                    int loadedDimension = reader.ReadInt32();
+                    if (loadedDimension != _dimension)
+                        throw new InvalidOperationException($"Loaded vectors have dimension {loadedDimension} but store expects dimension {_dimension}.");
 
-                    byte[] bytes = reader.ReadBytes(vectorLength * sizeof(float));
-                    MemoryMarshal.Cast<byte, float>(bytes).CopyTo(floatArray);
+                    int count = reader.ReadInt32();
 
-                    StoredVector vector = new StoredVector(id, floatArray);
-                    _vectors.Add(vector);
+                    for (int i = 0; i < count; i++)
+                    {
+                        byte[] idBytes = reader.ReadBytes(16);
+                        Guid id = new Guid(idBytes);
+
+                        int vectorLength = reader.ReadInt32();
+                        if (vectorLength != _dimension)
+                            throw new InvalidOperationException($"Vector at index {i} has dimension {vectorLength} but store expects dimension {_dimension}.");
+
+                        float[] floatArray = new float[vectorLength];
+
+                        byte[] bytes = reader.ReadBytes(vectorLength * sizeof(float));
+                        MemoryMarshal.Cast<byte, float>(bytes).CopyTo(floatArray);
+
+                        StoredVector vector = new StoredVector(id, floatArray);
+                        _vectors.Add(vector);
+                    }
                 }
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                finally
+                {
+                    _lock.ExitWriteLock();
+                }
+            });
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

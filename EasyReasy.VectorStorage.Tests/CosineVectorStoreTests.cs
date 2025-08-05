@@ -271,7 +271,7 @@ namespace EasyReasy.VectorStorage.Tests
             StoredVector vector1 = new StoredVector(Guid.NewGuid(), CreateVector(1.0f));
             StoredVector vector2 = new StoredVector(Guid.NewGuid(), CreateVector(2.0f));
             StoredVector vector3 = new StoredVector(Guid.NewGuid(), CreateVector(3.0f));
-            
+
             await originalStore.AddAsync(vector1);
             await originalStore.AddAsync(vector2);
             await originalStore.AddAsync(vector3);
@@ -297,11 +297,11 @@ namespace EasyReasy.VectorStorage.Tests
             // Assert
             Assert.AreEqual(originalResults.Count(), loadedResults.Count());
             CollectionAssert.AreEqual(originalResultIds, loadedResultIds);
-            
+
             // Verify the vectors themselves are identical
             List<StoredVector> originalResultsList = originalResults.ToList();
             List<StoredVector> loadedResultsList = loadedResults.ToList();
-            
+
             for (int i = 0; i < originalResultsList.Count; i++)
             {
                 Assert.AreEqual(originalResultsList[i].Id, loadedResultsList[i].Id);
