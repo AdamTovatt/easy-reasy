@@ -1,4 +1,4 @@
-namespace EasyReasy.Auth
+namespace EasyReasy.Auth.Client
 {
     /// <summary>
     /// An HTTP client that automatically handles authentication using API keys or username/password.
