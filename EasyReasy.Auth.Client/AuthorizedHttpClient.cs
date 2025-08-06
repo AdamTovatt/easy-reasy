@@ -76,6 +76,18 @@ namespace EasyReasy.Auth.Client
         public AuthType AuthenticationType => _authType;
 
         /// <summary>
+        /// Creates a new HttpClient with the specified base address.
+        /// </summary>
+        /// <param name="baseAddress">The base address for the HTTP client.</param>
+        /// <returns>A new HttpClient instance with the specified base address.</returns>
+        public static HttpClient CreateHttpClient(string baseAddress)
+        {
+            HttpClient httpClient = new HttpClient();
+            httpClient.BaseAddress = new Uri(baseAddress);
+            return httpClient;
+        }
+
+        /// <summary>
         /// Ensures the client is authorized and the token is not expired.
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
