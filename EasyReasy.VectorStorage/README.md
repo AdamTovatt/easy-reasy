@@ -11,7 +11,7 @@ A high-performance .NET library for vector similarity search similarity with opt
 EasyReasy.VectorStorage provides a fast and memory-efficient solution for storing and searching high-dimensional vectors using cosine similarity. It's designed for applications that need to find similar vectors quickly, such as recommendation systems, semantic search, and machine learning applications.
 
 **Disclaimer:**
-If you're building a system that needs to search among millions of vectors you should probably use an external, dedicated vector database. But if you're building a system that will is will be storing less than 100 000 vectors per vector store this library is great. For 10 000 vectors, the average search time for finding the top 10 closest results is around 13 ms on a quite old laptop (4 cores, Intel i7-10510U @ 1.8GHz). Memory usage for those 10 000 vectors is 30 MB.
+If you're building a system that needs to search among millions of vectors you should probably use an external, dedicated vector database. But if you're building a system that will is will be storing less than 100 000 vectors per vector store this library is great. For 10 000 vectors, the average search time for finding the top 10 closest results is around 4 ms on a quite old laptop (4 cores, Intel i7-10510U @ 1.8GHz). Memory usage for those 10 000 vectors is 30 MB.
 
 **Why Use EasyReasy.VectorStorage?**
 
@@ -246,8 +246,8 @@ catch (ArgumentException ex)
 ### Search Performance
 
 - **Time Complexity**: O(n) where n is the number of vectors in the store
-- **Desktop (Intel i9-9900K @ 4.5GHz)**: ~13ms average for top 10 results in 100,000 vectors
-- **Laptop (Intel i7-10510U @ 1.8GHz)**: ~22ms average for top 10 results in 10,000 vectors
+- **Desktop (Intel i9-9900K @ 4.5GHz)**: ~13 ms average for top 10 results in 100,000 vectors
+- **Laptop (Intel i7-10510U @ 1.8GHz)**: ~4 ms average for top 10 results in 10,000 vectors
 - **Algorithm**: O(n) with optimized cosine similarity calculations
 - **Parallel processing**: Automatically enabled for datasets >1000 vectors
 
