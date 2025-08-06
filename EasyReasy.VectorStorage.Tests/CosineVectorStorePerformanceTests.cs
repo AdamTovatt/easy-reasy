@@ -158,6 +158,27 @@ namespace EasyReasy.VectorStorage.Tests
             Console.WriteLine($"Average time per search query: {searchTimePerQueryMs:F2} ms");
             Console.WriteLine($"Search rate: {SEARCH_QUERY_COUNT / (searchTimeMs / 1000.0):F0} queries/second");
 
+            await loadedStore.OptimizeMemoryLayoutAsync();
+
+            Console.WriteLine("\n--- Search Performance 2 ---");
+            searchQueries = CreateSearchQueries(SEARCH_QUERY_COUNT);
+
+            searchTimer = System.Diagnostics.Stopwatch.StartNew();
+            foreach (float[] query in searchQueries)
+            {
+                IEnumerable<StoredVector> results = await loadedStore.FindMostSimilarAsync(query, 10);
+                // Ensure we actually consume the results
+                int resultCount = results.Count();
+            }
+
+            searchTimer.Stop();
+
+            searchTimeMs = searchTimer.ElapsedMilliseconds;
+            searchTimePerQueryMs = (double)searchTimeMs / SEARCH_QUERY_COUNT;
+            Console.WriteLine($"Total search time for {SEARCH_QUERY_COUNT:N0} queries: {searchTimeMs:N0} ms");
+            Console.WriteLine($"Average time per search query: {searchTimePerQueryMs:F2} ms");
+            Console.WriteLine($"Search rate: {SEARCH_QUERY_COUNT / (searchTimeMs / 1000.0):F0} queries/second");
+
             // Test search performance with original store (to compare with loaded store)
             Console.WriteLine("\n--- Original Store Search Performance ---");
             System.Diagnostics.Stopwatch originalSearchTimer = System.Diagnostics.Stopwatch.StartNew();
@@ -173,6 +194,44 @@ namespace EasyReasy.VectorStorage.Tests
             double originalSearchTimePerQueryMs = (double)originalSearchTimeMs / SEARCH_QUERY_COUNT;
             Console.WriteLine($"Original store search time for {SEARCH_QUERY_COUNT:N0} queries: {originalSearchTimeMs:N0} ms");
             Console.WriteLine($"Original store average time per search query: {originalSearchTimePerQueryMs:F2} ms");
+
+            // Test memory optimization and defragmented store performance
+            Console.WriteLine("\n--- Memory Optimization Test ---");
+            Console.WriteLine("Optimizing memory layout of loaded store...");
+
+            System.Diagnostics.Stopwatch optimizationTimer = System.Diagnostics.Stopwatch.StartNew();
+            await loadedStore.OptimizeMemoryLayoutAsync();
+            optimizationTimer.Stop();
+
+            long optimizationTimeMs = optimizationTimer.ElapsedMilliseconds;
+            Console.WriteLine($"Memory optimization time: {optimizationTimeMs:N0} ms");
+
+            // Test search performance with defragmented store
+            Console.WriteLine("\n--- Defragmented Store Search Performance ---");
+            System.Diagnostics.Stopwatch defragmentedSearchTimer = System.Diagnostics.Stopwatch.StartNew();
+            foreach (float[] query in searchQueries)
+            {
+                IEnumerable<StoredVector> results = await loadedStore.FindMostSimilarAsync(query, 10);
+                int resultCount = results.Count();
+            }
+
+            defragmentedSearchTimer.Stop();
+
+            long defragmentedSearchTimeMs = defragmentedSearchTimer.ElapsedMilliseconds;
+            double defragmentedSearchTimePerQueryMs = (double)defragmentedSearchTimeMs / SEARCH_QUERY_COUNT;
+            Console.WriteLine($"Defragmented store search time for {SEARCH_QUERY_COUNT:N0} queries: {defragmentedSearchTimeMs:N0} ms");
+            Console.WriteLine($"Defragmented store average time per search query: {defragmentedSearchTimePerQueryMs:F2} ms");
+
+            // Performance comparison between all three scenarios
+            Console.WriteLine("\n--- Performance Comparison ---");
+            double originalVsLoadedSpeedup = (double)searchTimeMs / originalSearchTimeMs;
+            double originalVsDefragmentedSpeedup = (double)defragmentedSearchTimeMs / originalSearchTimeMs;
+            double loadedVsDefragmentedSpeedup = (double)searchTimeMs / defragmentedSearchTimeMs;
+
+            Console.WriteLine($"Original vs Loaded store: {originalVsLoadedSpeedup:F2}x slower (loaded)");
+            Console.WriteLine($"Original vs Defragmented store: {originalVsDefragmentedSpeedup:F2}x slower (defragmented)");
+            Console.WriteLine($"Loaded vs Defragmented store: {loadedVsDefragmentedSpeedup:F2}x faster (defragmented)");
+            Console.WriteLine($"Performance improvement from optimization: {((searchTimeMs - defragmentedSearchTimeMs) / (double)searchTimeMs * 100):F1}%");
 
             // Memory comparison between original and loaded stores
             Console.WriteLine("\n--- Memory Comparison ---");
@@ -200,6 +259,8 @@ namespace EasyReasy.VectorStorage.Tests
             Assert.IsTrue(searchTimeMs > 0);
             Assert.IsTrue(insertionMemoryDelta > 0);
             Assert.IsTrue(loadMemoryDelta > 0);
+            Assert.IsTrue(optimizationTimeMs > 0);
+            Assert.IsTrue(defragmentedSearchTimeMs > 0);
         }
 
         [TestMethod]
@@ -333,24 +394,24 @@ namespace EasyReasy.VectorStorage.Tests
 
             // Compare with sequential operations for reference
             Console.WriteLine("\n--- Sequential Operations Comparison ---");
-            
+
             // Sequential insertion
             CosineVectorStore sequentialStore = new CosineVectorStore(VECTOR_DIMENSION);
             System.Diagnostics.Stopwatch sequentialInsertionTimer = System.Diagnostics.Stopwatch.StartNew();
-            
+
             foreach (StoredVector vector in vectors)
             {
                 await sequentialStore.AddAsync(vector);
             }
-            
+
             sequentialInsertionTimer.Stop();
             long sequentialInsertionTimeMs = sequentialInsertionTimer.ElapsedMilliseconds;
             double sequentialInsertionTimePerVectorNs = (double)sequentialInsertionTimer.ElapsedTicks * 1_000_000 / TimeSpan.TicksPerSecond / LARGE_DATASET_SIZE;
-            
+
             Console.WriteLine($"Sequential insertion time: {sequentialInsertionTimeMs:N0} ms");
             Console.WriteLine($"Average time per vector (sequential): {sequentialInsertionTimePerVectorNs:F2} ns");
             Console.WriteLine($"Sequential insertion rate: {LARGE_DATASET_SIZE / (sequentialInsertionTimeMs / 1000.0):F0} vectors/second");
-            
+
             // Sequential search
             System.Diagnostics.Stopwatch sequentialSearchTimer = System.Diagnostics.Stopwatch.StartNew();
             foreach (float[] query in searchQueries)
@@ -359,10 +420,10 @@ namespace EasyReasy.VectorStorage.Tests
                 int resultCount = results.Count();
             }
             sequentialSearchTimer.Stop();
-            
+
             long sequentialSearchTimeMs = sequentialSearchTimer.ElapsedMilliseconds;
             double sequentialSearchTimePerQueryMs = (double)sequentialSearchTimeMs / SEARCH_QUERY_COUNT;
-            
+
             Console.WriteLine($"Sequential search time for {SEARCH_QUERY_COUNT:N0} queries: {sequentialSearchTimeMs:N0} ms");
             Console.WriteLine($"Average time per search query (sequential): {sequentialSearchTimePerQueryMs:F2} ms");
             Console.WriteLine($"Sequential search rate: {SEARCH_QUERY_COUNT / (sequentialSearchTimeMs / 1000.0):F0} queries/second");
@@ -371,7 +432,7 @@ namespace EasyReasy.VectorStorage.Tests
             Console.WriteLine("\n--- Performance Comparison ---");
             double insertionSpeedup = (double)sequentialInsertionTimeMs / concurrentInsertionTimeMs;
             double searchSpeedup = (double)sequentialSearchTimeMs / concurrentSearchTimeMs;
-            
+
             Console.WriteLine($"Insertion speedup (concurrent vs sequential): {insertionSpeedup:F2}x");
             Console.WriteLine($"Search speedup (concurrent vs sequential): {searchSpeedup:F2}x");
             Console.WriteLine($"Insertion efficiency: {insertionSpeedup / Environment.ProcessorCount:F2}x per core");

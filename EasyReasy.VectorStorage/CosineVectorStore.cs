@@ -274,6 +274,54 @@ namespace EasyReasy.VectorStorage
             });
         }
 
+        /// <summary>
+        /// Optimizes the memory layout of the loaded vectors to improve search performance.
+        /// This method reallocates all vectors in a contiguous manner to improve cache locality
+        /// and reduce memory fragmentation that can occur during the loading process.
+        /// </summary>
+        /// <returns>A task that represents the asynchronous optimization operation.</returns>
+        /// <remarks>
+        /// This method is particularly useful after loading a vector store from a stream,
+        /// as the loading process can create fragmented memory layouts that negatively impact
+        /// search performance. Calling this method after loading can restore performance
+        /// to levels similar to the original store.
+        /// 
+        /// The optimization process involves:
+        /// - Reallocating all vector arrays in a tight loop
+        /// - Creating new StoredVector instances with the reallocated arrays
+        /// - Replacing the original vectors list with the optimized version
+        /// 
+        /// This operation is thread-safe and can be called while other operations are in progress.
+        /// </remarks>
+        public async Task OptimizeMemoryLayoutAsync()
+        {
+            await Task.Run(() =>
+            {
+                _lock.EnterWriteLock();
+                try
+                {
+                    // Create new list with pre-allocated capacity for better memory layout
+                    List<StoredVector> optimizedVectors = new List<StoredVector>(_vectors.Count);
+                    
+                    // Reallocate all vectors in a tight loop to improve memory locality
+                    foreach (StoredVector vector in _vectors)
+                    {
+                        float[] optimizedValues = new float[vector.Values.Length];
+                        vector.Values.CopyTo(optimizedValues, 0);
+                        optimizedVectors.Add(new StoredVector(vector.Id, optimizedValues));
+                    }
+                    
+                    // Replace the original list with the optimized version
+                    _vectors.Clear();
+                    _vectors.AddRange(optimizedVectors);
+                }
+                finally
+                {
+                    _lock.ExitWriteLock();
+                }
+            });
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static float CalculateMagnitude(ReadOnlySpan<float> vector)
         {

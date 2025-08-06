@@ -1,5 +1,10 @@
 namespace EasyReasy.VectorStorage
 {
+    /// <summary>
+    /// Defines the interface for a vector store that can store and search high-dimensional vectors.
+    /// This interface provides methods for adding, removing, finding similar vectors, and persisting
+    /// the vector store to/from streams.
+    /// </summary>
     public interface IVectorStore
     {
         /// <summary>
