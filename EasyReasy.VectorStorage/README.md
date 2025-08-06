@@ -10,6 +10,9 @@ A high-performance .NET library for vector similarity search similarity with opt
 
 EasyReasy.VectorStorage provides a fast and memory-efficient solution for storing and searching high-dimensional vectors using cosine similarity. It's designed for applications that need to find similar vectors quickly, such as recommendation systems, semantic search, and machine learning applications.
 
+**Disclaimer:**
+If you're building a system that needs to search among millions of vectors you should probably use an external, dedicated vector database. But if you're building a system that will is will be storing less than 100 000 vectors per vector store this library is great. For 10 000 vectors, the average search time for finding the top 10 closest results is around 13 ms on a quite old laptop (4 cores, Intel i7-10510U @ 1.8GHz). Memory usage for those 10 000 vectors is 30 MB.
+
 **Why Use EasyReasy.VectorStorage?**
 
 - **High Performance**: Optimized cosine similarity calculations with SIMD support and parallel processing
@@ -22,8 +25,9 @@ EasyReasy.VectorStorage provides a fast and memory-efficient solution for storin
 ## Quick Start
 
 ```csharp
-// Create a vector store for 768-dimensional vectors
-CosineVectorStore store = new CosineVectorStore(768);
+// Create a vector store to store vectors
+// Here 768 is used as dimension but any dimension can be used
+IVectorStore store = new CosineVectorStore(768);
 
 // Add vectors
 await store.AddAsync(new StoredVector(Guid.NewGuid(), embeddingVector));
@@ -35,7 +39,8 @@ IEnumerable<StoredVector> similarVectors = await store.FindMostSimilarAsync(quer
 ## Core Concepts
 
 ### StoredVector
-A lightweight struct that represents a vector with an ID and float values:
+A lightweight struct that represents a vector with an ID and float values.
+Here, public fields are exposed even though normally only public properties would be exposed. This reduced flexibility for future changes was chosen with the thought that a `StoredVector` is such a simple type and will probably never require future changes anyway:
 
 ```csharp
 public readonly struct StoredVector
@@ -78,46 +83,37 @@ public class CosineVectorStore : IVectorStore
 ### 1. Create a Vector Store
 
 ```csharp
-// For 768-dimensional vectors (common in embeddings)
+// 768 can be replaced with any other desired dimension
 CosineVectorStore store = new CosineVectorStore(768);
-
-// For other dimensions
-CosineVectorStore store = new CosineVectorStore(1024);
 ```
 
 ### 2. Add Vectors
 
 ```csharp
 // Create a vector
-float[] embedding = new float[768];
-// ... populate with your embedding values ...
+float[] embedding = CreateAnEmbeddingSomehow(somethingToEmbedd);
 
 StoredVector vector = new StoredVector(Guid.NewGuid(), embedding);
 await store.AddAsync(vector);
 ```
 
+> [!TIP]
+> The Guid.NewGuid() in this example is just to show that the constructor for `StoredVector` takes a `Guid`. Any `Guid` can be used, it doesn't have to be created as a new one here.
+
 ### 3. Find Similar Vectors
 
 ```csharp
 // Create a query vector
-float[] queryVector = new float[768];
-// ... populate with your query embedding ...
+float[] queryVector = CreateAnEmbeddingSomehow(somethingToSearchFor);
 
 // Find the 10 most similar vectors
 IEnumerable<StoredVector> results = await store.FindMostSimilarAsync(queryVector, count: 10);
-
-// Process results
-foreach (StoredVector result in results)
-{
-    Console.WriteLine($"Similar vector ID: {result.Id}");
-    // Access vector values: result.Values
-}
 ```
 
 ### 4. Remove Vectors
 
 ```csharp
-Guid vectorId = Guid.NewGuid();
+Guid vectorId = GetGuidThatShouldBeRemovedSomehow();
 bool removed = await store.RemoveAsync(vectorId);
 ```
 
@@ -125,12 +121,16 @@ bool removed = await store.RemoveAsync(vectorId);
 
 ```csharp
 // Save to file
-using FileStream saveStream = File.Create("vectors.dat");
-await store.SaveAsync(saveStream);
+using (FileStream saveStream = File.Create("vectors.dat"))
+{
+    await store.SaveAsync(saveStream);
+}
 
 // Load from file
-using FileStream loadStream = File.OpenRead("vectors.dat");
-await store.LoadAsync(loadStream);
+using (FileStream loadStream = File.OpenRead("vectors.dat"))
+{
+    await store.LoadAsync(loadStream);
+}
 ```
 
 ## Performance Features
@@ -173,8 +173,6 @@ CosineVectorStore store = new CosineVectorStore(420); // Just pass whatever dime
 ```
 
 **Optimized Dimensions**: The library has extra SIMD optimizations for 768 and 1024 dimensions, which are common in modern embedding models.
-
-
 
 ### Concurrent Access
 
@@ -240,8 +238,10 @@ catch (ArgumentException ex)
 - **Per Vector**: ~4 bytes per dimension + 16 bytes for GUID
 - **768-dimensional vector**: ~3KB per vector
 - **1000 vectors**: ~3MB total
-- **10,000 vectors**: ~30MB total (confirmed by performance tests)
+- **10,000 vectors**: ~30MB total
 - **100,000 vectors**: ~300MB total
+
+> The memory usage values here are the theoretical values that are then also confirmed to be true in the memory performance tests.
 
 ### Search Performance
 
@@ -268,4 +268,5 @@ catch (ArgumentException ex)
 - **System.Numerics**: For SIMD vector operations
 - **System.Collections.Concurrent**: For parallel processing
 
-EasyReasy.VectorStorage provides a fast, efficient, and easy-to-use solution for vector similarity search in .NET applications. Whether you're building recommendation systems, semantic search, or machine learning applications, this library offers the performance and flexibility you need. 
+## License
+MIT
