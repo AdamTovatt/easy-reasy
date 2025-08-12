@@ -152,6 +152,56 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
         }
 
         [TestMethod]
+        public async Task ReadNextTextSegmentAsync_ShouldPreferLongerBreakStrings()
+        {
+            // Arrange
+            string content = "Dramatic sentence... that had a break. Another sentence here.";
+            Console.WriteLine($"Original content:\n{content}");
+            using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
+            // Note: "..." should be matched instead of just "."
+            TextSegmentReader segmentReader = new TextSegmentReader(reader, "...", ". ", ".");
+
+            // Act
+            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
+            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync();
+
+            Console.WriteLine($"First segment: \"{firstSegment}\"");
+            Console.WriteLine($"Second segment: \"{secondSegment}\"");
+
+            // Assert
+            Assert.IsNotNull(firstSegment, "First segment should not be null");
+            Assert.IsNotNull(secondSegment, "Second segment should not be null");
+            Assert.IsTrue(firstSegment.EndsWith("... "), $"First segment should end with '...' (longer break), not '.'. Segment content: \"{firstSegment}\"");
+            Assert.IsTrue(firstSegment.Contains("Dramatic sentence"), $"First segment should contain 'Dramatic sentence'. Segment content: \"{firstSegment}\"");
+            Assert.IsTrue(secondSegment.Contains("that had a break"), $"Second segment should start with ' that had a break'. Segment content: \"{secondSegment}\"");
+        }
+
+        [TestMethod]
+        public async Task ReadNextTextSegmentAsync_ShouldPreferDoubleNewlineOverSingle()
+        {
+            // Arrange
+            string content = "First paragraph\n\nSecond paragraph\nStill second paragraph";
+            Console.WriteLine($"Original content:\n{content}");
+            using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
+            // Note: "\n\n" should be matched instead of just "\n"
+            TextSegmentReader segmentReader = new TextSegmentReader(reader, "\n\n", "\n", ".");
+
+            // Act
+            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
+            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync();
+
+            Console.WriteLine($"First segment: \"{firstSegment}\"");
+            Console.WriteLine($"Second segment: \"{secondSegment}\"");
+
+            // Assert
+            Assert.IsNotNull(firstSegment, "First segment should not be null");
+            Assert.IsNotNull(secondSegment, "Second segment should not be null");
+            Assert.IsTrue(firstSegment.EndsWith("\n\n"), $"First segment should end with double newline (longer break), not single. Segment content: \"{firstSegment}\"");
+            Assert.IsTrue(firstSegment.Contains("First paragraph"), $"First segment should contain 'First paragraph'. Segment content: \"{firstSegment}\"");
+            Assert.IsTrue(secondSegment.Contains("Second paragraph"), $"Second segment should contain 'Second paragraph'. Segment content: \"{secondSegment}\"");
+        }
+
+        [TestMethod]
         public async Task ReadNextTextSegmentAsync_RoundTrip_ShouldPreserveOriginalContent()
         {
             // Arrange
