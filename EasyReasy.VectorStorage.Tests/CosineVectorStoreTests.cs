@@ -637,7 +637,7 @@ namespace EasyReasy.VectorStorage.Tests
         {
             // Arrange - Test with dimensions that are not multiples of Vector<float>.Count
             int simdSize = System.Numerics.Vector<float>.Count;
-            int dimension = simdSize * 3 + 1; // Not a multiple of SIMD size
+            int dimension = (simdSize * 3) + 1; // Not a multiple of SIMD size
             CosineVectorStore store = new CosineVectorStore(dimension);
             StoredVector vector1 = new StoredVector(Guid.NewGuid(), CreateVector(1.0f, dimension));
             StoredVector vector2 = new StoredVector(Guid.NewGuid(), CreateVector(2.0f, dimension));
@@ -663,7 +663,7 @@ namespace EasyReasy.VectorStorage.Tests
         {
             // Arrange - Create exactly 1001 vectors to ensure we cross the threshold
             CosineVectorStore store = new CosineVectorStore(768);
-            
+
             // Add 1001 vectors with distinct patterns
             for (int i = 0; i < 1001; i++)
             {
@@ -687,7 +687,7 @@ namespace EasyReasy.VectorStorage.Tests
 
             // Assert
             Assert.AreEqual(10, results.Count());
-            
+
             // Verify we get meaningful results (not just random vectors)
             // The query should be most similar to vectors around index 500
             List<StoredVector> resultsList = results.ToList();
@@ -699,7 +699,7 @@ namespace EasyReasy.VectorStorage.Tests
         {
             // Arrange - Create exactly 999 vectors to ensure we stay below the threshold
             CosineVectorStore store = new CosineVectorStore(768);
-            
+
             // Add 999 vectors with distinct patterns
             for (int i = 0; i < 999; i++)
             {
@@ -723,7 +723,7 @@ namespace EasyReasy.VectorStorage.Tests
 
             // Assert
             Assert.AreEqual(10, results.Count());
-            
+
             // Verify we get meaningful results (not just random vectors)
             List<StoredVector> resultsList = results.ToList();
             Assert.IsTrue(resultsList.Count > 0);
@@ -734,7 +734,7 @@ namespace EasyReasy.VectorStorage.Tests
         {
             // Arrange - Create exactly 1000 vectors to test the boundary
             CosineVectorStore store = new CosineVectorStore(768);
-            
+
             // Add 1000 vectors with distinct patterns
             for (int i = 0; i < 1000; i++)
             {
@@ -758,7 +758,7 @@ namespace EasyReasy.VectorStorage.Tests
 
             // Assert
             Assert.AreEqual(10, results.Count());
-            
+
             // Verify we get meaningful results
             List<StoredVector> resultsList = results.ToList();
             Assert.IsTrue(resultsList.Count > 0);
@@ -769,7 +769,7 @@ namespace EasyReasy.VectorStorage.Tests
         {
             // Arrange - Create exactly 1001 vectors to test the boundary
             CosineVectorStore store = new CosineVectorStore(768);
-            
+
             // Add 1001 vectors with distinct patterns
             for (int i = 0; i < 1001; i++)
             {
@@ -793,7 +793,7 @@ namespace EasyReasy.VectorStorage.Tests
 
             // Assert
             Assert.AreEqual(10, results.Count());
-            
+
             // Verify we get meaningful results
             List<StoredVector> resultsList = results.ToList();
             Assert.IsTrue(resultsList.Count > 0);

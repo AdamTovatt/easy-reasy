@@ -69,8 +69,8 @@ namespace EasyReasy.VectorStorage
         {
             while (true)
             {
-                int leftChild = 2 * index + 1;
-                int rightChild = 2 * index + 2;
+                int leftChild = (2 * index) + 1;
+                int rightChild = (2 * index) + 2;
                 int smallest = index;
 
                 if (leftChild < _count && _priorities[leftChild] < _priorities[smallest])
