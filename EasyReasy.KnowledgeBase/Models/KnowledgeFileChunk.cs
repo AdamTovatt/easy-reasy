@@ -3,6 +3,12 @@
     public class KnowledgeFileChunk
     {
         public Guid Id { get; set; }
-        public required string Content { get; set; }
+        public string Content { get; set; }
+
+        public KnowledgeFileChunk(Guid id, string content)
+        {
+            Id = id;
+            Content = content;
+        }
     }
 }

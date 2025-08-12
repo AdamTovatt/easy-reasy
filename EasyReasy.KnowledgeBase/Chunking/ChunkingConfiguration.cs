@@ -13,7 +13,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <summary>
         /// Gets or sets the maximum number of tokens per section.
         /// </summary>
-        public int MaxTokensPerSection { get; set; } = 10000;
+        public int MaxTokensPerSection { get; set; } = 3000;
 
         /// <summary>
         /// Gets or sets the tokenizer to use for text processing.

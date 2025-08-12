@@ -207,7 +207,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             // Arrange
             string originalContent = "This is the first paragraph.\n\nThis is the second paragraph. It has multiple sentences. Each sentence ends with a period.\n\nThis is the third paragraph with different punctuation! Some sentences end with exclamation marks? Others end with question marks.\n\nFinal paragraph without trailing newline.";
             Console.WriteLine($"Original content ({originalContent.Length} characters):\n{originalContent}");
-            
+
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(originalContent)));
             TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n\n", "\n", ". ", "! ", "? ");
 
