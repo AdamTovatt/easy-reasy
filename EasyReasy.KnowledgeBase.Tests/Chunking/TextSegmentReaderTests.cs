@@ -11,7 +11,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             // Arrange
             string content = "";
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            TextSegmentReader segmentReader = new TextSegmentReader(reader, "\n", ". ");
+            TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n", ". ");
 
             // Act
             string? result = await segmentReader.ReadNextTextSegmentAsync();
@@ -27,7 +27,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             string content = "First line.\nSecond line.\nThird line.";
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            TextSegmentReader segmentReader = new TextSegmentReader(reader, "\n", ". ");
+            TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n", ". ");
 
             // Act
             string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
@@ -54,7 +54,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             string content = "This is sentence one. This is sentence two. This is sentence three.";
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            TextSegmentReader segmentReader = new TextSegmentReader(reader, "\n", ". ");
+            TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n", ". ");
 
             // Act
             string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
@@ -81,7 +81,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             string content = "Thisisasentencewithoutanybreakpoints";
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            TextSegmentReader segmentReader = new TextSegmentReader(reader, "\n", ". ");
+            TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n", ". ");
 
             // Act
             string? segment = await segmentReader.ReadNextTextSegmentAsync();
@@ -102,7 +102,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             string content = "First part</break>Second part</break>Third part";
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            TextSegmentReader segmentReader = new TextSegmentReader(reader, "</break>", "\n", ". ");
+            TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "</break>", "\n", ". ");
 
             // Act
             string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
@@ -131,7 +131,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             string content = "First part. Second part! Third part?";
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            TextSegmentReader segmentReader = new TextSegmentReader(reader, ". ", "! ", "?");
+            TextSegmentReader segmentReader = TextSegmentReader.Create(reader, ". ", "! ", "?");
 
             // Act
             string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
@@ -159,7 +159,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             // Note: "..." should be matched instead of just "."
-            TextSegmentReader segmentReader = new TextSegmentReader(reader, "...", ". ", ".");
+            TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "...", ". ", ".");
 
             // Act
             string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
@@ -184,7 +184,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             // Note: "\n\n" should be matched instead of just "\n"
-            TextSegmentReader segmentReader = new TextSegmentReader(reader, "\n\n", "\n", ".");
+            TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n\n", "\n", ".");
 
             // Act
             string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
@@ -209,7 +209,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content ({originalContent.Length} characters):\n{originalContent}");
             
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(originalContent)));
-            TextSegmentReader segmentReader = new TextSegmentReader(reader, "\n\n", "\n", ". ", "! ", "? ");
+            TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n\n", "\n", ". ", "! ", "? ");
 
             // Act - Read all segments
             List<string> segments = new List<string>();

@@ -16,7 +16,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// </summary>
         /// <param name="contentReader">The stream reader to read content from.</param>
         /// <param name="breakStrings">The strings that indicate break points, in order of preference.</param>
-        public TextSegmentReader(StreamReader contentReader, params string[] breakStrings)
+        private TextSegmentReader(StreamReader contentReader, params string[] breakStrings)
         {
             _contentReader = contentReader;
             _breakStrings = breakStrings;
@@ -24,6 +24,36 @@ namespace EasyReasy.KnowledgeBase.Chunking
 
             // Sort break strings by length (longest first) for more efficient matching
             Array.Sort(_breakStrings, (a, b) => b.Length.CompareTo(a.Length));
+        }
+
+        /// <summary>
+        /// Creates a new instance of <see cref="TextSegmentReader"/> with custom break strings.
+        /// </summary>
+        /// <param name="contentReader">The stream reader to read content from.</param>
+        /// <param name="breakStrings">The strings that indicate break points, in order of preference.</param>
+        /// <returns>A new instance of <see cref="TextSegmentReader"/> configured with the specified break strings.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="contentReader"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="breakStrings"/> is null or empty.</exception>
+        public static TextSegmentReader Create(StreamReader contentReader, params string[] breakStrings)
+        {
+            if (contentReader == null)
+                throw new ArgumentNullException(nameof(contentReader), "Content reader cannot be null.");
+            if (breakStrings == null || breakStrings.Length == 0)
+                throw new ArgumentException("At least one break string must be provided.", nameof(breakStrings));
+            return new TextSegmentReader(contentReader, breakStrings);
+        }
+
+        /// <summary>
+        /// Creates a new instance of <see cref="TextSegmentReader"/> pre-configured for Markdown content.
+        /// </summary>
+        /// <param name="contentReader">The stream reader to read content from.</param>
+        /// <returns>A new instance of <see cref="TextSegmentReader"/> configured with Markdown break strings.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="contentReader"/> is null.</exception>
+        public static TextSegmentReader CreateForMarkdown(StreamReader contentReader)
+        {
+            if (contentReader == null)
+                throw new ArgumentNullException(nameof(contentReader), "Content reader cannot be null.");
+            return new TextSegmentReader(contentReader, TextSegmentSplitters.Markdown);
         }
 
         /// <summary>

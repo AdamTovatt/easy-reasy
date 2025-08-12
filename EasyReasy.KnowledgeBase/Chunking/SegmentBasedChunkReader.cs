@@ -3,7 +3,7 @@
     /// <summary>
     /// A knowledge chunk reader that processes markdown content using token-based chunking.
     /// </summary>
-    public class MarkdownKnowledgeChunkReader : IKnowledgeChunkReader
+    public class SegmentBasedChunkReader : IKnowledgeChunkReader
     {
         private readonly ITextSegmentReader _textSegmentReader;
         private readonly ChunkingConfiguration _configuration;
@@ -11,35 +11,17 @@
         private string? _bufferedChunk;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="MarkdownKnowledgeChunkReader"/> class.
+        /// Initializes a new instance of the <see cref="SegmentBasedChunkReader"/> class.
         /// </summary>
-        /// <param name="contentReader">The stream reader to read markdown content from.</param>
+        /// <param name="textSegmentReader">The reader to read the content from.</param>
         /// <param name="configuration">The configuration for chunking operations.</param>
-        public MarkdownKnowledgeChunkReader(StreamReader contentReader, ChunkingConfiguration configuration)
+        public SegmentBasedChunkReader(TextSegmentReader textSegmentReader, ChunkingConfiguration configuration)
         {
             _configuration = configuration;
             _tokenizer = configuration.Tokenizer;
 
-            // Create a text segment reader configured for markdown with appropriate break strings
-            _textSegmentReader = new TextSegmentReader(
-                contentReader,
-                "\n\n# ",    // New top-level heading
-                "\n## ",     // New second-level heading
-                "\n### ",    // New third-level heading
-                "\n#### ",   // New fourth-level heading
-                "\n##### ",  // New fifth-level heading
-                "\n###### ", // New sixth-level heading
-                "\n\n",      // Double line breaks (paragraph breaks)
-                "\n- ",      // Unordered list items
-                "\n* ",      // Alternative unordered list items
-                "\n+ ",      // Alternative unordered list items
-                "\n1. ",     // Ordered list items (simplified - just checking for "1.")
-                "\n```\n",   // End of code blocks
-                "\n",        // Single line breaks
-                ". ",        // Sentence endings
-                "! ",        // Exclamation marks
-                "? "         // Question marks
-            );
+            _textSegmentReader = textSegmentReader ??
+                throw new ArgumentNullException(nameof(textSegmentReader), "Text segment reader cannot be null.");
 
             _bufferedChunk = null;
         }

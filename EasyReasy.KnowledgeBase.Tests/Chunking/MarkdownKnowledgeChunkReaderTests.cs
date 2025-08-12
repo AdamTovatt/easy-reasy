@@ -25,7 +25,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content: \"{content}\"");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 100);
-            MarkdownKnowledgeChunkReader chunkReader = new MarkdownKnowledgeChunkReader(reader, configuration);
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
             string? result = await chunkReader.ReadNextChunkContentAsync();
@@ -42,7 +43,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 100);
-            MarkdownKnowledgeChunkReader chunkReader = new MarkdownKnowledgeChunkReader(reader, configuration);
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
             string? result = await chunkReader.ReadNextChunkContentAsync();
@@ -62,7 +64,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 200);
-            MarkdownKnowledgeChunkReader chunkReader = new MarkdownKnowledgeChunkReader(reader, configuration);
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
             string? result = await chunkReader.ReadNextChunkContentAsync();
@@ -83,7 +86,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 10);
-            MarkdownKnowledgeChunkReader chunkReader = new MarkdownKnowledgeChunkReader(reader, configuration);
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
             string? firstChunk = await chunkReader.ReadNextChunkContentAsync();
@@ -108,7 +112,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 50);
-            MarkdownKnowledgeChunkReader chunkReader = new MarkdownKnowledgeChunkReader(reader, configuration);
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
             string? firstChunk = await chunkReader.ReadNextChunkContentAsync();
@@ -136,7 +141,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 10);
-            MarkdownKnowledgeChunkReader chunkReader = new MarkdownKnowledgeChunkReader(reader, configuration);
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
             string? firstChunk = await chunkReader.ReadNextChunkContentAsync();
@@ -161,7 +167,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content (length: {content.Length}):\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 100);
-            MarkdownKnowledgeChunkReader chunkReader = new MarkdownKnowledgeChunkReader(reader, configuration);
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
             List<string> chunks = new List<string>();
@@ -196,7 +203,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content (length: {originalContent.Length}):\n{originalContent}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(originalContent)));
             ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 150);
-            MarkdownKnowledgeChunkReader chunkReader = new MarkdownKnowledgeChunkReader(reader, configuration);
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act - Read all chunks
             List<string> chunks = new List<string>();
@@ -234,7 +242,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content (length: {content.Length}):\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 80);
-            MarkdownKnowledgeChunkReader chunkReader = new MarkdownKnowledgeChunkReader(reader, configuration);
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
             List<string> chunks = new List<string>();
