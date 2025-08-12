@@ -8,7 +8,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <summary>
         /// Gets or sets the maximum number of tokens per chunk.
         /// </summary>
-        public int MaxTokensPerChunk { get; set; } = 1000;
+        public int MaxTokensPerChunk { get; set; } = 300;
 
         /// <summary>
         /// Gets or sets the maximum number of tokens per section.
@@ -20,4 +20,4 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// </summary>
         public ITokenizer Tokenizer { get; set; } = null!;
     }
-} 
+}

@@ -302,7 +302,7 @@ namespace EasyReasy.VectorStorage
                 {
                     // Create new list with pre-allocated capacity for better memory layout
                     List<StoredVector> optimizedVectors = new List<StoredVector>(_vectors.Count);
-                    
+
                     // Reallocate all vectors in a tight loop to improve memory locality
                     foreach (StoredVector vector in _vectors)
                     {
@@ -310,7 +310,7 @@ namespace EasyReasy.VectorStorage
                         vector.Values.CopyTo(optimizedValues, 0);
                         optimizedVectors.Add(new StoredVector(vector.Id, optimizedValues));
                     }
-                    
+
                     // Replace the original list with the optimized version
                     _vectors.Clear();
                     _vectors.AddRange(optimizedVectors);
@@ -411,8 +411,8 @@ namespace EasyReasy.VectorStorage
                 float s2 = storedVector[i + 2];
                 float s3 = storedVector[i + 3];
 
-                dotProduct += q0 * s0 + q1 * s1 + q2 * s2 + q3 * s3;
-                storedMagnitude += s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3;
+                dotProduct += (q0 * s0) + (q1 * s1) + (q2 * s2) + (q3 * s3);
+                storedMagnitude += (s0 * s0) + (s1 * s1) + (s2 * s2) + (s3 * s3);
             }
 
             // Handle remaining elements

@@ -201,10 +201,10 @@ namespace EasyReasy.Auth
         /// <returns>The 32-bit unsigned integer.</returns>
         private static uint ReadNetworkByteOrder(byte[] buffer, int offset)
         {
-            return ((uint)(buffer[offset + 0]) << 24)
-                | ((uint)(buffer[offset + 1]) << 16)
-                | ((uint)(buffer[offset + 2]) << 8)
-                | ((uint)(buffer[offset + 3]));
+            return ((uint)buffer[offset + 0] << 24)
+                | ((uint)buffer[offset + 1] << 16)
+                | ((uint)buffer[offset + 2] << 8)
+                | ((uint)buffer[offset + 3]);
         }
 
         /// <summary>

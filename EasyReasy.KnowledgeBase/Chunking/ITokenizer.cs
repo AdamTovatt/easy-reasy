@@ -26,4 +26,4 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <returns>The number of tokens.</returns>
         int CountTokens(string text);
     }
-} 
+}

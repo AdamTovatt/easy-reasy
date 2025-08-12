@@ -41,4 +41,4 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// </summary>
         bool HasMoreTokens { get; }
     }
-} 
+}

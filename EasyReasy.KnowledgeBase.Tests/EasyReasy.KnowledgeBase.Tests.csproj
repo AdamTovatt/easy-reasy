@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EasyReasy.EnvironmentVariables\EasyReasy.EnvironmentVariables.csproj" />
+    <ProjectReference Include="..\EasyReasy.KnowledgeBase.BertTokenization\EasyReasy.KnowledgeBase.BertTokenization.csproj" />
     <ProjectReference Include="..\EasyReasy.KnowledgeBase\EasyReasy.KnowledgeBase.csproj" />
     <ProjectReference Include="..\EasyReasy\EasyReasy.csproj" />
   </ItemGroup>

@@ -1,6 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using EasyReasy.KnowledgeBase.BertTokenization;
-
 namespace EasyReasy.KnowledgeBase.BertTokenization.Tests
 {
     [TestClass]
@@ -83,7 +80,7 @@ namespace EasyReasy.KnowledgeBase.BertTokenization.Tests
             // Assert
             // BERT tokenizers add [CLS] and [SEP] tokens, so we need to check that the original text is contained
             // within the decoded text, not that they're exactly equal
-            Assert.IsTrue(decodedText.Contains(originalText.ToLower()), 
+            Assert.IsTrue(decodedText.Contains(originalText.ToLower()),
                 $"Decoded text '{decodedText}' should contain original text '{originalText}'");
         }
 
@@ -139,6 +136,29 @@ namespace EasyReasy.KnowledgeBase.BertTokenization.Tests
             Assert.IsTrue(decodedText.StartsWith("[CLS]"), "Decoded text should start with [CLS]");
             Assert.IsTrue(decodedText.EndsWith("[SEP]"), "Decoded text should end with [SEP]");
             Assert.IsTrue(decodedText.Contains(text.ToLower()), "Decoded text should contain the original text");
+        }
+
+        [TestMethod]
+        public void Encode_LongText_HandlesLargeInput()
+        {
+            // Arrange
+            string longText = string.Join(" ", Enumerable.Range(1, 50).Select(i =>
+                $"This is sentence number {i} which contains multiple words and should be properly tokenized by the BERT tokenizer."));
+
+            // Act
+            int[] tokens = _tokenizer.Encode(longText);
+            string decodedText = _tokenizer.Decode(tokens);
+
+            // Assert
+            Assert.IsTrue(tokens.Length > 1000, "Long text should produce many tokens");
+            Assert.IsTrue(decodedText.StartsWith("[CLS]"), "Decoded text should start with [CLS]");
+            Assert.IsTrue(decodedText.EndsWith("[SEP]"), "Decoded text should end with [SEP]");
+
+            // Check that the original text is preserved (case-insensitive due to BERT uncased)
+            string originalLower = longText.ToLower();
+            string decodedLower = decodedText.ToLower();
+            Assert.IsTrue(decodedLower.Contains(originalLower),
+                "Decoded text should contain the original long text");
         }
     }
 }

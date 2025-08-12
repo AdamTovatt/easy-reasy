@@ -231,7 +231,7 @@ namespace EasyReasy.VectorStorage.Tests
             Console.WriteLine($"Original vs Loaded store: {originalVsLoadedSpeedup:F2}x slower (loaded)");
             Console.WriteLine($"Original vs Defragmented store: {originalVsDefragmentedSpeedup:F2}x slower (defragmented)");
             Console.WriteLine($"Loaded vs Defragmented store: {loadedVsDefragmentedSpeedup:F2}x faster (defragmented)");
-            Console.WriteLine($"Performance improvement from optimization: {((searchTimeMs - defragmentedSearchTimeMs) / (double)searchTimeMs * 100):F1}%");
+            Console.WriteLine($"Performance improvement from optimization: {(searchTimeMs - defragmentedSearchTimeMs) / (double)searchTimeMs * 100:F1}%");
 
             // Memory comparison between original and loaded stores
             Console.WriteLine("\n--- Memory Comparison ---");

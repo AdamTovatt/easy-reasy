@@ -11,6 +11,11 @@ namespace EasyReasy.KnowledgeBase.BertTokenization
         private readonly FastBertTokenizer.BertTokenizer _tokenizer;
 
         /// <summary>
+        /// Max tokens to allow during encoding before truncation. Default is 2048.
+        /// </summary>
+        public int MaxEncodingTokens { get; set; } = 2048;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="BertTokenizer"/> class with BERT base uncased vocabulary.
         /// </summary>
         private BertTokenizer()
@@ -59,17 +64,18 @@ namespace EasyReasy.KnowledgeBase.BertTokenization
             if (string.IsNullOrEmpty(text))
                 return Array.Empty<int>();
 
-            (Memory<long> inputIds, _, _) = _tokenizer.Encode(text);
-            
+            // Encode with higher limit to avoid truncation
+            (Memory<long> inputIds, _, _) = _tokenizer.Encode(text, MaxEncodingTokens);
+
             // Convert long[] to int[] - this assumes token IDs fit in int range
             long[] longTokens = inputIds.ToArray();
             int[] intTokens = new int[longTokens.Length];
-            
+
             for (int i = 0; i < longTokens.Length; i++)
             {
                 intTokens[i] = (int)longTokens[i];
             }
-            
+
             return intTokens;
         }
 
@@ -103,8 +109,9 @@ namespace EasyReasy.KnowledgeBase.BertTokenization
             if (string.IsNullOrEmpty(text))
                 return 0;
 
-            (Memory<long> inputIds, _, _) = _tokenizer.Encode(text);
+            // Encode with higher limit to avoid truncation
+            (Memory<long> inputIds, _, _) = _tokenizer.Encode(text, MaxEncodingTokens);
             return inputIds.Length;
         }
     }
-} 
+}

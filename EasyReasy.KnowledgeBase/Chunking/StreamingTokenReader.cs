@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace EasyReasy.KnowledgeBase.Chunking
 {
     /// <summary>
@@ -68,6 +66,13 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 int token = _forwardBuffer.Dequeue();
                 result.Add(token);
                 _currentPosition++;
+
+                // Add to backward buffer for potential seeking
+                _backwardBuffer.Push(token);
+                if (_backwardBuffer.Count > _maxBufferSize)
+                {
+                    _backwardBuffer.Pop(); // Remove oldest token
+                }
             }
 
             // If we still need more tokens, read from the stream
@@ -81,7 +86,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 }
 
                 int[] lineTokens = _tokenizer.Encode(line);
-                
+
                 // Add newline token if not the last line
                 if (!_endOfStream)
                 {
@@ -98,6 +103,13 @@ namespace EasyReasy.KnowledgeBase.Chunking
                     {
                         result.Add(token);
                         _currentPosition++;
+
+                        // Add to backward buffer
+                        _backwardBuffer.Push(token);
+                        if (_backwardBuffer.Count > _maxBufferSize)
+                        {
+                            _backwardBuffer.Pop();
+                        }
                     }
                     else
                     {
@@ -147,6 +159,25 @@ namespace EasyReasy.KnowledgeBase.Chunking
         }
 
         /// <summary>
+        /// Puts tokens back into the forward buffer for re-reading.
+        /// </summary>
+        /// <param name="tokens">The tokens to put back.</param>
+        public void PutTokensBack(int[] tokens)
+        {
+            if (tokens == null || tokens.Length == 0)
+                return;
+
+            // Add tokens to the front of the forward buffer (in reverse order)
+            for (int i = tokens.Length - 1; i >= 0; i--)
+            {
+                _forwardBuffer.Enqueue(tokens[i]);
+            }
+
+            // Adjust position
+            _currentPosition -= tokens.Length;
+        }
+
+        /// <summary>
         /// Seeks backward in the token buffer by the specified number of tokens.
         /// </summary>
         /// <param name="tokenCount">The number of tokens to seek backward.</param>
@@ -170,4 +201,4 @@ namespace EasyReasy.KnowledgeBase.Chunking
             return true;
         }
     }
-} 
+}

@@ -9,7 +9,7 @@
         /// Gets the unique identifier of the vector.
         /// </summary>
         public readonly Guid Id;
-        
+
         /// <summary>
         /// Gets the vector values as a float array.
         /// </summary>
