@@ -2,8 +2,8 @@
 {
     public class KnowledgeFile
     {
-        public Guid Id { get; private set; }
-        public string Name { get; private set; }
-        public byte[] Hash { get; private set; }
+        public Guid Id { get; set; }
+        public required string Name { get; set; }
+        public required byte[] Hash { get; set; }
     }
 }
