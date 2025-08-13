@@ -59,8 +59,9 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <summary>
         /// Reads the next text segment from the stream.
         /// </summary>
+        /// <param name="cancellationToken">Cancellation token for the operation.</param>
         /// <returns>The next text segment as a string, or null if no more content is available.</returns>
-        public async Task<string?> ReadNextTextSegmentAsync()
+        public async Task<string?> ReadNextTextSegmentAsync(CancellationToken cancellationToken = default)
         {
             if (_contentReader.EndOfStream && _unreadBuffer.Count == 0)
                 return null;
@@ -71,6 +72,9 @@ namespace EasyReasy.KnowledgeBase.Chunking
 
             while (true)
             {
+                if (cancellationToken.IsCancellationRequested)
+                    return null;
+
                 char currentChar;
 
                 // First check our internal buffer

@@ -25,5 +25,14 @@
             Id = id;
             Content = content;
         }
+
+        /// <summary>
+        /// Returns the content of the chunk.
+        /// </summary>
+        /// <returns>The text content of the chunk.</returns>
+        public override string ToString()
+        {
+            return Content;
+        }
     }
 }

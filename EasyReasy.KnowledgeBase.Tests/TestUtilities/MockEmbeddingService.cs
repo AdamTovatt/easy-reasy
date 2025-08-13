@@ -1,0 +1,44 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using EasyReasy.KnowledgeBase.Generation;
+
+namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
+{
+    /// <summary>
+    /// Deterministic mock implementation of IEmbeddingService for tests.
+    /// Generates normalized pseudo-random embeddings based on input text hash.
+    /// </summary>
+    public sealed class MockEmbeddingService : IEmbeddingService
+    {
+        public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
+        {
+            float[] embedding = new float[384];
+
+            int hash = text.GetHashCode();
+            Random random = new Random(hash);
+
+            for (int i = 0; i < embedding.Length; i++)
+            {
+                embedding[i] = (float)((random.NextDouble() * 2) - 1);
+            }
+
+            float sumSquares = 0f;
+            for (int i = 0; i < embedding.Length; i++)
+            {
+                sumSquares += embedding[i] * embedding[i];
+            }
+
+            float norm = (float)Math.Sqrt(sumSquares);
+            if (norm > 0)
+            {
+                for (int i = 0; i < embedding.Length; i++)
+                {
+                    embedding[i] /= norm;
+                }
+            }
+
+            return Task.FromResult(embedding);
+        }
+    }
+}

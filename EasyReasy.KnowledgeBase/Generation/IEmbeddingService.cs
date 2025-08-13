@@ -1,6 +1,3 @@
-using System.Threading;
-using System.Threading.Tasks;
-
 namespace EasyReasy.KnowledgeBase.Generation
 {
     /// <summary>
@@ -16,4 +13,4 @@ namespace EasyReasy.KnowledgeBase.Generation
         /// <returns>A task that represents the asynchronous embedding operation. The task result contains the embedding vector.</returns>
         Task<float[]> EmbedAsync(string text, CancellationToken ct = default);
     }
-} 
+}

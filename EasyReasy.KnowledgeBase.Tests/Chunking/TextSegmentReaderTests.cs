@@ -14,7 +14,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n", ". ");
 
             // Act
-            string? result = await segmentReader.ReadNextTextSegmentAsync();
+            string? result = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
 
             // Assert
             Assert.IsNull(result);
@@ -30,9 +30,9 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n", ". ");
 
             // Act
-            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
-            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync();
-            string? thirdSegment = await segmentReader.ReadNextTextSegmentAsync();
+            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? thirdSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
 
             Console.WriteLine($"First segment:\n{firstSegment}");
             Console.WriteLine($"Second segment:\n{secondSegment}");
@@ -57,9 +57,9 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n", ". ");
 
             // Act
-            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
-            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync();
-            string? thirdSegment = await segmentReader.ReadNextTextSegmentAsync();
+            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? thirdSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
 
             Console.WriteLine($"First segment:\n\"{firstSegment}\"");
             Console.WriteLine($"Second segment:\n\"{secondSegment}\"");
@@ -84,8 +84,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n", ". ");
 
             // Act
-            string? segment = await segmentReader.ReadNextTextSegmentAsync();
-            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync();
+            string? segment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
 
             Console.WriteLine($"Segment:\n{segment}");
 
@@ -105,9 +105,9 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "</break>", "\n", ". ");
 
             // Act
-            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
-            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync();
-            string? thirdSegment = await segmentReader.ReadNextTextSegmentAsync();
+            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? thirdSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
 
             Console.WriteLine($"First segment:\n{firstSegment}");
             Console.WriteLine($"Second segment:\n{secondSegment}");
@@ -134,9 +134,9 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             TextSegmentReader segmentReader = TextSegmentReader.Create(reader, ". ", "! ", "?");
 
             // Act
-            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
-            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync();
-            string? thirdSegment = await segmentReader.ReadNextTextSegmentAsync();
+            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? thirdSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
 
             Console.WriteLine($"First segment:\n{firstSegment}");
             Console.WriteLine($"Second segment:\n{secondSegment}");
@@ -162,8 +162,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "...", ". ", ".");
 
             // Act
-            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
-            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync();
+            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
 
             Console.WriteLine($"First segment: \"{firstSegment}\"");
             Console.WriteLine($"Second segment: \"{secondSegment}\"");
@@ -187,8 +187,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             TextSegmentReader segmentReader = TextSegmentReader.Create(reader, "\n\n", "\n", ".");
 
             // Act
-            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync();
-            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync();
+            string? firstSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
+            string? secondSegment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None);
 
             Console.WriteLine($"First segment: \"{firstSegment}\"");
             Console.WriteLine($"Second segment: \"{secondSegment}\"");
@@ -214,7 +214,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             // Act - Read all segments
             List<string> segments = new List<string>();
             string? segment;
-            while ((segment = await segmentReader.ReadNextTextSegmentAsync()) != null)
+            while ((segment = await segmentReader.ReadNextTextSegmentAsync(CancellationToken.None)) != null)
             {
                 segments.Add(segment);
                 Console.WriteLine($"Segment {segments.Count}: \"{segment}\"");

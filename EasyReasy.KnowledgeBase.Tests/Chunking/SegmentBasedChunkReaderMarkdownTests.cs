@@ -5,7 +5,7 @@ using System.Reflection;
 namespace EasyReasy.KnowledgeBase.Tests.Chunking
 {
     [TestClass]
-    public class MarkdownKnowledgeChunkReaderTests
+    public class SegmentBasedChunkReaderMarkdownTests
     {
         private static ResourceManager _resourceManager = null!;
         private static ITokenizer _tokenizer = null!;
@@ -29,7 +29,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
-            string? result = await chunkReader.ReadNextChunkContentAsync();
+            string? result = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
 
             // Assert
             Assert.IsNull(result, "Result should be null when no content is provided");
@@ -47,7 +47,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
-            string? result = await chunkReader.ReadNextChunkContentAsync();
+            string? result = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
 
             // Assert
             Assert.IsNotNull(result, "Result should not be null when content is provided");
@@ -68,7 +68,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
-            string? result = await chunkReader.ReadNextChunkContentAsync();
+            string? result = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
 
             // Assert
             Assert.IsNotNull(result, "Result should not be null when content is provided");
@@ -90,8 +90,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
-            string? firstChunk = await chunkReader.ReadNextChunkContentAsync();
-            string? secondChunk = await chunkReader.ReadNextChunkContentAsync();
+            string? firstChunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
+            string? secondChunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
 
             // Assert
             Assert.IsNotNull(firstChunk, "First chunk should not be null");
@@ -116,9 +116,9 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
-            string? firstChunk = await chunkReader.ReadNextChunkContentAsync();
-            string? secondChunk = await chunkReader.ReadNextChunkContentAsync();
-            string? thirdChunk = await chunkReader.ReadNextChunkContentAsync();
+            string? firstChunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
+            string? secondChunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
+            string? thirdChunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
 
             // Assert
             Assert.IsNotNull(firstChunk, "First chunk should not be null");
@@ -145,8 +145,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
             // Act
-            string? firstChunk = await chunkReader.ReadNextChunkContentAsync();
-            string? secondChunk = await chunkReader.ReadNextChunkContentAsync();
+            string? firstChunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
+            string? secondChunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
 
             // Assert
             Assert.IsNotNull(firstChunk, "First chunk should not be null");
@@ -173,7 +173,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             // Act
             List<string> chunks = new List<string>();
             string? chunk;
-            while ((chunk = await chunkReader.ReadNextChunkContentAsync()) != null)
+            while ((chunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None)) != null)
             {
                 chunks.Add(chunk);
             }
@@ -209,7 +209,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             // Act - Read all chunks
             List<string> chunks = new List<string>();
             string? chunk;
-            while ((chunk = await chunkReader.ReadNextChunkContentAsync()) != null)
+            while ((chunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None)) != null)
             {
                 chunks.Add(chunk);
             }
@@ -248,7 +248,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             // Act
             List<string> chunks = new List<string>();
             string? chunk;
-            while ((chunk = await chunkReader.ReadNextChunkContentAsync()) != null)
+            while ((chunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None)) != null)
             {
                 chunks.Add(chunk);
             }

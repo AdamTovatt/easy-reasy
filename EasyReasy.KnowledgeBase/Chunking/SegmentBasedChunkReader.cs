@@ -29,8 +29,9 @@
         /// <summary>
         /// Reads the next chunk of content from the markdown stream.
         /// </summary>
+        /// <param name="cancellationToken">Cancellation token for the operation.</param>
         /// <returns>The next chunk of content as a string, or null if no more content is available.</returns>
-        public async Task<string?> ReadNextChunkContentAsync()
+        public async Task<string?> ReadNextChunkContentAsync(CancellationToken cancellationToken = default)
         {
             // If we have a buffered chunk, start with it
             string currentChunk = _bufferedChunk ?? string.Empty;
@@ -39,7 +40,7 @@
             // If we don't have any buffered content, read the first segment
             if (string.IsNullOrEmpty(currentChunk))
             {
-                string? firstSegment = await _textSegmentReader.ReadNextTextSegmentAsync();
+                string? firstSegment = await _textSegmentReader.ReadNextTextSegmentAsync(cancellationToken);
                 if (firstSegment == null)
                     return null;
 
@@ -57,7 +58,7 @@
             // Keep reading segments and adding them to the chunk until we reach the token limit
             while (true)
             {
-                string? nextSegment = await _textSegmentReader.ReadNextTextSegmentAsync();
+                string? nextSegment = await _textSegmentReader.ReadNextTextSegmentAsync(cancellationToken);
                 if (nextSegment == null)
                 {
                     // No more content available, return what we have
