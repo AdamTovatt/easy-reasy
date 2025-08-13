@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="TestData\TestDocument03.md" />
     <EmbeddedResource Include="TestData\TestDocument02.md" />
     <EmbeddedResource Include="TestData\TestDocument01.md" />
   </ItemGroup>

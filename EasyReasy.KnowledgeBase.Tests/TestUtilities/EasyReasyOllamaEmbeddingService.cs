@@ -40,8 +40,6 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
             _client = OllamaClient.CreateUnauthorized(httpClient, apiKey);
         }
 
-
-
         /// <summary>
         /// Generates an embedding vector for the specified text using the Ollama API.
         /// </summary>
@@ -58,9 +56,6 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
 
             try
             {
-                // Ensure the client is authorized and model is available
-                await EnsureModelAvailableAsync(cancellationToken);
-
                 // Create the embedding request
                 EmbeddingRequest request = new EmbeddingRequest(_modelName, text);
 
@@ -72,23 +67,6 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 throw new InvalidOperationException($"Failed to generate embedding for text: {ex.Message}", ex);
-            }
-        }
-
-        private async Task EnsureModelAvailableAsync(CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                // Check if the model is available
-                bool isAvailable = await _client.IsModelAvailableAsync(_modelName, cancellationToken);
-                if (!isAvailable)
-                {
-                    throw new InvalidOperationException($"Model '{_modelName}' is not available on the Ollama server.");
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                throw new InvalidOperationException($"Failed to verify model availability: {ex.Message}", ex);
             }
         }
 

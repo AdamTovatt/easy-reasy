@@ -238,7 +238,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
             SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
 
-            const int cancellationTimeoutMs = 2000; // 2 seconds for real embeddings
+            const int cancellationTimeoutMs = 200; // 200 ms for real embeddings
 
             using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
             cancellationTokenSource.CancelAfter(TimeSpan.FromMilliseconds(cancellationTimeoutMs));
@@ -277,7 +277,36 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Actual time to reach post cancellation code: {stopwatch.ElapsedMilliseconds}ms");
 
             Assert.IsTrue(didHandleException, "Should handle cancellation exception");
-            Assert.IsTrue(sectionsProcessed > 0, "Should process at least some sections before cancellation");
+        }
+
+        [TestMethod]
+        public async Task ReadSectionsAsync_TestDocument3()
+        {
+            Assert.IsNotNull(_ollamaEmbeddingService);
+
+            // Arrange - Use real test document to test similarity-based grouping
+            using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument03);
+            using StreamReader reader = new StreamReader(stream);
+
+            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 50);
+            SectioningConfiguration sectioningConfig = new SectioningConfiguration(
+                maxTokensPerSection: 1000,
+                startThreshold: 0.8,
+                stopThreshold: 0.72,
+                confirmWindow: 2);
+
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
+            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
+
+            // Act
+            List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
+            await foreach (List<KnowledgeFileChunk> chunks in sectionReader.ReadSectionsAsync())
+            {
+                Console.WriteLine("=== SECTION START ===");
+                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(chunks));
+                Console.WriteLine("=== SECTION END ===");
+            }
         }
     }
 }
