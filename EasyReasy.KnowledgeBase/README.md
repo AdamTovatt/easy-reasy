@@ -154,5 +154,9 @@ double mean = ConfidenceMath.CalculateMean(values);
 - **.NET 8.0+**: Modern .NET features
 - **EasyReasy.KnowledgeBase.BertTokenization** (optional): For BERT tokenization
 
+## Testing
+
+Integration tests require a `TestEnvironmentVariables.txt` file in the test project's bin folder. The file should contain environment variables needed for external services like Ollama.
+
 ## License
 MIT 
