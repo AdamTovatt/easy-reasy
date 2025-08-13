@@ -253,13 +253,15 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
         [TestMethod]
         public async Task ReadSectionsAsync_ShouldHandleCancellation()
         {
+            const int rangeMax = 10000;
+
             // Arrange
-            string content = "# Test Document\n\n" + string.Join("\n\n", Enumerable.Range(1, 100).Select(i => $"Paragraph {i}."));
+            string content = "# Test Document\n\n" + string.Join("\n\n", Enumerable.Range(1, rangeMax).Select(i => $"Paragraph {i}."));
             Console.WriteLine("=== Testing Cancellation ===");
-            Console.WriteLine($"Input content: {content.Length} characters with {Enumerable.Range(1, 100).Count()} paragraphs");
+            Console.WriteLine($"Input content: {content.Length} characters with {Enumerable.Range(1, rangeMax).Count()} paragraphs");
 
             // Use SlowStream to ensure the operation takes long enough to be cancelled
-            using SlowStream slowStream = SlowStream.FromString(content, delayMillisecondsPerRead: 1, delayMillisecondsPerByte: 1);
+            using SlowStream slowStream = SlowStream.FromString(content, delayMillisecondsPerRead: 1, delayNanosecondsPerByte: 100);
             using StreamReader reader = new StreamReader(slowStream);
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 20);
             SectioningConfiguration sectioningConfig = new SectioningConfiguration();
@@ -267,17 +269,20 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
             SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
-            const int cancellationTimeoutMs = 20;
+            const int cancellationTimeoutMs = 100;
 
             using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
             cancellationTokenSource.CancelAfter(TimeSpan.FromMilliseconds(cancellationTimeoutMs)); // Cancel after 100ms
             Stopwatch stopwatch = Stopwatch.StartNew();
 
+            bool didHandleException = false;
+            int sectionsProcessed = 0;
+
             // Act & Assert
             Console.WriteLine($"Starting processing with {cancellationTimeoutMs}ms cancellation timeout...");
             try
             {
-                int sectionsProcessed = 0;
+
                 await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync(cancellationTokenSource.Token))
                 {
                     sectionsProcessed++;
@@ -292,12 +297,20 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
                 Console.WriteLine("Exception occurred:");
                 Console.WriteLine(exception.Message);
                 Console.WriteLine(exception.GetType().Name);
+
+                if (exception is OperationCanceledException)
+                {
+                    didHandleException = true;
+                }
             }
 
             stopwatch.Stop();
 
             Console.WriteLine($"Cancellation was expected after {cancellationTimeoutMs}ms");
             Console.WriteLine($"Actual time to reach post cancellation code: {stopwatch.ElapsedMilliseconds}ms");
+
+            Assert.IsTrue(didHandleException, "Should handle cancellation exception");
+            Assert.IsTrue(sectionsProcessed > 2, "Should still process some sections before cancellation");
         }
 
         [TestMethod]

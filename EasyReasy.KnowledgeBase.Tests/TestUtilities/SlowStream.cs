@@ -7,19 +7,19 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
     {
         private readonly Stream _innerStream;
         private readonly int _delayMillisecondsPerRead;
-        private readonly int _delayMillisecondsPerByte;
+        private readonly long _delayNanosecondsPerByte;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SlowStream"/> class.
         /// </summary>
         /// <param name="innerStream">The stream to wrap.</param>
         /// <param name="delayMillisecondsPerRead">Delay in milliseconds for each read operation.</param>
-        /// <param name="delayMillisecondsPerByte">Additional delay in milliseconds per byte read.</param>
-        public SlowStream(Stream innerStream, int delayMillisecondsPerRead = 10, int delayMillisecondsPerByte = 1)
+        /// <param name="delayNanosecondsPerByte">Additional delay in nanoseconds per byte read.</param>
+        public SlowStream(Stream innerStream, int delayMillisecondsPerRead = 10, long delayNanosecondsPerByte = 1000000)
         {
             _innerStream = innerStream ?? throw new ArgumentNullException(nameof(innerStream));
             _delayMillisecondsPerRead = delayMillisecondsPerRead;
-            _delayMillisecondsPerByte = delayMillisecondsPerByte;
+            _delayNanosecondsPerByte = delayNanosecondsPerByte;
         }
 
         /// <summary>
@@ -27,12 +27,12 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         /// </summary>
         /// <param name="data">The byte array to wrap.</param>
         /// <param name="delayMillisecondsPerRead">Delay in milliseconds for each read operation.</param>
-        /// <param name="delayMillisecondsPerByte">Additional delay in milliseconds per byte read.</param>
+        /// <param name="delayNanosecondsPerByte">Additional delay in nanoseconds per byte read.</param>
         /// <returns>A slow stream wrapping the byte array.</returns>
-        public static SlowStream FromBytes(byte[] data, int delayMillisecondsPerRead = 10, int delayMillisecondsPerByte = 1)
+        public static SlowStream FromBytes(byte[] data, int delayMillisecondsPerRead = 10, long delayNanosecondsPerByte = 1000000)
         {
             MemoryStream memoryStream = new MemoryStream(data);
-            return new SlowStream(memoryStream, delayMillisecondsPerRead, delayMillisecondsPerByte);
+            return new SlowStream(memoryStream, delayMillisecondsPerRead, delayNanosecondsPerByte);
         }
 
         /// <summary>
@@ -40,12 +40,12 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         /// </summary>
         /// <param name="text">The string to wrap.</param>
         /// <param name="delayMillisecondsPerRead">Delay in milliseconds for each read operation.</param>
-        /// <param name="delayMillisecondsPerByte">Additional delay in milliseconds per byte read.</param>
+        /// <param name="delayNanosecondsPerByte">Additional delay in nanoseconds per byte read.</param>
         /// <returns>A slow stream wrapping the string.</returns>
-        public static SlowStream FromString(string text, int delayMillisecondsPerRead = 10, int delayMillisecondsPerByte = 1)
+        public static SlowStream FromString(string text, int delayMillisecondsPerRead = 10, long delayNanosecondsPerByte = 1000000)
         {
             byte[] data = System.Text.Encoding.UTF8.GetBytes(text);
-            return FromBytes(data, delayMillisecondsPerRead, delayMillisecondsPerByte);
+            return FromBytes(data, delayMillisecondsPerRead, delayNanosecondsPerByte);
         }
 
         private async Task DelayAsync(int milliseconds, CancellationToken cancellationToken = default)
@@ -64,10 +64,12 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
             // Read from inner stream
             int bytesRead = await _innerStream.ReadAsync(buffer, offset, count, cancellationToken);
 
-            // Additional delay based on bytes read
+            // Additional delay based on bytes read (convert nanoseconds to milliseconds)
             if (bytesRead > 0)
             {
-                await DelayAsync(bytesRead * _delayMillisecondsPerByte, cancellationToken);
+                long totalNanoseconds = bytesRead * _delayNanosecondsPerByte;
+                int delayMilliseconds = (int)(totalNanoseconds / 1_000_000);
+                await DelayAsync(delayMilliseconds, cancellationToken);
             }
 
             return bytesRead;
@@ -83,7 +85,14 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         {
             await DelayAsync(_delayMillisecondsPerRead, cancellationToken);
             await _innerStream.WriteAsync(buffer, offset, count, cancellationToken);
-            await DelayAsync(count * _delayMillisecondsPerByte, cancellationToken);
+            
+            // Additional delay based on bytes written (convert nanoseconds to milliseconds)
+            if (count > 0)
+            {
+                long totalNanoseconds = count * _delayNanosecondsPerByte;
+                int delayMilliseconds = (int)(totalNanoseconds / 1_000_000);
+                await DelayAsync(delayMilliseconds, cancellationToken);
+            }
         }
 
         public override void Write(byte[] buffer, int offset, int count)
