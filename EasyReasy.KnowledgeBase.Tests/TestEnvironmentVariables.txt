@@ -1,0 +1,12 @@
+# Ollama Integration Test Environment Variables
+# This file should be placed in the same directory as the test executable
+# Update these values with your actual Ollama server configuration
+
+# The base URL for the Ollama server
+OLLAMA_BASE_URL=http://localhost:11434
+
+# The API key for Ollama server authentication
+OLLAMA_API_KEY=your-ollama-api-key-here
+
+# The model name to use for embeddings
+OLLAMA_MODEL_NAME=llama3.1 

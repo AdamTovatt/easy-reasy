@@ -59,7 +59,8 @@ namespace EasyReasy.EnvironmentVariables
         {
             if (!File.Exists(filePath))
             {
-                throw new FileNotFoundException($"Environment variables file not found: {filePath}");
+                string fullPath = Path.GetFullPath(filePath);
+                throw new FileNotFoundException($"Environment variables file not found: {filePath} ({fullPath})");
             }
 
             string content = File.ReadAllText(filePath);
