@@ -1,11 +1,12 @@
 ﻿using System.Text;
+using EasyReasy.KnowledgeBase.ConfidenceRating;
 
 namespace EasyReasy.KnowledgeBase.Models
 {
     /// <summary>
     /// Represents a section of a knowledge file containing a summary and associated chunks.
     /// </summary>
-    public class KnowledgeFileSection
+    public class KnowledgeFileSection : IVectorObject
     {
         /// <summary>
         /// Gets or sets the unique identifier for the section.
@@ -50,6 +51,24 @@ namespace EasyReasy.KnowledgeBase.Models
         public static KnowledgeFileSection CreateFromChunks(List<KnowledgeFileChunk> chunks)
         {
             return new KnowledgeFileSection(Guid.NewGuid(), chunks);
+        }
+
+        /// <summary>
+        /// Returns the vector representation of the section.
+        /// </summary>
+        /// <returns>The embedding vector for the section.</returns>
+        public float[] GetVector()
+        {
+            return Embedding ?? Array.Empty<float>();
+        }
+
+        /// <summary>
+        /// Returns true if the section contains a valid vector.
+        /// </summary>
+        /// <returns>True if the embedding vector is not null.</returns>
+        public bool ContainsVector()
+        {
+            return Embedding != null;
         }
 
         /// <summary>
