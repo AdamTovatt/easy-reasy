@@ -259,7 +259,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Input content: {content.Length} characters with {Enumerable.Range(1, 100).Count()} paragraphs");
 
             // Use SlowStream to ensure the operation takes long enough to be cancelled
-            using SlowStream slowStream = SlowStream.FromString(content, delayMillisecondsPerRead: 50, delayMillisecondsPerByte: 2);
+            using SlowStream slowStream = SlowStream.FromString(content, delayMillisecondsPerRead: 1, delayMillisecondsPerByte: 1);
             using StreamReader reader = new StreamReader(slowStream);
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 20);
             SectioningConfiguration sectioningConfig = new SectioningConfiguration();
@@ -267,10 +267,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
             SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
-            const int cancellationTimeoutMs = 100;
+            const int cancellationTimeoutMs = 20;
 
-            using CancellationTokenSource cts = new CancellationTokenSource();
-            cts.CancelAfter(TimeSpan.FromMilliseconds(cancellationTimeoutMs)); // Cancel after 100ms
+            using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+            cancellationTokenSource.CancelAfter(TimeSpan.FromMilliseconds(cancellationTimeoutMs)); // Cancel after 100ms
             Stopwatch stopwatch = Stopwatch.StartNew();
 
             // Act & Assert
@@ -278,7 +278,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             try
             {
                 int sectionsProcessed = 0;
-                await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync(cts.Token))
+                await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync(cancellationTokenSource.Token))
                 {
                     sectionsProcessed++;
                     Console.WriteLine($"Processed section {sectionsProcessed} with {section.Count} chunks");
@@ -287,7 +287,11 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             }
             catch (Exception exception)
             {
+                stopwatch.Stop();
+
+                Console.WriteLine("Exception occurred:");
                 Console.WriteLine(exception.Message);
+                Console.WriteLine(exception.GetType().Name);
             }
 
             stopwatch.Stop();

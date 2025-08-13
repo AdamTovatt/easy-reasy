@@ -43,10 +43,11 @@ namespace EasyReasy.KnowledgeBase.Chunking
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             // Prime the look-ahead queue
-            Queue<(KnowledgeFileChunk Chunk, float[] Embedding)?> lookaheadQueue = new Queue<(KnowledgeFileChunk, float[])?>();
+            Queue<KnowledgeFileChunk?> lookaheadQueue = new Queue<KnowledgeFileChunk?>();
             for (int i = 0; i < _configuration.LookaheadChunks; i++)
             {
-                (KnowledgeFileChunk Chunk, float[] Embedding)? item = await ReadOneAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                KnowledgeFileChunk? item = await ReadOneAsync(cancellationToken);
                 if (item == null) break;
                 lookaheadQueue.Enqueue(item);
             }
@@ -61,11 +62,13 @@ namespace EasyReasy.KnowledgeBase.Chunking
 
             while (lookaheadQueue.Count > 0)
             {
-                (KnowledgeFileChunk Chunk, float[] Embedding)? candidate = lookaheadQueue.Dequeue();
+                cancellationToken.ThrowIfCancellationRequested();
+                
+                KnowledgeFileChunk? candidate = lookaheadQueue.Dequeue();
                 if (candidate == null) break;
 
                 // Keep look-ahead filled
-                (KnowledgeFileChunk Chunk, float[] Embedding)? nextItem = await ReadOneAsync(cancellationToken);
+                KnowledgeFileChunk? nextItem = await ReadOneAsync(cancellationToken);
                 if (nextItem != null)
                 {
                     lookaheadQueue.Enqueue(nextItem);
@@ -74,15 +77,15 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 // Initialize centroid if this is the first chunk
                 if (centroid == null)
                 {
-                    centroid = new float[candidate.Value.Embedding.Length];
-                    Array.Copy(candidate.Value.Embedding, centroid, centroid.Length);
-                    currentSectionChunks.Add(candidate.Value.Chunk);
+                    centroid = new float[candidate.Embedding!.Length];
+                    Array.Copy(candidate.Embedding, centroid, centroid.Length);
+                    currentSectionChunks.Add(candidate);
                     chunkCount++;
                     continue;
                 }
 
                 // Compute similarity with current centroid
-                float similarity = ConfidenceMath.CosineSimilarity(candidate.Value.Embedding, centroid);
+                float similarity = ConfidenceMath.CosineSimilarity(candidate.Embedding!, centroid);
 
                 // Check if we should split based on similarity
                 bool shouldSplit = false;
@@ -101,7 +104,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 }
 
                 // Check if section size would be exceeded
-                if (SectionSizeExceeded(currentSectionChunks, candidate.Value.Chunk))
+                if (SectionSizeExceeded(currentSectionChunks, candidate))
                 {
                     shouldSplit = true;
                 }
@@ -116,18 +119,18 @@ namespace EasyReasy.KnowledgeBase.Chunking
 
                     // Start new section
                     currentSectionChunks.Clear();
-                    centroid = new float[candidate.Value.Embedding.Length];
-                    Array.Copy(candidate.Value.Embedding, centroid, centroid.Length);
-                    currentSectionChunks.Add(candidate.Value.Chunk);
+                    centroid = new float[candidate.Embedding!.Length];
+                    Array.Copy(candidate.Embedding, centroid, centroid.Length);
+                    currentSectionChunks.Add(candidate);
                     chunkCount = 1;
                     lowSimilarityStreak = 0;
                 }
                 else
                 {
                     // Add to current section
-                    currentSectionChunks.Add(candidate.Value.Chunk);
+                    currentSectionChunks.Add(candidate);
                     chunkCount++;
-                    ConfidenceMath.UpdateCentroidInPlace(centroid, candidate.Value.Embedding, chunkCount - 1);
+                    ConfidenceMath.UpdateCentroidInPlace(centroid, candidate.Embedding!, chunkCount - 1);
                 }
             }
 
@@ -138,13 +141,13 @@ namespace EasyReasy.KnowledgeBase.Chunking
             }
         }
 
-        private async Task<(KnowledgeFileChunk Chunk, float[] Embedding)?> ReadOneAsync(CancellationToken cancellationToken)
+        private async Task<KnowledgeFileChunk?> ReadOneAsync(CancellationToken cancellationToken)
         {
             string? content = await _chunkReader.ReadNextChunkContentAsync(cancellationToken);
             if (content == null) return null;
 
             float[] embedding = await _embeddings.EmbedAsync(content, cancellationToken);
-            return (new KnowledgeFileChunk(Guid.NewGuid(), content), embedding);
+            return new KnowledgeFileChunk(Guid.NewGuid(), content, embedding);
         }
 
         private bool SectionSizeExceeded(List<KnowledgeFileChunk> currentChunks, KnowledgeFileChunk candidateChunk)

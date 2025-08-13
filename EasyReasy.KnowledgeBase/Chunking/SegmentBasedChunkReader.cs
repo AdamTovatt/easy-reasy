@@ -58,6 +58,8 @@
             // Keep reading segments and adding them to the chunk until we reach the token limit
             while (true)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                
                 string? nextSegment = await _textSegmentReader.ReadNextTextSegmentAsync(cancellationToken);
                 if (nextSegment == null)
                 {

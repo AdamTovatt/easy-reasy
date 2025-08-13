@@ -72,8 +72,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
 
             while (true)
             {
-                if (cancellationToken.IsCancellationRequested)
-                    return null;
+                cancellationToken.ThrowIfCancellationRequested();
 
                 char currentChar;
 
@@ -85,10 +84,10 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 else
                 {
                     // Read from stream
-                    char[] buffer = new char[1];
-                    if (await _contentReader.ReadAsync(buffer, 0, 1) == 0)
+                    Memory<char> memoryBuffer = new Memory<char>(new char[1]);
+                    if (await _contentReader.ReadAsync(memoryBuffer, cancellationToken) == 0)
                         break; // End of stream
-                    currentChar = buffer[0];
+                    currentChar = memoryBuffer.Span[0];
                 }
 
                 segmentBuilder.Append(currentChar);
