@@ -23,16 +23,23 @@ namespace EasyReasy.KnowledgeBase.Models
         public List<KnowledgeFileChunk> Chunks { get; set; }
 
         /// <summary>
+        /// Gets or sets the embedding vector for the section.
+        /// </summary>
+        public float[]? Embedding { get; set; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="KnowledgeFileSection"/> class.
         /// </summary>
         /// <param name="id">The unique identifier for the section.</param>
-        /// <param name="summary">The summary description of the section.</param>
         /// <param name="chunks">The collection of chunks that belong to this section.</param>
-        public KnowledgeFileSection(Guid id, string? summary, List<KnowledgeFileChunk> chunks)
+        /// <param name="summary">The summary description of the section.</param>
+        /// <param name="embedding">The embedding vector for the section.</param>
+        public KnowledgeFileSection(Guid id, List<KnowledgeFileChunk> chunks, string? summary = null, float[]? embedding = null)
         {
             Id = id;
             Summary = summary;
             Chunks = chunks;
+            Embedding = embedding;
         }
 
         /// <summary>
@@ -42,7 +49,7 @@ namespace EasyReasy.KnowledgeBase.Models
         /// <returns>A new <see cref="KnowledgeFileSection"/> containing the provided chunks.</returns>
         public static KnowledgeFileSection CreateFromChunks(List<KnowledgeFileChunk> chunks)
         {
-            return new KnowledgeFileSection(Guid.NewGuid(), null, chunks);
+            return new KnowledgeFileSection(Guid.NewGuid(), chunks);
         }
 
         /// <summary>
