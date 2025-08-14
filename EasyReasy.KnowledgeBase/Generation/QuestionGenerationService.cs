@@ -33,13 +33,15 @@ namespace EasyReasy.KnowledgeBase.Generation
         {
             string response = await ProcessAsync(_systemPrompt, text, cancellationToken);
 
-            // Split by lines and extract questions using regex pattern for numbered lists
-            return response.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                         .Select(line => line.Trim())
-                         .Where(line => !string.IsNullOrWhiteSpace(line))
-                         .Select(line => System.Text.RegularExpressions.Regex.Replace(line, @"^\d+\.\s*", ""))
-                         .Where(question => !string.IsNullOrWhiteSpace(question))
-                         .ToList();
+            List<string>? questions = ListParser.ParseList(response);
+
+            if (questions == null || questions.Count == 0)
+            {
+                response = await ProcessAsync(_systemPrompt, text, cancellationToken); // try again but just once
+                questions = ListParser.ParseList(response);
+            }
+
+            return questions ?? new List<string>();
         }
     }
 }
