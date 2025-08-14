@@ -16,7 +16,7 @@ namespace EasyReasy.KnowledgeBase.Generation
         /// </summary>
         /// <param name="oneShotService">The one-shot service to use for summarization.</param>
         /// <param name="systemPrompt">An optional system prompt to guide the summary style.</param>
-        public SummarizationService(IOneShotService oneShotService, string? systemPrompt = null) 
+        public SummarizationService(IOneShotService oneShotService, string? systemPrompt = null)
             : base(oneShotService)
         {
             _systemPrompt = systemPrompt ?? DefaultSystemPrompt;
@@ -33,4 +33,4 @@ namespace EasyReasy.KnowledgeBase.Generation
             return ProcessAsync(_systemPrompt, text, cancellationToken);
         }
     }
-} 
+}

@@ -1,5 +1,5 @@
-﻿using System.Text;
-using EasyReasy.KnowledgeBase.ConfidenceRating;
+﻿using EasyReasy.KnowledgeBase.ConfidenceRating;
+using System.Text;
 
 namespace EasyReasy.KnowledgeBase.Models
 {

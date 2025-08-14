@@ -13,4 +13,4 @@ namespace EasyReasy.KnowledgeBase.Generation
         /// <returns>A task that represents the asynchronous summarization operation. The task result contains the generated summary.</returns>
         Task<string> SummarizeAsync(string text, CancellationToken cancellationToken = default);
     }
-} 
+}

@@ -1,4 +1,3 @@
-using EasyReasy.EnvironmentVariables;
 using EasyReasy.KnowledgeBase.Generation;
 using EasyReasy.Ollama.Client;
 using EasyReasy.Ollama.Common;

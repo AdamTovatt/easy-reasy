@@ -1,6 +1,3 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using EasyReasy.KnowledgeBase.Generation;
 
 namespace EasyReasy.KnowledgeBase.Tests.TestUtilities

@@ -59,7 +59,7 @@
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                
+
                 string? nextSegment = await _textSegmentReader.ReadNextTextSegmentAsync(cancellationToken);
                 if (nextSegment == null)
                 {

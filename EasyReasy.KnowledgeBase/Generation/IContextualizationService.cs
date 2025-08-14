@@ -14,4 +14,4 @@ namespace EasyReasy.KnowledgeBase.Generation
         /// <returns>A task that represents the asynchronous contextualization operation. The task result contains the contextual information.</returns>
         Task<string> ContextualizeAsync(string textSnippet, string surroundingContent, CancellationToken cancellationToken = default);
     }
-} 
+}

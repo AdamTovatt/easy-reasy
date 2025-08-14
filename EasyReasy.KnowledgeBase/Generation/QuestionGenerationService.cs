@@ -17,7 +17,7 @@ namespace EasyReasy.KnowledgeBase.Generation
         /// </summary>
         /// <param name="oneShotService">The one-shot service to use for question generation.</param>
         /// <param name="systemPrompt">An optional system prompt to guide the question generation style.</param>
-        public QuestionGenerationService(IOneShotService oneShotService, string? systemPrompt = null) 
+        public QuestionGenerationService(IOneShotService oneShotService, string? systemPrompt = null)
             : base(oneShotService)
         {
             _systemPrompt = systemPrompt ?? DefaultSystemPrompt;
@@ -32,7 +32,7 @@ namespace EasyReasy.KnowledgeBase.Generation
         public async Task<List<string>> GenerateQuestionsAsync(string text, CancellationToken cancellationToken = default)
         {
             string response = await ProcessAsync(_systemPrompt, text, cancellationToken);
-            
+
             // Split by lines and extract questions using regex pattern for numbered lists
             return response.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                          .Select(line => line.Trim())
@@ -42,4 +42,4 @@ namespace EasyReasy.KnowledgeBase.Generation
                          .ToList();
         }
     }
-} 
+}

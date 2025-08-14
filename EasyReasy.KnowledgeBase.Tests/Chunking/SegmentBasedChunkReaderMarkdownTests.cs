@@ -177,11 +177,11 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Assert.IsNotNull(firstChunk, "First chunk should not be null");
             Assert.IsNotNull(secondChunk, "Second chunk should not be null");
             Assert.IsNotNull(thirdChunk, "Third chunk should not be null");
-            
+
             Console.WriteLine($"First chunk:\n{firstChunk}");
             Console.WriteLine($"Second chunk:\n{secondChunk}");
             Console.WriteLine($"Third chunk:\n{thirdChunk}");
-            
+
             Assert.IsTrue(firstChunk.Contains("First paragraph."), $"First chunk should contain first paragraph. Chunk content: {firstChunk}");
             Assert.IsTrue(secondChunk.StartsWith("**Bold text**"), $"Second chunk should start with bold text. Chunk content: {secondChunk}");
             Assert.IsTrue(thirdChunk.StartsWith("```code block```"), $"Third chunk should start with code block. Chunk content: {thirdChunk}");

@@ -17,7 +17,7 @@ namespace EasyReasy.KnowledgeBase.Generation
         /// </summary>
         /// <param name="oneShotService">The one-shot service to use for contextualization.</param>
         /// <param name="systemPrompt">An optional system prompt to guide the contextualization style.</param>
-        public ContextualizationService(IOneShotService oneShotService, string? systemPrompt = null) 
+        public ContextualizationService(IOneShotService oneShotService, string? systemPrompt = null)
             : base(oneShotService)
         {
             _systemPrompt = systemPrompt ?? DefaultSystemPrompt;
@@ -36,4 +36,4 @@ namespace EasyReasy.KnowledgeBase.Generation
             return ProcessAsync(_systemPrompt, userInput, cancellationToken);
         }
     }
-} 
+}

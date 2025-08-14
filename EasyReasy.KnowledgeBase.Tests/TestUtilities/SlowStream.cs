@@ -85,7 +85,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         {
             await DelayAsync(_delayMillisecondsPerRead, cancellationToken);
             await _innerStream.WriteAsync(buffer, offset, count, cancellationToken);
-            
+
             // Additional delay based on bytes written (convert nanoseconds to milliseconds)
             if (count > 0)
             {

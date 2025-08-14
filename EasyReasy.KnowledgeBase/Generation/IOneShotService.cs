@@ -15,4 +15,4 @@ namespace EasyReasy.KnowledgeBase.Generation
         /// <returns>A task that represents the asynchronous processing operation. The task result contains the processed output.</returns>
         Task<string> ProcessAsync(string systemPrompt, string userInput, CancellationToken cancellationToken = default);
     }
-} 
+}

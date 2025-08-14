@@ -26,4 +26,4 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         [EnvironmentVariableName(minLength: 3)]
         public static readonly VariableName OllamaModelName = new VariableName("OLLAMA_MODEL_NAME");
     }
-} 
+}

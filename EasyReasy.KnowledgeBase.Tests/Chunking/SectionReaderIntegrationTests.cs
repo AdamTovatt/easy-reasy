@@ -1,11 +1,11 @@
+using EasyReasy.EnvironmentVariables;
 using EasyReasy.KnowledgeBase.BertTokenization;
 using EasyReasy.KnowledgeBase.Chunking;
 using EasyReasy.KnowledgeBase.Generation;
-using EasyReasy.KnowledgeBase.Tests.TestUtilities;
 using EasyReasy.KnowledgeBase.Models;
-using System.Reflection;
+using EasyReasy.KnowledgeBase.Tests.TestUtilities;
 using System.Diagnostics;
-using EasyReasy.EnvironmentVariables;
+using System.Reflection;
 
 namespace EasyReasy.KnowledgeBase.Tests.Chunking
 {

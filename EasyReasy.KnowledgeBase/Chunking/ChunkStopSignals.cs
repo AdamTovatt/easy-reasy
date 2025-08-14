@@ -27,4 +27,4 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 "**",       // Bold text
         ];
     }
-} 
+}

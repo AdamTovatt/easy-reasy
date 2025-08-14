@@ -13,4 +13,4 @@ namespace EasyReasy.KnowledgeBase.Generation
         /// <returns>A task that represents the asynchronous question generation operation. The task result contains the list of generated questions.</returns>
         Task<List<string>> GenerateQuestionsAsync(string text, CancellationToken cancellationToken = default);
     }
-} 
+}

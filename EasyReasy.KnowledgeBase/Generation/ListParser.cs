@@ -32,7 +32,7 @@ namespace EasyReasy.KnowledgeBase.Generation
 
             string[] lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
             List<string> nonEmptyLines = lines.Where(line => !string.IsNullOrWhiteSpace(line)).ToList();
-            
+
             if (nonEmptyLines.Count == 0)
                 return null;
 
@@ -83,18 +83,18 @@ namespace EasyReasy.KnowledgeBase.Generation
                     return System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^\d+\.$") ||  // "1."
                            System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^[-*]$");     // "-" or "*"
                 });
-                
+
                 if (allLooksLikeEmptyMarkers)
                 {
                     return null;
                 }
-                
+
                 // Single line without markers - not a valid list
                 if (nonEmptyLines.Count == 1)
                 {
                     return null;
                 }
-                
+
                 // Multiple lines without markers - treat as plain text list
                 result.AddRange(nonEmptyLines.Select(line => line.Trim()));
             }
@@ -106,4 +106,4 @@ namespace EasyReasy.KnowledgeBase.Generation
             return result;
         }
     }
-} 
+}
