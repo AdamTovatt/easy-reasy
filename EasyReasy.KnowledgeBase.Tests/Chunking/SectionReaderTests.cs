@@ -33,10 +33,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
 
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 100);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration();
+            SectioningConfiguration sectioningConfig = new SectioningConfiguration(chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -60,10 +60,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
 
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 100);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 200);
+            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 200, chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -96,10 +96,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
 
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 100);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 120);
+            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 120, chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -139,10 +139,11 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SectioningConfiguration sectioningConfig = new SectioningConfiguration(
                 maxTokensPerSection: 200,
                 lookaheadBufferSize: 50,
-                standardDeviationMultiplier: 1.0);
+                standardDeviationMultiplier: 1.0,
+                chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -176,10 +177,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
 
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 30);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration();
+            SectioningConfiguration sectioningConfig = new SectioningConfiguration(chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -210,10 +211,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument01);
             using StreamReader reader = new StreamReader(stream);
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 50, ChunkStopSignals.Markdown);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 200);
+            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 200, chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -261,10 +262,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             using SlowStream slowStream = SlowStream.FromString(content, delayMillisecondsPerRead: 1, delayNanosecondsPerByte: 100);
             using StreamReader reader = new StreamReader(slowStream);
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 20);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration();
+            SectioningConfiguration sectioningConfig = new SectioningConfiguration(chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
             const int cancellationTimeoutMs = 200;
 
@@ -327,10 +328,11 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SectioningConfiguration sectioningConfig = new SectioningConfiguration(
                 maxTokensPerSection: 50,
                 lookaheadBufferSize: 20, // Smaller buffer for this test
-                standardDeviationMultiplier: 0.8); // Lower multiplier to encourage more splits
+                standardDeviationMultiplier: 0.8, // Lower multiplier to encourage more splits
+                chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();

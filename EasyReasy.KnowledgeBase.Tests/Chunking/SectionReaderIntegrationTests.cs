@@ -51,54 +51,6 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
         }
 
         [TestMethod]
-        public async Task ReadSectionsAsync_WithRealEmbeddings_ShouldGroupSimilarContent()
-        {
-            // Skip test if Ollama service is not available
-            if (_ollamaEmbeddingService == null)
-            {
-                Assert.Inconclusive("Ollama embedding service not available. Set environment variables to run integration tests.");
-                return;
-            }
-
-            // Arrange - Use real test document to test similarity-based grouping with real embeddings
-            using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument02);
-            using StreamReader reader = new StreamReader(stream);
-
-            Console.WriteLine("=== Integration Test: Real Embeddings Similarity Grouping ===");
-            Console.WriteLine($"Using test document: {TestDataFiles.TestDocument02}");
-
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 50);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(
-                maxTokensPerSection: 200,
-                lookaheadBufferSize: 50,
-                standardDeviationMultiplier: 1.0);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
-
-            // Act
-            List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
-            await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync())
-            {
-                sections.Add(section);
-            }
-
-            // Assert
-            Console.WriteLine($"Created {sections.Count} sections with real embeddings");
-            Assert.IsTrue(sections.Count >= 1, "Should create at least one section");
-
-            // Verify sections contain related content
-            for (int i = 0; i < sections.Count; i++)
-            {
-                List<KnowledgeFileChunk> section = sections[i];
-                Assert.IsTrue(section.Count > 0, "Each section should contain at least one chunk");
-                Console.WriteLine($"Section {i + 1} ({section.Count} chunks):");
-                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(section).ToString());
-                Console.WriteLine($"End of Section {i + 1}\n");
-            }
-        }
-
-        [TestMethod]
         public async Task ReadSectionsAsync_WithRealEmbeddings_ShouldPreserveAllContent()
         {
             // Skip test if Ollama service is not available
@@ -117,10 +69,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument01);
             using StreamReader reader = new StreamReader(stream);
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 50);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 200);
+            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 200, chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -177,10 +129,11 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SectioningConfiguration sectioningConfig = new SectioningConfiguration(
                 maxTokensPerSection: 150,
                 lookaheadBufferSize: 60,
-                standardDeviationMultiplier: 1.0);
+                standardDeviationMultiplier: 1.0,
+                chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -231,10 +184,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
 
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 20);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration();
+            SectioningConfiguration sectioningConfig = new SectioningConfiguration(chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
 
             const int cancellationTimeoutMs = 200; // 200 ms for real embeddings
 
@@ -290,11 +243,12 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SectioningConfiguration sectioningConfig = new SectioningConfiguration(
                 maxTokensPerSection: 1000,
                 lookaheadBufferSize: 100,
-                standardDeviationMultiplier: 1.0);
+                standardDeviationMultiplier: 1.0,
+                chunkStopSignals: ChunkStopSignals.Markdown);
 
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
+            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();

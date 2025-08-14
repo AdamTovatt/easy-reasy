@@ -14,7 +14,6 @@ namespace EasyReasy.KnowledgeBase.Chunking
         private readonly IEmbeddingService _embeddings;
         private readonly SectioningConfiguration _configuration;
         private readonly ITokenizer _tokenizer;
-        private readonly string[] _chunkStopSignals;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SectionReader"/> class.
@@ -23,19 +22,16 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <param name="embeddings">The embedding service for generating vector representations.</param>
         /// <param name="configuration">The sectioning configuration.</param>
         /// <param name="tokenizer">The tokenizer for counting tokens.</param>
-        /// <param name="chunkStopSignals">Optional array of chunk stop signals for improved section boundary detection. If null, no stop signal awareness is used.</param>
         public SectionReader(
             SegmentBasedChunkReader chunkReader,
             IEmbeddingService embeddings,
             SectioningConfiguration configuration,
-            ITokenizer tokenizer,
-            string[]? chunkStopSignals = null)
+            ITokenizer tokenizer)
         {
             _chunkReader = chunkReader ?? throw new ArgumentNullException(nameof(chunkReader));
             _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _tokenizer = tokenizer ?? throw new ArgumentNullException(nameof(tokenizer));
-            _chunkStopSignals = chunkStopSignals ?? [];
         }
 
         /// <summary>
@@ -264,7 +260,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
 
             // If we have chunk stop signals configured, be more lenient with small sections
             // that start with stop signals (they need more content to be meaningful)
-            if (_chunkStopSignals.Length > 0 && currentSectionChunks.Count <= 2)
+            if (_configuration.ChunkStopSignals.Length > 0 && currentSectionChunks.Count <= 2)
             {
                 // Check if the candidate chunk (which would start the next section) begins with a stop signal
                 if (StartsWithStopSignal(candidateChunk.Content))
@@ -292,10 +288,10 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <returns>True if the content starts with a stop signal, false otherwise.</returns>
         private bool StartsWithStopSignal(string content)
         {
-            if (string.IsNullOrEmpty(content) || _chunkStopSignals.Length == 0)
+            if (string.IsNullOrEmpty(content) || _configuration.ChunkStopSignals.Length == 0)
                 return false;
 
-            foreach (string stopSignal in _chunkStopSignals)
+            foreach (string stopSignal in _configuration.ChunkStopSignals)
             {
                 if (!string.IsNullOrEmpty(stopSignal) && content.StartsWith(stopSignal))
                 {

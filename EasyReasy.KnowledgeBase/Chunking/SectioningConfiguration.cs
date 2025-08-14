@@ -53,6 +53,12 @@ namespace EasyReasy.KnowledgeBase.Chunking
         public int MinimumTokensPerSection { get; }
 
         /// <summary>
+        /// Gets the chunk stop signals that should be considered for improved section boundary detection.
+        /// When a chunk starts with any of these signals, the sectioning logic becomes more cautious about splitting.
+        /// </summary>
+        public string[] ChunkStopSignals { get; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="SectioningConfiguration"/> class.
         /// </summary>
         /// <param name="maxTokensPerSection">The maximum number of tokens allowed per section. Default is 4000.</param>
@@ -62,6 +68,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <param name="tokenStrictnessThreshold">The token usage percentage at which sectioning becomes stricter. Default is 0.75 (75%).</param>
         /// <param name="minimumChunksPerSection">The minimum number of chunks required before a section can be split. Default is 2.</param>
         /// <param name="minimumTokensPerSection">The minimum number of tokens required before a section can be split. Default is 50.</param>
+        /// <param name="chunkStopSignals">Optional chunk stop signals for improved section boundary detection. If null, no stop signal awareness is used.</param>
         public SectioningConfiguration(
             int maxTokensPerSection = 4000,
             int lookaheadBufferSize = 100,
@@ -69,7 +76,8 @@ namespace EasyReasy.KnowledgeBase.Chunking
             double minimumSimilarityThreshold = 0.65,
             double tokenStrictnessThreshold = 0.75,
             int minimumChunksPerSection = 2,
-            int minimumTokensPerSection = 50)
+            int minimumTokensPerSection = 50,
+            string[]? chunkStopSignals = null)
         {
             MaxTokensPerSection = maxTokensPerSection;
             LookaheadBufferSize = Math.Max(10, Math.Min(lookaheadBufferSize, 500));
@@ -78,6 +86,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
             TokenStrictnessThreshold = Math.Max(0.5, Math.Min(tokenStrictnessThreshold, 0.95));
             MinimumChunksPerSection = Math.Max(1, Math.Min(minimumChunksPerSection, 10));
             MinimumTokensPerSection = Math.Max(10, Math.Min(minimumTokensPerSection, 500));
+            ChunkStopSignals = chunkStopSignals ?? [];
         }
     }
 }
