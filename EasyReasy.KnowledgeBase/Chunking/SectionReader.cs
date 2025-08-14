@@ -6,6 +6,11 @@ using System.Runtime.CompilerServices;
 namespace EasyReasy.KnowledgeBase.Chunking
 {
     /// <summary>
+    /// Represents temporary chunk content during processing before section assignment.
+    /// </summary>
+    internal readonly record struct ChunkContent(string Content, float[] Embedding);
+
+    /// <summary>
     /// A knowledge section reader that groups chunks into logical sections based on embedding similarity.
     /// </summary>
     public sealed class SectionReader : IKnowledgeSectionReader, IDisposable
@@ -14,6 +19,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
         private readonly IEmbeddingService _embeddings;
         private readonly SectioningConfiguration _configuration;
         private readonly ITokenizer _tokenizer;
+        private readonly Guid _fileId;
         private readonly StreamReader? _ownedStreamReader;
         private bool _disposed;
 
@@ -24,12 +30,14 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <param name="embeddings">The embedding service for generating vector representations.</param>
         /// <param name="configuration">The sectioning configuration.</param>
         /// <param name="tokenizer">The tokenizer for counting tokens.</param>
+        /// <param name="fileId">The unique identifier of the knowledge file being processed.</param>
         public SectionReader(
             SegmentBasedChunkReader chunkReader,
             IEmbeddingService embeddings,
             SectioningConfiguration configuration,
-            ITokenizer tokenizer)
-            : this(chunkReader, embeddings, configuration, tokenizer, ownedStreamReader: null)
+            ITokenizer tokenizer,
+            Guid fileId)
+            : this(chunkReader, embeddings, configuration, tokenizer, fileId, ownedStreamReader: null)
         {
         }
 
@@ -40,18 +48,21 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <param name="embeddings">The embedding service for generating vector representations.</param>
         /// <param name="configuration">The sectioning configuration.</param>
         /// <param name="tokenizer">The tokenizer for counting tokens.</param>
+        /// <param name="fileId">The unique identifier of the knowledge file being processed.</param>
         /// <param name="ownedStreamReader">The StreamReader that this instance owns and should dispose, or null if not owned.</param>
         internal SectionReader(
             SegmentBasedChunkReader chunkReader,
             IEmbeddingService embeddings,
             SectioningConfiguration configuration,
             ITokenizer tokenizer,
+            Guid fileId,
             StreamReader? ownedStreamReader)
         {
             _chunkReader = chunkReader ?? throw new ArgumentNullException(nameof(chunkReader));
             _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _tokenizer = tokenizer ?? throw new ArgumentNullException(nameof(tokenizer));
+            _fileId = fileId;
             _ownedStreamReader = ownedStreamReader;
         }
 
@@ -64,11 +75,11 @@ namespace EasyReasy.KnowledgeBase.Chunking
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             // Prime the look-ahead buffer
-            Queue<KnowledgeFileChunk?> lookaheadBuffer = new Queue<KnowledgeFileChunk?>();
+            Queue<ChunkContent?> lookaheadBuffer = new Queue<ChunkContent?>();
             for (int i = 0; i < _configuration.LookaheadBufferSize; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                KnowledgeFileChunk? item = await ReadOneAsync(cancellationToken);
+                ChunkContent? item = await ReadOneAsync(cancellationToken);
                 if (item == null) break;
                 lookaheadBuffer.Enqueue(item);
             }
@@ -76,19 +87,20 @@ namespace EasyReasy.KnowledgeBase.Chunking
             if (lookaheadBuffer.Count == 0) yield break;
 
             // Start the first section
-            List<KnowledgeFileChunk> currentSectionChunks = new List<KnowledgeFileChunk>();
+            List<ChunkContent> currentSectionChunks = new List<ChunkContent>();
             float[]? centroid = null;
             int chunkCount = 0;
+            int currentSectionIndex = 0;
 
             while (lookaheadBuffer.Count > 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                KnowledgeFileChunk? candidate = lookaheadBuffer.Dequeue();
+                ChunkContent? candidate = lookaheadBuffer.Dequeue();
                 if (candidate == null) break;
 
                 // Keep look-ahead buffer filled
-                KnowledgeFileChunk? nextItem = await ReadOneAsync(cancellationToken);
+                ChunkContent? nextItem = await ReadOneAsync(cancellationToken);
                 if (nextItem != null)
                 {
                     lookaheadBuffer.Enqueue(nextItem);
@@ -97,15 +109,15 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 // Initialize centroid if this is the first chunk
                 if (centroid == null)
                 {
-                    centroid = new float[candidate.Embedding!.Length];
-                    Array.Copy(candidate.Embedding, centroid, centroid.Length);
-                    currentSectionChunks.Add(candidate);
+                    centroid = new float[candidate.Value.Embedding.Length];
+                    Array.Copy(candidate.Value.Embedding, centroid, centroid.Length);
+                    currentSectionChunks.Add(candidate.Value);
                     chunkCount++;
                     continue;
                 }
 
                 // Compute similarity with current centroid
-                float similarity = ConfidenceMath.CosineSimilarity(candidate.Embedding!, centroid);
+                float similarity = ConfidenceMath.CosineSimilarity(candidate.Value.Embedding, centroid);
 
                 // Check if we should split based on statistical analysis
                 bool shouldSplit = false;
@@ -116,14 +128,14 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 if (similarity < splitThreshold)
                 {
                     // Check minimum section constraints before allowing split
-                    if (SectionMeetsMinimumRequirements(currentSectionChunks, candidate))
+                    if (SectionMeetsMinimumRequirements(currentSectionChunks, candidate.Value))
                     {
                         shouldSplit = true;
                     }
                 }
 
                 // Check if section size would be exceeded
-                if (SectionSizeExceeded(currentSectionChunks, candidate))
+                if (SectionSizeExceeded(currentSectionChunks, candidate.Value))
                 {
                     shouldSplit = true;
                 }
@@ -133,39 +145,66 @@ namespace EasyReasy.KnowledgeBase.Chunking
                     // Yield current section if it has content
                     if (currentSectionChunks.Count > 0)
                     {
-                        yield return new List<KnowledgeFileChunk>(currentSectionChunks);
+                        yield return ConvertToKnowledgeFileChunks(currentSectionChunks, currentSectionIndex);
+                        currentSectionIndex++;
                     }
 
                     // Start new section
                     currentSectionChunks.Clear();
-                    centroid = new float[candidate.Embedding!.Length];
-                    Array.Copy(candidate.Embedding, centroid, centroid.Length);
-                    currentSectionChunks.Add(candidate);
+                    centroid = new float[candidate.Value.Embedding.Length];
+                    Array.Copy(candidate.Value.Embedding, centroid, centroid.Length);
+                    currentSectionChunks.Add(candidate.Value);
                     chunkCount = 1;
                 }
                 else
                 {
                     // Add to current section
-                    currentSectionChunks.Add(candidate);
+                    currentSectionChunks.Add(candidate.Value);
                     chunkCount++;
-                    ConfidenceMath.UpdateCentroidInPlace(centroid, candidate.Embedding!, chunkCount - 1);
+                    ConfidenceMath.UpdateCentroidInPlace(centroid, candidate.Value.Embedding, chunkCount - 1);
                 }
             }
 
             // Yield final section if it has content
             if (currentSectionChunks.Count > 0)
             {
-                yield return new List<KnowledgeFileChunk>(currentSectionChunks);
+                yield return ConvertToKnowledgeFileChunks(currentSectionChunks, currentSectionIndex);
             }
         }
 
-        private async Task<KnowledgeFileChunk?> ReadOneAsync(CancellationToken cancellationToken)
+        /// <summary>
+        /// Converts a list of ChunkContent to a list of KnowledgeFileChunk objects with proper section relationships.
+        /// </summary>
+        /// <param name="chunkContents">The chunk content objects to convert.</param>
+        /// <param name="sectionIndex">The index of the section these chunks belong to.</param>
+        /// <returns>A list of KnowledgeFileChunk objects with proper relationships.</returns>
+        private List<KnowledgeFileChunk> ConvertToKnowledgeFileChunks(List<ChunkContent> chunkContents, int sectionIndex)
+        {
+            Guid sectionId = Guid.NewGuid();
+            List<KnowledgeFileChunk> chunks = new List<KnowledgeFileChunk>();
+
+            for (int i = 0; i < chunkContents.Count; i++)
+            {
+                ChunkContent chunkContent = chunkContents[i];
+                KnowledgeFileChunk chunk = new KnowledgeFileChunk(
+                    id: Guid.NewGuid(),
+                    sectionId: sectionId,
+                    chunkIndex: i,
+                    content: chunkContent.Content,
+                    embedding: chunkContent.Embedding);
+                chunks.Add(chunk);
+            }
+
+            return chunks;
+        }
+
+        private async Task<ChunkContent?> ReadOneAsync(CancellationToken cancellationToken)
         {
             string? content = await _chunkReader.ReadNextChunkContentAsync(cancellationToken);
             if (content == null) return null;
 
             float[] embedding = await _embeddings.EmbedAsync(content, cancellationToken);
-            return new KnowledgeFileChunk(Guid.NewGuid(), content, embedding);
+            return new ChunkContent(content, embedding);
         }
 
         /// <summary>
@@ -178,17 +217,17 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <returns>The similarity threshold below which a split should occur.</returns>
         private double CalculateStatisticalSplitThreshold(
             float[] centroid,
-            Queue<KnowledgeFileChunk?> lookaheadBuffer,
-            List<KnowledgeFileChunk> currentSectionChunks)
+            Queue<ChunkContent?> lookaheadBuffer,
+            List<ChunkContent> currentSectionChunks)
         {
             List<double> similarities = new List<double>();
 
             // Calculate similarities for lookahead chunks
-            foreach (KnowledgeFileChunk? chunk in lookaheadBuffer)
+            foreach (ChunkContent? chunk in lookaheadBuffer)
             {
-                if (chunk?.Embedding != null)
+                if (chunk != null)
                 {
-                    double similarity = ConfidenceMath.CosineSimilarity(chunk.Embedding, centroid);
+                    double similarity = ConfidenceMath.CosineSimilarity(chunk.Value.Embedding, centroid);
                     similarities.Add(similarity);
                 }
             }
@@ -196,9 +235,9 @@ namespace EasyReasy.KnowledgeBase.Chunking
             // If we don't have enough lookahead data, use current section's internal similarities as fallback
             if (similarities.Count < 5 && currentSectionChunks.Count > 1)
             {
-                foreach (KnowledgeFileChunk chunk in currentSectionChunks)
+                foreach (ChunkContent chunk in currentSectionChunks)
                 {
-                    double similarity = ConfidenceMath.CosineSimilarity(chunk.Embedding!, centroid);
+                    double similarity = ConfidenceMath.CosineSimilarity(chunk.Embedding, centroid);
                     similarities.Add(similarity);
                 }
             }
@@ -234,7 +273,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <param name="baseThreshold">The base similarity threshold before token adjustment.</param>
         /// <param name="currentSectionChunks">Chunks in the current section.</param>
         /// <returns>The adjusted threshold that becomes more strict as token usage increases.</returns>
-        private double CalculateTokenAdjustedThreshold(double baseThreshold, List<KnowledgeFileChunk> currentSectionChunks)
+        private double CalculateTokenAdjustedThreshold(double baseThreshold, List<ChunkContent> currentSectionChunks)
         {
             // Calculate current token usage
             int currentTokens = currentSectionChunks.Sum(chunk => _tokenizer.CountTokens(chunk.Content));
@@ -264,7 +303,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <param name="currentSectionChunks">Chunks in the current section.</param>
         /// <param name="candidateChunk">The chunk being considered for the section.</param>
         /// <returns>True if the section can be split, false if it should continue growing.</returns>
-        private bool SectionMeetsMinimumRequirements(List<KnowledgeFileChunk> currentSectionChunks, KnowledgeFileChunk candidateChunk)
+        private bool SectionMeetsMinimumRequirements(List<ChunkContent> currentSectionChunks, ChunkContent candidateChunk)
         {
             // Check minimum chunk count
             if (currentSectionChunks.Count < _configuration.MinimumChunksPerSection)
@@ -323,12 +362,12 @@ namespace EasyReasy.KnowledgeBase.Chunking
             return false;
         }
 
-        private bool SectionSizeExceeded(List<KnowledgeFileChunk> currentChunks, KnowledgeFileChunk candidateChunk)
+        private bool SectionSizeExceeded(List<ChunkContent> currentChunks, ChunkContent candidateChunk)
         {
             int totalTokens = 0;
 
             // Count tokens in current chunks
-            foreach (KnowledgeFileChunk chunk in currentChunks)
+            foreach (ChunkContent chunk in currentChunks)
             {
                 totalTokens += _tokenizer.CountTokens(chunk.Content);
             }

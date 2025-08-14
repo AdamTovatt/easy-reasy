@@ -13,6 +13,16 @@ namespace EasyReasy.KnowledgeBase.Models
         public Guid Id { get; set; }
 
         /// <summary>
+        /// Gets or sets the unique identifier of the section this chunk belongs to.
+        /// </summary>
+        public Guid SectionId { get; set; }
+
+        /// <summary>
+        /// Gets or sets the zero-based index of this chunk within the section.
+        /// </summary>
+        public int ChunkIndex { get; set; }
+
+        /// <summary>
         /// Gets or sets the text content of the chunk.
         /// </summary>
         public string Content { get; set; }
@@ -26,11 +36,15 @@ namespace EasyReasy.KnowledgeBase.Models
         /// Initializes a new instance of the <see cref="KnowledgeFileChunk"/> class.
         /// </summary>
         /// <param name="id">The unique identifier for the chunk.</param>
+        /// <param name="sectionId">The unique identifier of the section this chunk belongs to.</param>
+        /// <param name="chunkIndex">The zero-based index of this chunk within the section.</param>
         /// <param name="content">The text content of the chunk.</param>
         /// <param name="embedding">The embedding vector for the chunk.</param>
-        public KnowledgeFileChunk(Guid id, string content, float[]? embedding = null)
+        public KnowledgeFileChunk(Guid id, Guid sectionId, int chunkIndex, string content, float[]? embedding = null)
         {
             Id = id;
+            SectionId = sectionId;
+            ChunkIndex = chunkIndex;
             Content = content;
             Embedding = embedding;
         }

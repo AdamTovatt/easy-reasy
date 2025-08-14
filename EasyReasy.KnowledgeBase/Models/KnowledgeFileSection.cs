@@ -14,6 +14,16 @@ namespace EasyReasy.KnowledgeBase.Models
         public Guid Id { get; set; }
 
         /// <summary>
+        /// Gets or sets the unique identifier of the knowledge file this section belongs to.
+        /// </summary>
+        public Guid FileId { get; set; }
+
+        /// <summary>
+        /// Gets or sets the zero-based index of this section within the knowledge file.
+        /// </summary>
+        public int SectionIndex { get; set; }
+
+        /// <summary>
         /// Gets or sets the summary description of the section.
         /// </summary>
         public string? Summary { get; set; }
@@ -32,12 +42,16 @@ namespace EasyReasy.KnowledgeBase.Models
         /// Initializes a new instance of the <see cref="KnowledgeFileSection"/> class.
         /// </summary>
         /// <param name="id">The unique identifier for the section.</param>
+        /// <param name="fileId">The unique identifier of the knowledge file this section belongs to.</param>
+        /// <param name="sectionIndex">The zero-based index of this section within the knowledge file.</param>
         /// <param name="chunks">The collection of chunks that belong to this section.</param>
         /// <param name="summary">The summary description of the section.</param>
         /// <param name="embedding">The embedding vector for the section.</param>
-        public KnowledgeFileSection(Guid id, List<KnowledgeFileChunk> chunks, string? summary = null, float[]? embedding = null)
+        public KnowledgeFileSection(Guid id, Guid fileId, int sectionIndex, List<KnowledgeFileChunk> chunks, string? summary = null, float[]? embedding = null)
         {
             Id = id;
+            FileId = fileId;
+            SectionIndex = sectionIndex;
             Summary = summary;
             Chunks = chunks;
             Embedding = embedding;
@@ -47,10 +61,12 @@ namespace EasyReasy.KnowledgeBase.Models
         /// Creates a new <see cref="KnowledgeFileSection"/> instance from a list of chunks, assigning a new unique identifier and no summary.
         /// </summary>
         /// <param name="chunks">The collection of <see cref="KnowledgeFileChunk"/> objects to include in the section.</param>
+        /// <param name="fileId">The unique identifier of the knowledge file this section belongs to.</param>
+        /// <param name="sectionIndex">The zero-based index of this section within the knowledge file.</param>
         /// <returns>A new <see cref="KnowledgeFileSection"/> containing the provided chunks.</returns>
-        public static KnowledgeFileSection CreateFromChunks(List<KnowledgeFileChunk> chunks)
+        public static KnowledgeFileSection CreateFromChunks(List<KnowledgeFileChunk> chunks, Guid fileId, int sectionIndex)
         {
-            return new KnowledgeFileSection(Guid.NewGuid(), chunks);
+            return new KnowledgeFileSection(Guid.NewGuid(), fileId, sectionIndex, chunks);
         }
 
         /// <summary>
