@@ -67,6 +67,14 @@
                     return string.IsNullOrEmpty(currentChunk) ? null : currentChunk;
                 }
 
+                // Check if the next segment starts with a stop signal
+                if (StartsWithStopSignal(nextSegment))
+                {
+                    // Next segment starts with a stop signal, buffer it for the next chunk
+                    _bufferedChunk = nextSegment;
+                    return currentChunk;
+                }
+
                 // Check if adding this segment would exceed the token limit
                 string potentialChunk = currentChunk + nextSegment;
                 int potentialTokens = _tokenizer.CountTokens(potentialChunk);
@@ -84,6 +92,27 @@
                     return currentChunk;
                 }
             }
+        }
+
+        /// <summary>
+        /// Checks if the given segment starts with any of the configured chunk stop signals.
+        /// </summary>
+        /// <param name="segment">The segment to check.</param>
+        /// <returns>True if the segment starts with a stop signal, false otherwise.</returns>
+        private bool StartsWithStopSignal(string segment)
+        {
+            if (string.IsNullOrEmpty(segment) || _configuration.ChunkStopSignals.Length == 0)
+                return false;
+
+            foreach (string stopSignal in _configuration.ChunkStopSignals)
+            {
+                if (!string.IsNullOrEmpty(stopSignal) && segment.StartsWith(stopSignal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

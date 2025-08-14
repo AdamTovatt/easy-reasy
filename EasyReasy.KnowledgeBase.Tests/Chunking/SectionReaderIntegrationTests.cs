@@ -70,12 +70,11 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 50);
             SectioningConfiguration sectioningConfig = new SectioningConfiguration(
                 maxTokensPerSection: 200,
-                startThreshold: 0.8,
-                stopThreshold: 0.7,
-                confirmWindow: 1);
+                lookaheadBufferSize: 50,
+                standardDeviationMultiplier: 1.0);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
+            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -121,7 +120,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 200);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
+            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -177,12 +176,11 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 30);
             SectioningConfiguration sectioningConfig = new SectioningConfiguration(
                 maxTokensPerSection: 150,
-                startThreshold: 0.75,
-                stopThreshold: 0.65,
-                confirmWindow: 2);
+                lookaheadBufferSize: 60,
+                standardDeviationMultiplier: 1.0);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
+            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -236,7 +234,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             SectioningConfiguration sectioningConfig = new SectioningConfiguration();
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
+            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
 
             const int cancellationTimeoutMs = 200; // 200 ms for real embeddings
 
@@ -288,24 +286,24 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument03);
             using StreamReader reader = new StreamReader(stream);
 
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 50);
+            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 100, ChunkStopSignals.Markdown);
             SectioningConfiguration sectioningConfig = new SectioningConfiguration(
                 maxTokensPerSection: 1000,
-                startThreshold: 0.8,
-                stopThreshold: 0.72,
-                confirmWindow: 2);
+                lookaheadBufferSize: 100,
+                standardDeviationMultiplier: 1.0);
 
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
+            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer, ChunkStopSignals.Markdown);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
             await foreach (List<KnowledgeFileChunk> chunks in sectionReader.ReadSectionsAsync())
             {
                 Console.WriteLine("=== SECTION START ===");
-                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(chunks));
-                Console.WriteLine("=== SECTION END ===");
+                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(chunks).ToString("\n-------------\n"));
+                int tokenCount = _tokenizer.CountTokens(KnowledgeFileSection.CreateFromChunks(chunks).ToString());
+                Console.WriteLine($"=== SECTION ENDED WITH {tokenCount} TOKENS ===");
             }
         }
     }

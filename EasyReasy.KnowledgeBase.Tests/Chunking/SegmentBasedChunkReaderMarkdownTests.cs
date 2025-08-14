@@ -111,7 +111,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             string content = await _resourceManager.ReadAsStringAsync(TestDataFiles.TestDocument02);
             Console.WriteLine($"Original content:\n{content}");
             using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 50);
+            ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 100, chunkStopSignals: ChunkStopSignals.Markdown);
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
 
@@ -125,12 +125,9 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"\nFirst chunk:\n{firstChunk}");
             Assert.IsNotNull(secondChunk, "Second chunk should not be null");
             Console.WriteLine($"\nSecond chunk:\n{secondChunk}");
-            Assert.IsNotNull(thirdChunk, "Third chunk should not be null");
-            Console.WriteLine($"\nThird chunk:\n{thirdChunk}");
 
             Assert.IsTrue(firstChunk.StartsWith("# First header"));
-            Assert.IsTrue(secondChunk.StartsWith("The second header would then in turn"));
-            Assert.IsTrue(thirdChunk.StartsWith("## This is the second header"));
+            Assert.IsTrue(secondChunk.StartsWith("## This is the second header"));
         }
 
         [TestMethod]
@@ -157,6 +154,37 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Assert.IsTrue(firstChunk.Contains("- First item"), $"First chunk should contain first list item. Chunk content: {firstChunk}");
             Assert.IsTrue(secondChunk.Contains("- Second item"), $"Second chunk should contain second list item. Chunk content: {secondChunk}");
             Assert.IsTrue(secondChunk.Contains("- Third item"), $"Second chunk should contain third list item. Chunk content: {secondChunk}");
+        }
+
+        [TestMethod]
+        public async Task ReadNextChunkContentAsync_ShouldBreakAtCustomStopSignals()
+        {
+            // Arrange
+            string content = "First paragraph.\n\n**Bold text**\n\nSecond paragraph.\n\n```code block```\n\nThird paragraph.";
+            Console.WriteLine($"Original content:\n{content}");
+            using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
+            string[] customStopSignals = ["**", "```"];
+            ChunkingConfiguration configuration = new ChunkingConfiguration(_tokenizer, 50, chunkStopSignals: customStopSignals);
+            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, configuration);
+
+            // Act
+            string? firstChunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
+            string? secondChunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
+            string? thirdChunk = await chunkReader.ReadNextChunkContentAsync(CancellationToken.None);
+
+            // Assert
+            Assert.IsNotNull(firstChunk, "First chunk should not be null");
+            Assert.IsNotNull(secondChunk, "Second chunk should not be null");
+            Assert.IsNotNull(thirdChunk, "Third chunk should not be null");
+            
+            Console.WriteLine($"First chunk:\n{firstChunk}");
+            Console.WriteLine($"Second chunk:\n{secondChunk}");
+            Console.WriteLine($"Third chunk:\n{thirdChunk}");
+            
+            Assert.IsTrue(firstChunk.Contains("First paragraph."), $"First chunk should contain first paragraph. Chunk content: {firstChunk}");
+            Assert.IsTrue(secondChunk.StartsWith("**Bold text**"), $"Second chunk should start with bold text. Chunk content: {secondChunk}");
+            Assert.IsTrue(thirdChunk.StartsWith("```code block```"), $"Third chunk should start with code block. Chunk content: {thirdChunk}");
         }
 
         [TestMethod]

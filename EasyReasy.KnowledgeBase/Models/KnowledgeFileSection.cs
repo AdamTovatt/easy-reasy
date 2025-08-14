@@ -91,5 +91,31 @@ namespace EasyReasy.KnowledgeBase.Models
 
             return result.ToString();
         }
+
+        /// <summary>
+        /// Returns the combined content of all chunks in the section with a specified separator between each chunk.
+        /// </summary>
+        /// <param name="separator">The string to insert between each chunk.</param>
+        /// <returns>The concatenated content of all chunks with the specified separator.</returns>
+        public string ToString(string separator)
+        {
+            if (Chunks == null || Chunks.Count == 0)
+                return string.Empty;
+
+            if (Chunks.Count == 1)
+                return Chunks[0].Content;
+
+            StringBuilder result = new StringBuilder();
+            for (int i = 0; i < Chunks.Count; i++)
+            {
+                result.Append(Chunks[i].Content);
+                if (i < Chunks.Count - 1)
+                {
+                    result.Append(separator);
+                }
+            }
+
+            return result.ToString();
+        }
     }
 }
