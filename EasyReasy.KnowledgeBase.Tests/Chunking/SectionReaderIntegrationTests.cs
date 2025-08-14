@@ -1,4 +1,3 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using EasyReasy.KnowledgeBase.BertTokenization;
 using EasyReasy.KnowledgeBase.Chunking;
 using EasyReasy.KnowledgeBase.Generation;
