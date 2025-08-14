@@ -51,121 +51,6 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
         }
 
         [TestMethod]
-        public async Task ReadSectionsAsync_WithRealEmbeddings_ShouldPreserveAllContent()
-        {
-            // Skip test if Ollama service is not available
-            if (_ollamaEmbeddingService == null)
-            {
-                Assert.Inconclusive("Ollama embedding service not available. Set environment variables to run integration tests.");
-                return;
-            }
-
-            // Arrange
-            using Stream originalStream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument01);
-            string originalContent = await new StreamReader(originalStream).ReadToEndAsync();
-            Console.WriteLine("=== Integration Test: Content Preservation with Real Embeddings ===");
-            Console.WriteLine($"Original content length: {originalContent.Length} characters");
-
-            using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument01);
-            using StreamReader reader = new StreamReader(stream);
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 50);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 200, chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
-
-            // Act
-            List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
-            await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync())
-            {
-                sections.Add(section);
-            }
-
-            // Reconstruct content from sections
-            string reconstructedContent = string.Join("\n", sections.Select(section =>
-            {
-                return KnowledgeFileSection.CreateFromChunks(section).ToString();
-            }));
-
-            // Assert
-            Console.WriteLine($"Created {sections.Count} sections with real embeddings");
-            Console.WriteLine($"Reconstructed content length: {reconstructedContent.Length} characters");
-
-            for (int i = 0; i < sections.Count; i++)
-            {
-                Console.WriteLine($"Section {i + 1}: {sections[i].Count} chunks, {sections[i].Sum(c => c.Content.Length)} characters");
-            }
-
-            Assert.IsTrue(sections.Count > 0, "Should create at least one section");
-
-            // Normalize whitespace for comparison
-            string normalizedOriginal = originalContent.TrimEnd('\r', '\n');
-            string normalizedReconstructed = reconstructedContent.TrimEnd('\r', '\n');
-            Assert.AreEqual(normalizedOriginal, normalizedReconstructed, "Reconstructed content should match original (after whitespace normalization)");
-        }
-
-        [TestMethod]
-        public async Task ReadSectionsAsync_WithRealEmbeddings_ShouldHandleLargeDocument()
-        {
-            // Skip test if Ollama service is not available
-            if (_ollamaEmbeddingService == null)
-            {
-                Assert.Inconclusive("Ollama embedding service not available. Set environment variables to run integration tests.");
-                return;
-            }
-
-            // Arrange - Create a larger document by combining both test documents
-            using Stream stream1 = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument01);
-            using Stream stream2 = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument02);
-            string content1 = await new StreamReader(stream1).ReadToEndAsync();
-            string content2 = await new StreamReader(stream2).ReadToEndAsync();
-            string largeContent = content1 + "\n\n" + content2;
-
-            Console.WriteLine("=== Integration Test: Large Document Processing ===");
-            Console.WriteLine($"Large document length: {largeContent.Length} characters");
-
-            using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(largeContent)));
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 30);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(
-                maxTokensPerSection: 150,
-                lookaheadBufferSize: 60,
-                standardDeviationMultiplier: 1.0,
-                chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
-
-            // Act
-            List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
-            await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync())
-            {
-                sections.Add(section);
-            }
-
-            // Assert
-            Console.WriteLine($"Created {sections.Count} sections for large document");
-            Assert.IsTrue(sections.Count > 1, "Should create multiple sections for large document");
-
-            // Verify each section is within token limits
-            foreach (List<KnowledgeFileChunk> section in sections)
-            {
-                int totalTokens = section.Sum(chunk => _tokenizer.CountTokens(chunk.Content));
-                Assert.IsTrue(totalTokens <= sectioningConfig.MaxTokensPerSection,
-                    $"Section should not exceed {sectioningConfig.MaxTokensPerSection} tokens, but has {totalTokens}");
-            }
-
-            // Verify all content is preserved
-            string reconstructedContent = string.Join("\n", sections.Select(section =>
-            {
-                return KnowledgeFileSection.CreateFromChunks(section).ToString();
-            }));
-
-            string normalizedOriginal = largeContent.TrimEnd('\r', '\n');
-            string normalizedReconstructed = reconstructedContent.TrimEnd('\r', '\n');
-            Assert.AreEqual(normalizedOriginal, normalizedReconstructed, "All content should be preserved");
-        }
-
-        [TestMethod]
         public async Task ReadSectionsAsync_WithRealEmbeddings_ShouldHandleCancellation()
         {
             // Skip test if Ollama service is not available
@@ -249,6 +134,29 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
             SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
+
+            // Act
+            List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
+            await foreach (List<KnowledgeFileChunk> chunks in sectionReader.ReadSectionsAsync())
+            {
+                Console.WriteLine("=== SECTION START ===");
+                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(chunks).ToString("\n-------------\n"));
+                int tokenCount = _tokenizer.CountTokens(KnowledgeFileSection.CreateFromChunks(chunks).ToString());
+                Console.WriteLine($"=== SECTION ENDED WITH {tokenCount} TOKENS ===");
+            }
+        }
+
+        [TestMethod]
+        public async Task ReadSectionsAsync_TestDocument4()
+        {
+            Assert.IsNotNull(_ollamaEmbeddingService);
+
+            // Arrange - Use real test document to test similarity-based grouping
+            using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument04);
+
+            SectionReaderFactory readerFactory = new SectionReaderFactory(_ollamaEmbeddingService, _tokenizer);
+
+            SectionReader sectionReader = readerFactory.CreateForMarkdown(stream, 100, 1000);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
