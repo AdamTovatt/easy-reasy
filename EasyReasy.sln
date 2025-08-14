@@ -35,6 +35,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Ber
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.BertTokenization.Tests", "EasyReasy.KnowledgeBase.BertTokenization.Tests\EasyReasy.KnowledgeBase.BertTokenization.Tests.csproj", "{F8CE4344-CBF1-4BAC-A0CB-A636F3E4C999}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.OllamaGeneration", "EasyReasy.KnowledgeBase.OllamaGeneration\EasyReasy.KnowledgeBase.OllamaGeneration.csproj", "{FB94084C-6704-433C-B1C1-D2E07DB8E0A3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -105,6 +107,10 @@ Global
 		{F8CE4344-CBF1-4BAC-A0CB-A636F3E4C999}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F8CE4344-CBF1-4BAC-A0CB-A636F3E4C999}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F8CE4344-CBF1-4BAC-A0CB-A636F3E4C999}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FB94084C-6704-433C-B1C1-D2E07DB8E0A3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FB94084C-6704-433C-B1C1-D2E07DB8E0A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FB94084C-6704-433C-B1C1-D2E07DB8E0A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FB94084C-6704-433C-B1C1-D2E07DB8E0A3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
