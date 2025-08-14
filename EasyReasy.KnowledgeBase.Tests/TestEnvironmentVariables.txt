@@ -1,5 +1,5 @@
 # Ollama Integration Test Environment Variables
-# This file should be placed in the same directory as the test executable
+# This file should be placed in the bin directory of the test project
 # Update these values with your actual Ollama server configuration
 
 # The base URL for the Ollama server

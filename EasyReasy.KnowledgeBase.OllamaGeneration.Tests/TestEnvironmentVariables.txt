@@ -1,0 +1,15 @@
+# Ollama Integration Test Configuration
+# Copy this file and update with your actual Ollama server details
+# The file with the real values should be placed in the bin directory of the test project
+
+# The base URL for your Ollama server
+OLLAMA_BASE_URL=http://localhost:11434
+
+# API key for Ollama authentication  
+OLLAMA_API_KEY=your-api-key-here
+
+# Model name for embeddings (e.g., nomic-embed-text, all-minilm)
+OLLAMA_EMBEDDING_MODEL_NAME=nomic-embed-text
+
+# Model name for chat/text processing (e.g., llama3.1, llama3.2)
+OLLAMA_CHAT_MODEL_NAME=llama3.1

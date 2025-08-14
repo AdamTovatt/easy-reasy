@@ -26,4 +26,9 @@
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\EasyReasy.KnowledgeBase.OllamaGeneration\EasyReasy.KnowledgeBase.OllamaGeneration.csproj" />
+    <ProjectReference Include="..\EasyReasy.EnvironmentVariables\EasyReasy.EnvironmentVariables.csproj" />
+  </ItemGroup>
+
 </Project>
