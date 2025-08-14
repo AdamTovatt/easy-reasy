@@ -3,6 +3,7 @@ using EasyReasy.KnowledgeBase.BertTokenization;
 using EasyReasy.KnowledgeBase.Chunking;
 using EasyReasy.KnowledgeBase.Generation;
 using EasyReasy.KnowledgeBase.Models;
+using EasyReasy.KnowledgeBase.OllamaGeneration;
 using EasyReasy.KnowledgeBase.Tests.TestUtilities;
 using System.Diagnostics;
 using System.Reflection;
@@ -34,7 +35,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
                 Assert.Inconclusive();
             }
 
-            _ollamaEmbeddingService = new EasyReasyOllamaEmbeddingService(
+            _ollamaEmbeddingService = await EasyReasyOllamaEmbeddingService.CreateAsync(
                 OllamaTestEnvironmentVariables.OllamaBaseUrl.GetValue(),
                 OllamaTestEnvironmentVariables.OllamaApiKey.GetValue(),
                 OllamaTestEnvironmentVariables.OllamaModelName.GetValue());

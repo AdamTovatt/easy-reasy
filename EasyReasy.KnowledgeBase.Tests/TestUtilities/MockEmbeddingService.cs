@@ -8,6 +8,11 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
     /// </summary>
     public sealed class MockEmbeddingService : IEmbeddingService
     {
+        /// <summary>
+        /// Gets the name of the embedding model used by this service.
+        /// </summary>
+        public string ModelName => "mock-embedding-model";
+
         public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
         {
             float[] embedding = new float[384];

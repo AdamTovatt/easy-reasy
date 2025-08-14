@@ -6,6 +6,11 @@ namespace EasyReasy.KnowledgeBase.Generation
     public interface IEmbeddingService
     {
         /// <summary>
+        /// Gets the name of the embedding model used by this service.
+        /// </summary>
+        string ModelName { get; }
+
+        /// <summary>
         /// Generates an embedding vector for the specified text.
         /// </summary>
         /// <param name="text">The text to embed.</param>

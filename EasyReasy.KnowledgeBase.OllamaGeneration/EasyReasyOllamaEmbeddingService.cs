@@ -15,6 +15,11 @@ namespace EasyReasy.KnowledgeBase.OllamaGeneration
         private readonly HttpClient _httpClient;
 
         /// <summary>
+        /// Gets the name of the embedding model used by this service.
+        /// </summary>
+        public string ModelName => _modelName;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="EasyReasyOllamaEmbeddingService"/> class.
         /// </summary>
         /// <param name="client">The authorized Ollama client.</param>
