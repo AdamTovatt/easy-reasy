@@ -54,7 +54,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 throw new ArgumentNullException(nameof(stream));
 
             StreamReader streamReader = new StreamReader(stream);
-            return CreateForMarkdown(streamReader);
+            return CreateForMarkdownInternal(streamReader, ownedStreamReader: streamReader);
         }
 
         /// <summary>
@@ -65,8 +65,20 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <exception cref="ArgumentNullException">Thrown when streamReader is null.</exception>
         public SectionReader CreateForMarkdown(StreamReader streamReader)
         {
-            return CreateForMarkdown(
+            return CreateForMarkdownInternal(streamReader, ownedStreamReader: null);
+        }
+
+        /// <summary>
+        /// Internal method to create a SectionReader with optional StreamReader ownership.
+        /// </summary>
+        /// <param name="streamReader">The stream reader to read content from.</param>
+        /// <param name="ownedStreamReader">The StreamReader to be owned and disposed by the SectionReader, or null.</param>
+        /// <returns>A configured SectionReader instance.</returns>
+        private SectionReader CreateForMarkdownInternal(StreamReader streamReader, StreamReader? ownedStreamReader)
+        {
+            return CreateForMarkdownInternal(
                 streamReader: streamReader,
+                ownedStreamReader: ownedStreamReader,
                 maxTokensPerChunk: 300,
                 maxTokensPerSection: 4000);
         }
@@ -88,7 +100,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 throw new ArgumentNullException(nameof(stream));
 
             StreamReader streamReader = new StreamReader(stream);
-            return CreateForMarkdown(streamReader, maxTokensPerChunk, maxTokensPerSection);
+            return CreateForMarkdownInternal(streamReader, ownedStreamReader: streamReader, maxTokensPerChunk, maxTokensPerSection);
         }
 
         /// <summary>
@@ -104,8 +116,30 @@ namespace EasyReasy.KnowledgeBase.Chunking
             int maxTokensPerChunk,
             int maxTokensPerSection)
         {
-            return CreateForMarkdown(
+            return CreateForMarkdownInternal(
                 streamReader: streamReader,
+                ownedStreamReader: null,
+                maxTokensPerChunk: maxTokensPerChunk,
+                maxTokensPerSection: maxTokensPerSection);
+        }
+
+        /// <summary>
+        /// Internal method to create a SectionReader with custom token limits and optional StreamReader ownership.
+        /// </summary>
+        /// <param name="streamReader">The stream reader to read content from.</param>
+        /// <param name="ownedStreamReader">The StreamReader to be owned and disposed by the SectionReader, or null.</param>
+        /// <param name="maxTokensPerChunk">The maximum number of tokens per chunk.</param>
+        /// <param name="maxTokensPerSection">The maximum number of tokens per section.</param>
+        /// <returns>A configured SectionReader instance.</returns>
+        private SectionReader CreateForMarkdownInternal(
+            StreamReader streamReader,
+            StreamReader? ownedStreamReader,
+            int maxTokensPerChunk,
+            int maxTokensPerSection)
+        {
+            return CreateForMarkdownInternal(
+                streamReader: streamReader,
+                ownedStreamReader: ownedStreamReader,
                 maxTokensPerChunk: maxTokensPerChunk,
                 maxTokensPerSection: maxTokensPerSection,
                 lookaheadBufferSize: 100,
@@ -129,6 +163,33 @@ namespace EasyReasy.KnowledgeBase.Chunking
             int lookaheadBufferSize,
             double standardDeviationMultiplier)
         {
+            return CreateForMarkdownInternal(
+                streamReader: streamReader,
+                ownedStreamReader: null,
+                maxTokensPerChunk: maxTokensPerChunk,
+                maxTokensPerSection: maxTokensPerSection,
+                lookaheadBufferSize: lookaheadBufferSize,
+                standardDeviationMultiplier: standardDeviationMultiplier);
+        }
+
+        /// <summary>
+        /// Internal method to create a SectionReader with full customization and optional StreamReader ownership.
+        /// </summary>
+        /// <param name="streamReader">The stream reader to read content from.</param>
+        /// <param name="ownedStreamReader">The StreamReader to be owned and disposed by the SectionReader, or null.</param>
+        /// <param name="maxTokensPerChunk">The maximum number of tokens per chunk.</param>
+        /// <param name="maxTokensPerSection">The maximum number of tokens per section.</param>
+        /// <param name="lookaheadBufferSize">The size of the lookahead buffer for statistical analysis.</param>
+        /// <param name="standardDeviationMultiplier">The standard deviation multiplier for determining split thresholds.</param>
+        /// <returns>A configured SectionReader instance.</returns>
+        private SectionReader CreateForMarkdownInternal(
+            StreamReader streamReader,
+            StreamReader? ownedStreamReader,
+            int maxTokensPerChunk,
+            int maxTokensPerSection,
+            int lookaheadBufferSize,
+            double standardDeviationMultiplier)
+        {
             if (streamReader == null)
                 throw new ArgumentNullException(nameof(streamReader));
 
@@ -146,7 +207,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
             TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(streamReader);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
 
-            return new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
+            return new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer, ownedStreamReader);
         }
 
         /// <summary>
@@ -168,7 +229,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
                 throw new ArgumentNullException(nameof(stream));
 
             StreamReader streamReader = new StreamReader(stream);
-            return Create(streamReader, chunkingConfiguration, sectioningConfiguration, textSegmentSplitters);
+            return CreateInternal(streamReader, chunkingConfiguration, sectioningConfiguration, textSegmentSplitters, ownedStreamReader: streamReader);
         }
 
         /// <summary>
@@ -186,6 +247,25 @@ namespace EasyReasy.KnowledgeBase.Chunking
             SectioningConfiguration sectioningConfiguration,
             string[] textSegmentSplitters)
         {
+            return CreateInternal(streamReader, chunkingConfiguration, sectioningConfiguration, textSegmentSplitters, ownedStreamReader: null);
+        }
+
+        /// <summary>
+        /// Internal method to create a SectionReader with custom configurations and optional StreamReader ownership.
+        /// </summary>
+        /// <param name="streamReader">The stream reader to read content from.</param>
+        /// <param name="chunkingConfiguration">The configuration for chunking operations.</param>
+        /// <param name="sectioningConfiguration">The configuration for sectioning operations.</param>
+        /// <param name="textSegmentSplitters">The text segment splitters to use for segmentation.</param>
+        /// <param name="ownedStreamReader">The StreamReader to be owned and disposed by the SectionReader, or null.</param>
+        /// <returns>A configured SectionReader instance.</returns>
+        private SectionReader CreateInternal(
+            StreamReader streamReader,
+            ChunkingConfiguration chunkingConfiguration,
+            SectioningConfiguration sectioningConfiguration,
+            string[] textSegmentSplitters,
+            StreamReader? ownedStreamReader)
+        {
             if (streamReader == null)
                 throw new ArgumentNullException(nameof(streamReader));
             if (chunkingConfiguration == null)
@@ -198,7 +278,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
             TextSegmentReader textSegmentReader = TextSegmentReader.Create(streamReader, textSegmentSplitters);
             SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfiguration);
 
-            return new SectionReader(chunkReader, _embeddingService, sectioningConfiguration, _tokenizer);
+            return new SectionReader(chunkReader, _embeddingService, sectioningConfiguration, _tokenizer, ownedStreamReader);
         }
     }
 }

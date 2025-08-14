@@ -259,56 +259,58 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Input content: {content.Length} characters with {Enumerable.Range(1, rangeMax).Count()} paragraphs");
 
             // Use SlowStream to ensure the operation takes long enough to be cancelled
-            using SlowStream slowStream = SlowStream.FromString(content, delayMillisecondsPerRead: 1, delayNanosecondsPerByte: 100);
-            using StreamReader reader = new StreamReader(slowStream);
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 20);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
-
-            const int cancellationTimeoutMs = 200;
-
-            using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
-            cancellationTokenSource.CancelAfter(TimeSpan.FromMilliseconds(cancellationTimeoutMs)); // Cancel after 100ms
-            Stopwatch stopwatch = Stopwatch.StartNew();
-
-            bool didHandleException = false;
-            int sectionsProcessed = 0;
-
-            // Act & Assert
-            Console.WriteLine($"Starting processing with {cancellationTimeoutMs}ms cancellation timeout...");
-            try
+            using (SlowStream slowStream = SlowStream.FromString(content, delayMillisecondsPerRead: 1, delayNanosecondsPerByte: 100))
+            using (StreamReader reader = new StreamReader(slowStream))
             {
+                ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 20);
+                SectioningConfiguration sectioningConfig = new SectioningConfiguration(chunkStopSignals: ChunkStopSignals.Markdown);
+                TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+                SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
+                using SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
-                await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync(cancellationTokenSource.Token))
+                const int cancellationTimeoutMs = 200;
+
+                using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+                cancellationTokenSource.CancelAfter(TimeSpan.FromMilliseconds(cancellationTimeoutMs)); // Cancel after 100ms
+                Stopwatch stopwatch = Stopwatch.StartNew();
+
+                bool didHandleException = false;
+                int sectionsProcessed = 0;
+
+                // Act & Assert
+                Console.WriteLine($"Starting processing with {cancellationTimeoutMs}ms cancellation timeout...");
+                try
                 {
-                    sectionsProcessed++;
-                    Console.WriteLine($"Processed section {sectionsProcessed} with {section.Count} chunks");
-                    // This should be cancelled
+
+                    await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync(cancellationTokenSource.Token))
+                    {
+                        sectionsProcessed++;
+                        Console.WriteLine($"Processed section {sectionsProcessed} with {section.Count} chunks");
+                        // This should be cancelled
+                    }
                 }
-            }
-            catch (Exception exception)
-            {
+                catch (Exception exception)
+                {
+                    stopwatch.Stop();
+
+                    Console.WriteLine("Exception occurred:");
+                    Console.WriteLine(exception.Message);
+                    Console.WriteLine(exception.GetType().Name);
+
+                    if (exception is OperationCanceledException)
+                    {
+                        didHandleException = true;
+                    }
+                }
+
                 stopwatch.Stop();
 
-                Console.WriteLine("Exception occurred:");
-                Console.WriteLine(exception.Message);
-                Console.WriteLine(exception.GetType().Name);
+                Console.WriteLine($"Cancellation was expected after {cancellationTimeoutMs}ms");
+                Console.WriteLine($"Actual time to reach post cancellation code: {stopwatch.ElapsedMilliseconds}ms");
 
-                if (exception is OperationCanceledException)
-                {
-                    didHandleException = true;
-                }
+                Assert.IsTrue(didHandleException, "Should handle cancellation exception");
+                Assert.IsTrue(sectionsProcessed > 2, "Should still process some sections before cancellation");
             }
-
-            stopwatch.Stop();
-
-            Console.WriteLine($"Cancellation was expected after {cancellationTimeoutMs}ms");
-            Console.WriteLine($"Actual time to reach post cancellation code: {stopwatch.ElapsedMilliseconds}ms");
-
-            Assert.IsTrue(didHandleException, "Should handle cancellation exception");
-            Assert.IsTrue(sectionsProcessed > 2, "Should still process some sections before cancellation");
         }
 
         [TestMethod]
@@ -323,38 +325,43 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Input content:\n{content}");
             Console.WriteLine($"Configuration: maxTokensPerSection=50, lookaheadBufferSize=20, standardDeviationMultiplier=0.8");
 
-            using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 10);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(
-                maxTokensPerSection: 50,
-                lookaheadBufferSize: 20, // Smaller buffer for this test
-                standardDeviationMultiplier: 0.8, // Lower multiplier to encourage more splits
-                chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
-
-            // Act
-            List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
-            await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync())
+            using (MemoryStream memoryStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)))
+            using (StreamReader reader = new StreamReader(memoryStream))
             {
-                sections.Add(section);
-            }
+                ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 10);
+                SectioningConfiguration sectioningConfig = new SectioningConfiguration(
+                    maxTokensPerSection: 50,
+                    lookaheadBufferSize: 20, // Smaller buffer for this test
+                    standardDeviationMultiplier: 0.8, // Lower multiplier to encourage more splits
+                    chunkStopSignals: ChunkStopSignals.Markdown,
+                    minimumChunksPerSection: 0,
+                    minimumTokensPerSection: 5);
+                TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
+                SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
+                using SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
 
-            // Assert
-            Console.WriteLine($"Created {sections.Count} sections");
-            Assert.IsTrue(sections.Count > 1, "Should create multiple small sections");
+                // Act
+                List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
+                await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync())
+                {
+                    sections.Add(section);
+                }
 
-            // Verify sections can be very small (1-2 chunks)
-            for (int i = 0; i < sections.Count; i++)
-            {
-                List<KnowledgeFileChunk> section = sections[i];
-                Console.WriteLine($"Section {i + 1} ({section.Count} chunks):");
-                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(section).ToString());
-                Console.WriteLine($"End of Section {i + 1}\n");
+                // Assert
+                Console.WriteLine($"Created {sections.Count} sections");
+                Assert.IsTrue(sections.Count > 1, "Should create multiple small sections");
 
-                Assert.IsTrue(section.Count >= 1, "Each section should have at least one chunk");
-                Assert.IsTrue(section.Count <= 5, "Sections should be reasonably small"); // Loosened from 3 to 5
+                // Verify sections can be very small (1-2 chunks)
+                for (int i = 0; i < sections.Count; i++)
+                {
+                    List<KnowledgeFileChunk> section = sections[i];
+                    Console.WriteLine($"Section {i + 1} ({section.Count} chunks):");
+                    Console.WriteLine(KnowledgeFileSection.CreateFromChunks(section).ToString());
+                    Console.WriteLine($"End of Section {i + 1}\n");
+
+                    Assert.IsTrue(section.Count >= 1, "Each section should have at least one chunk");
+                    Assert.IsTrue(section.Count <= 5, "Sections should be reasonably small"); // Loosened from 3 to 5
+                }
             }
         }
     }

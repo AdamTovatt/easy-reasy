@@ -8,12 +8,14 @@ namespace EasyReasy.KnowledgeBase.Chunking
     /// <summary>
     /// A knowledge section reader that groups chunks into logical sections based on embedding similarity.
     /// </summary>
-    public sealed class SectionReader : IKnowledgeSectionReader
+    public sealed class SectionReader : IKnowledgeSectionReader, IDisposable
     {
         private readonly SegmentBasedChunkReader _chunkReader;
         private readonly IEmbeddingService _embeddings;
         private readonly SectioningConfiguration _configuration;
         private readonly ITokenizer _tokenizer;
+        private readonly StreamReader? _ownedStreamReader;
+        private bool _disposed;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SectionReader"/> class.
@@ -27,11 +29,30 @@ namespace EasyReasy.KnowledgeBase.Chunking
             IEmbeddingService embeddings,
             SectioningConfiguration configuration,
             ITokenizer tokenizer)
+            : this(chunkReader, embeddings, configuration, tokenizer, ownedStreamReader: null)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SectionReader"/> class with an optionally owned StreamReader.
+        /// </summary>
+        /// <param name="chunkReader">The chunk reader to read content from.</param>
+        /// <param name="embeddings">The embedding service for generating vector representations.</param>
+        /// <param name="configuration">The sectioning configuration.</param>
+        /// <param name="tokenizer">The tokenizer for counting tokens.</param>
+        /// <param name="ownedStreamReader">The StreamReader that this instance owns and should dispose, or null if not owned.</param>
+        internal SectionReader(
+            SegmentBasedChunkReader chunkReader,
+            IEmbeddingService embeddings,
+            SectioningConfiguration configuration,
+            ITokenizer tokenizer,
+            StreamReader? ownedStreamReader)
         {
             _chunkReader = chunkReader ?? throw new ArgumentNullException(nameof(chunkReader));
             _embeddings = embeddings ?? throw new ArgumentNullException(nameof(embeddings));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _tokenizer = tokenizer ?? throw new ArgumentNullException(nameof(tokenizer));
+            _ownedStreamReader = ownedStreamReader;
         }
 
         /// <summary>
@@ -53,7 +74,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
             }
 
             if (lookaheadBuffer.Count == 0) yield break;
-             
+
             // Start the first section
             List<KnowledgeFileChunk> currentSectionChunks = new List<KnowledgeFileChunk>();
             float[]? centroid = null;
@@ -62,7 +83,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
             while (lookaheadBuffer.Count > 0)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                
+
                 KnowledgeFileChunk? candidate = lookaheadBuffer.Dequeue();
                 if (candidate == null) break;
 
@@ -91,7 +112,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
 
                 // Calculate statistical split threshold using lookahead buffer
                 double splitThreshold = CalculateStatisticalSplitThreshold(centroid, lookaheadBuffer, currentSectionChunks);
-                
+
                 if (similarity < splitThreshold)
                 {
                     // Check minimum section constraints before allowing split
@@ -156,12 +177,12 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// <param name="currentSectionChunks">Chunks in the current section for fallback statistics.</param>
         /// <returns>The similarity threshold below which a split should occur.</returns>
         private double CalculateStatisticalSplitThreshold(
-            float[] centroid, 
-            Queue<KnowledgeFileChunk?> lookaheadBuffer, 
+            float[] centroid,
+            Queue<KnowledgeFileChunk?> lookaheadBuffer,
             List<KnowledgeFileChunk> currentSectionChunks)
         {
             List<double> similarities = new List<double>();
-            
+
             // Calculate similarities for lookahead chunks
             foreach (KnowledgeFileChunk? chunk in lookaheadBuffer)
             {
@@ -196,13 +217,13 @@ namespace EasyReasy.KnowledgeBase.Chunking
 
             // Calculate base statistical threshold
             double statisticalThreshold = mean - (_configuration.StandardDeviationMultiplier * standardDeviation);
-            
+
             // Apply minimum threshold constraint
             double baseThreshold = Math.Max(_configuration.MinimumSimilarityThreshold, statisticalThreshold);
-            
+
             // Apply token-based strictness adjustment
             double finalThreshold = CalculateTokenAdjustedThreshold(baseThreshold, currentSectionChunks);
-            
+
             // Ensure threshold is reasonable (between minimum and 0.95 for cosine similarity)
             return Math.Max(_configuration.MinimumSimilarityThreshold, Math.Min(finalThreshold, 0.95));
         }
@@ -218,20 +239,20 @@ namespace EasyReasy.KnowledgeBase.Chunking
             // Calculate current token usage
             int currentTokens = currentSectionChunks.Sum(chunk => _tokenizer.CountTokens(chunk.Content));
             double tokenUsageRatio = (double)currentTokens / _configuration.MaxTokensPerSection;
-            
+
             // If we haven't reached the strictness threshold, return base threshold
             if (tokenUsageRatio < _configuration.TokenStrictnessThreshold)
             {
                 return baseThreshold;
             }
-            
+
             // Calculate strictness multiplier (increases as we approach max tokens)
-            double excessRatio = (tokenUsageRatio - _configuration.TokenStrictnessThreshold) / 
+            double excessRatio = (tokenUsageRatio - _configuration.TokenStrictnessThreshold) /
                                 (1.0 - _configuration.TokenStrictnessThreshold);
-            
+
             // Apply exponential increase in strictness (quadratic growth)
             double strictnessMultiplier = 1.0 + (excessRatio * excessRatio * 0.5); // Max 50% increase
-            
+
             // Increase the threshold to make splits more likely
             return baseThreshold * strictnessMultiplier;
         }
@@ -316,6 +337,28 @@ namespace EasyReasy.KnowledgeBase.Chunking
             totalTokens += _tokenizer.CountTokens(candidateChunk.Content);
 
             return totalTokens > _configuration.MaxTokensPerSection;
+        }
+
+        /// <summary>
+        /// Disposes the resources used by the SectionReader.
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Releases the unmanaged resources used by the SectionReader and optionally releases the managed resources.
+        /// </summary>
+        /// <param name="disposing">true to release both managed and unmanaged resources; false to release only unmanaged resources.</param>
+        private void Dispose(bool disposing)
+        {
+            if (!_disposed && disposing)
+            {
+                _ownedStreamReader?.Dispose();
+            }
+            _disposed = true;
         }
     }
 }

@@ -5,7 +5,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
     /// <summary>
     /// Provides methods for reading knowledge file sections by grouping chunks based on content similarity.
     /// </summary>
-    public interface IKnowledgeSectionReader
+    public interface IKnowledgeSectionReader : IDisposable
     {
         /// <summary>
         /// Reads sections from the knowledge file asynchronously, grouping chunks based on embedding similarity.
