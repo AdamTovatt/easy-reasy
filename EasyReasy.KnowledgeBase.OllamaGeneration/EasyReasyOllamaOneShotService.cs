@@ -36,9 +36,9 @@ namespace EasyReasy.KnowledgeBase.OllamaGeneration
         /// <param name="cancellationToken">Cancellation token for the creation operation.</param>
         /// <returns>A task that represents the asynchronous creation operation. The task result contains the initialized service.</returns>
         public static async Task<EasyReasyOllamaOneShotService> CreateAsync(
-            string baseUrl, 
-            string apiKey, 
-            string modelName, 
+            string baseUrl,
+            string apiKey,
+            string modelName,
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(baseUrl))
@@ -88,7 +88,7 @@ namespace EasyReasy.KnowledgeBase.OllamaGeneration
 
                 // Get the complete response (not streaming)
                 await using IAsyncEnumerator<ChatResponsePart> enumerator = _client.Chat.StreamChatAsync(_modelName, messages, cancellationToken).GetAsyncEnumerator(cancellationToken);
-                
+
                 System.Text.StringBuilder responseBuilder = new System.Text.StringBuilder();
                 while (await enumerator.MoveNextAsync())
                 {

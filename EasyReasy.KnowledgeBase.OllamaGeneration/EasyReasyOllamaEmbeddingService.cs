@@ -41,9 +41,9 @@ namespace EasyReasy.KnowledgeBase.OllamaGeneration
         /// <param name="cancellationToken">Cancellation token for the creation operation.</param>
         /// <returns>A task that represents the asynchronous creation operation. The task result contains the initialized service.</returns>
         public static async Task<EasyReasyOllamaEmbeddingService> CreateAsync(
-            string baseUrl, 
-            string apiKey, 
-            string modelName, 
+            string baseUrl,
+            string apiKey,
+            string modelName,
             CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(baseUrl))
