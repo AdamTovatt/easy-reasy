@@ -10,4 +10,8 @@
     <PackageReference Include="EasyReasy.FileStorage" Version="1.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\EasyReasy.KnowledgeBase\EasyReasy.KnowledgeBase.csproj" />
+  </ItemGroup>
+
 </Project>

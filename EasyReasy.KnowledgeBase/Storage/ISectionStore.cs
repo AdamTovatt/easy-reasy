@@ -30,22 +30,6 @@ namespace EasyReasy.KnowledgeBase.Storage
         Task<KnowledgeFileSection?> GetByIndexAsync(Guid fileId, int sectionIndex);
 
         /// <summary>
-        /// Retrieves the next section in sequence within a specific file.
-        /// </summary>
-        /// <param name="fileId">The unique identifier of the file.</param>
-        /// <param name="currentSectionIndex">The zero-based index of the current section.</param>
-        /// <returns>A task that represents the asynchronous operation. The result contains the next section if found; otherwise, null.</returns>
-        Task<KnowledgeFileSection?> GetNextAsync(Guid fileId, int currentSectionIndex);
-
-        /// <summary>
-        /// Retrieves the previous section in sequence within a specific file.
-        /// </summary>
-        /// <param name="fileId">The unique identifier of the file.</param>
-        /// <param name="currentSectionIndex">The zero-based index of the current section.</param>
-        /// <returns>A task that represents the asynchronous operation. The result contains the previous section if found; otherwise, null.</returns>
-        Task<KnowledgeFileSection?> GetPreviousAsync(Guid fileId, int currentSectionIndex);
-
-        /// <summary>
         /// Deletes all sections belonging to a specific file.
         /// </summary>
         /// <param name="fileId">The unique identifier of the file whose sections should be deleted.</param>
