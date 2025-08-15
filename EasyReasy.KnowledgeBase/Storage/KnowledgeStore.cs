@@ -32,25 +32,5 @@ namespace EasyReasy.KnowledgeBase.Storage
         /// Gets the section store for managing knowledge file sections.
         /// </summary>
         public ISectionStore Sections { get; }
-
-        /// <summary>
-        /// Initializes the knowledge store and its underlying storage components.
-        /// </summary>
-        /// <returns>A task that represents the asynchronous operation.</returns>
-        public Task InitializeAsync()
-        {
-            // initialize connections/resources
-            throw new NotImplementedException();
-        }
-
-        /// <summary>
-        /// Persists any pending changes to the underlying storage.
-        /// </summary>
-        /// <returns>A task that represents the asynchronous operation.</returns>
-        public Task PersistAsync()
-        {
-            // flush/commit if needed
-            throw new NotImplementedException();
-        }
     }
 }

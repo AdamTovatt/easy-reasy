@@ -222,9 +222,6 @@ IVectorStore vectorStore = new YourVectorStore();
 // Create the main knowledge store
 KnowledgeStore knowledgeStore = new KnowledgeStore(fileStore, chunkStore, sectionStore);
 
-// Initialize the store
-await knowledgeStore.InitializeAsync();
-
 // Store a knowledge file
 KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "document.md", contentHash);
 Guid fileId = await knowledgeStore.Files.AddAsync(file);
@@ -248,9 +245,6 @@ foreach (KnowledgeFileSection section in sections)
         await vectorStore.AddAsync(section.Id, section.Embedding);
     }
 }
-
-// Persist changes
-await knowledgeStore.PersistAsync();
 ```
 
 ### Storage Interfaces
@@ -344,6 +338,17 @@ await vectorStore.RemoveAsync(entityId);
 
 // Search for similar vectors
 IEnumerable<Guid> similarIds = await vectorStore.SearchAsync(queryVector, maxResults);
+```
+
+#### IExplicitPersistence
+Defines explicit persistence operations for storage components that need manual control over data loading and saving:
+
+```csharp
+// Load data from persistent storage during startup
+await storageComponent.LoadAsync(cancellationToken);
+
+// Save data to persistent storage during shutdown
+await storageComponent.SaveAsync(cancellationToken);
 ```
 
 ### Storage Models
@@ -468,7 +473,6 @@ public class InMemoryVectorStore : IVectorStore
 #### 1. Transaction Management
 ```csharp
 // Ensure atomic operations across multiple stores
-await knowledgeStore.InitializeAsync();
 try
 {
     await knowledgeStore.Files.AddAsync(file);
@@ -477,7 +481,6 @@ try
         await knowledgeStore.Chunks.AddAsync(chunk);
         await vectorStore.AddAsync(chunk.Id, chunk.Embedding);
     }
-    await knowledgeStore.PersistAsync();
 }
 catch
 {
