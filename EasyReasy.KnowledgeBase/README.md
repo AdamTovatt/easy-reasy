@@ -387,6 +387,7 @@ public class KnowledgeFileSection : IVectorObject
     public Guid FileId { get; set; }
     public int SectionIndex { get; set; }
     public string? Summary { get; set; }
+    public string? AdditionalContext { get; set; }
     public List<KnowledgeFileChunk> Chunks { get; set; }
     public float[]? Embedding { get; set; }
     

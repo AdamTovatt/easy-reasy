@@ -29,6 +29,11 @@ namespace EasyReasy.KnowledgeBase.Models
         public string? Summary { get; set; }
 
         /// <summary>
+        /// Gets or sets additional context information for the section.
+        /// </summary>
+        public string? AdditionalContext { get; set; }
+
+        /// <summary>
         /// Gets or sets the collection of chunks that belong to this section.
         /// </summary>
         public List<KnowledgeFileChunk> Chunks { get; set; }
