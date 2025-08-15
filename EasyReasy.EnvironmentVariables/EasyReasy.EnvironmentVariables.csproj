@@ -20,7 +20,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <VersionPrefix>1.2.1</VersionPrefix>
+    <VersionPrefix>1.2.2</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
   </PropertyGroup>
 
