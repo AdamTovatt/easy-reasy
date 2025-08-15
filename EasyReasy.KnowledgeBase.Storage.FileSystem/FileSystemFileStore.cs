@@ -1,7 +1,6 @@
-﻿using System.Text.Json;
-using EasyReasy.FileStorage;
+﻿using EasyReasy.FileStorage;
 using EasyReasy.KnowledgeBase.Models;
-using EasyReasy.KnowledgeBase.Storage;
+using System.Text.Json;
 
 namespace EasyReasy.KnowledgeBase.Storage.FileSystem
 {
@@ -85,7 +84,7 @@ namespace EasyReasy.KnowledgeBase.Storage.FileSystem
             {
                 WriteIndented = true,
             });
-            
+
             await _fileSystem.WriteFileAsTextAsync(_storageFileName, jsonContent, cancellationToken);
         }
     }

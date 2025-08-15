@@ -41,6 +41,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Oll
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Storage.FileSystem", "EasyReasy.KnowledgeBase.Storage.FileSystem\EasyReasy.KnowledgeBase.Storage.FileSystem.csproj", "{CA318E8B-B569-4DBE-BC2C-128AD6AE462F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Storage.Sqlite", "EasyReasy.KnowledgeBase.Storage.Sqlite\EasyReasy.KnowledgeBase.Storage.Sqlite.csproj", "{9D51795E-005A-4990-969C-CAF2242D16AE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Storage.Sqlite.Tests", "EasyReasy.KnowledgeBase.Storage.Sqlite.Tests\EasyReasy.KnowledgeBase.Storage.Sqlite.Tests.csproj", "{A2B7D037-FB01-44A8-8DE1-710625A61048}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -123,6 +127,14 @@ Global
 		{CA318E8B-B569-4DBE-BC2C-128AD6AE462F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CA318E8B-B569-4DBE-BC2C-128AD6AE462F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CA318E8B-B569-4DBE-BC2C-128AD6AE462F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9D51795E-005A-4990-969C-CAF2242D16AE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9D51795E-005A-4990-969C-CAF2242D16AE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9D51795E-005A-4990-969C-CAF2242D16AE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9D51795E-005A-4990-969C-CAF2242D16AE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A2B7D037-FB01-44A8-8DE1-710625A61048}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A2B7D037-FB01-44A8-8DE1-710625A61048}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A2B7D037-FB01-44A8-8DE1-710625A61048}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A2B7D037-FB01-44A8-8DE1-710625A61048}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
