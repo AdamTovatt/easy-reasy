@@ -1,3 +1,5 @@
+using EasyReasy.KnowledgeBase.Models;
+
 namespace EasyReasy.KnowledgeBase.ConfidenceRating
 {
     /// <summary>
@@ -49,7 +51,7 @@ namespace EasyReasy.KnowledgeBase.ConfidenceRating
         /// <returns>A new WithSimilarity instance.</returns>
         public static WithSimilarity<T> CreateBetween(IVectorObject obj, float[] vector)
         {
-            double similarity = ConfidenceMath.CosineSimilarity(obj.GetVector(), vector);
+            double similarity = ConfidenceMath.CosineSimilarity(obj.Vector(), vector);
             return new WithSimilarity<T>((T)obj, similarity);
         }
 
@@ -62,7 +64,7 @@ namespace EasyReasy.KnowledgeBase.ConfidenceRating
         /// <returns>A new WithSimilarity instance.</returns>
         public static WithSimilarity<T> CreateBetween(IVectorObject objA, IVectorObject objB)
         {
-            double similarity = ConfidenceMath.CosineSimilarity(objA.GetVector(), objB.GetVector());
+            double similarity = ConfidenceMath.CosineSimilarity(objA.Vector(), objB.Vector());
             return new WithSimilarity<T>((T)objA, similarity);
         }
 

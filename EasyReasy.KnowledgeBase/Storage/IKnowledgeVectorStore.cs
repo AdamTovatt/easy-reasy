@@ -1,9 +1,11 @@
-﻿namespace EasyReasy.KnowledgeBase.Storage
+﻿using EasyReasy.KnowledgeBase.Searching;
+
+namespace EasyReasy.KnowledgeBase.Storage
 {
     /// <summary>
     /// Defines the contract for storing and searching vector embeddings.
     /// </summary>
-    public interface IVectorStore
+    public interface IKnowledgeVectorStore
     {
         /// <summary>
         /// Adds a vector to the store with the specified identifier.
@@ -26,6 +28,6 @@
         /// <param name="queryVector">The vector to search for similar vectors.</param>
         /// <param name="maxResultsCount">The maximum number of results to return.</param>
         /// <returns>A task that represents the asynchronous operation. The result contains a collection of vector identifiers ordered by similarity.</returns>
-        Task<IEnumerable<Guid>> SearchAsync(float[] queryVector, int maxResultsCount);
+        Task<IEnumerable<IKnowledgeVector>> SearchAsync(float[] queryVector, int maxResultsCount);
     }
 }

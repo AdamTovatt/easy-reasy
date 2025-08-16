@@ -45,6 +45,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Sto
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Storage.Sqlite.Tests", "EasyReasy.KnowledgeBase.Storage.Sqlite.Tests\EasyReasy.KnowledgeBase.Storage.Sqlite.Tests.csproj", "{A2B7D037-FB01-44A8-8DE1-710625A61048}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore", "EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore\EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore.csproj", "{3A29AB19-84AE-45FD-9B31-452B4C45896B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -135,6 +137,10 @@ Global
 		{A2B7D037-FB01-44A8-8DE1-710625A61048}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A2B7D037-FB01-44A8-8DE1-710625A61048}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A2B7D037-FB01-44A8-8DE1-710625A61048}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3A29AB19-84AE-45FD-9B31-452B4C45896B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3A29AB19-84AE-45FD-9B31-452B4C45896B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3A29AB19-84AE-45FD-9B31-452B4C45896B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3A29AB19-84AE-45FD-9B31-452B4C45896B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

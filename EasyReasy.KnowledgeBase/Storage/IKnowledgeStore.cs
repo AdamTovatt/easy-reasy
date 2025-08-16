@@ -11,13 +11,13 @@
         IFileStore Files { get; }
 
         /// <summary>
-        /// Gets the chunk store for managing knowledge file chunks.
-        /// </summary>
-        IChunkStore Chunks { get; }
-
-        /// <summary>
         /// Gets the section store for managing knowledge file sections.
         /// </summary>
         ISectionStore Sections { get; }
+
+        /// <summary>
+        /// Gets the chunk store for managing knowledge file chunks.
+        /// </summary>
+        IChunkStore Chunks { get; }
     }
 }

@@ -1,6 +1,4 @@
-﻿using EasyReasy.KnowledgeBase.ConfidenceRating;
-
-namespace EasyReasy.KnowledgeBase.Models
+﻿namespace EasyReasy.KnowledgeBase.Models
 {
     /// <summary>
     /// Represents a chunk of content from a knowledge file.
@@ -53,7 +51,7 @@ namespace EasyReasy.KnowledgeBase.Models
         /// Returns the vector representation of the chunk.
         /// </summary>
         /// <returns>The embedding vector for the chunk.</returns>
-        public float[] GetVector()
+        public float[] Vector()
         {
             return Embedding ?? Array.Empty<float>();
         }

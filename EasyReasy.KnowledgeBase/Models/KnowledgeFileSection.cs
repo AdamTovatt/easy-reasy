@@ -1,5 +1,4 @@
-﻿using EasyReasy.KnowledgeBase.ConfidenceRating;
-using System.Text;
+﻿using System.Text;
 
 namespace EasyReasy.KnowledgeBase.Models
 {
@@ -78,7 +77,7 @@ namespace EasyReasy.KnowledgeBase.Models
         /// Returns the vector representation of the section.
         /// </summary>
         /// <returns>The embedding vector for the section.</returns>
-        public float[] GetVector()
+        public float[] Vector()
         {
             return Embedding ?? Array.Empty<float>();
         }
