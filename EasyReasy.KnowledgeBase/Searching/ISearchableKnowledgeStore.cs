@@ -8,16 +8,15 @@ namespace EasyReasy.KnowledgeBase.Searchings
     public interface ISearchableKnowledgeStore : IKnowledgeStore
     {
         /// <summary>
+        /// Gets the vector store for searching all chunks across all sections.
+        /// </summary>
+        /// <returns>A vector store for chunk-level searches.</returns>
+        IKnowledgeVectorStore GetChunksVectorStore();
+
+        /// <summary>
         /// Gets the vector store for searching sections.
         /// </summary>
         /// <returns>A vector store for section-level searches.</returns>
         IKnowledgeVectorStore GetSectionsVectorStore();
-
-        /// <summary>
-        /// Gets the vector store for searching chunks within a specific section.
-        /// </summary>
-        /// <param name="sectionId">The unique identifier of the section.</param>
-        /// <returns>A vector store for chunk-level searches within the specified section.</returns>
-        IKnowledgeVectorStore GetChunksVectorStore(Guid sectionId);
     }
 }

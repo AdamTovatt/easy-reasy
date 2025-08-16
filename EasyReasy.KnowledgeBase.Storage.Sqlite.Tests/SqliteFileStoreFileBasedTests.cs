@@ -30,6 +30,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
                     {
                         File.Delete(_testDbPath);
                     }
+
                     break;
                 }
                 catch (IOException)

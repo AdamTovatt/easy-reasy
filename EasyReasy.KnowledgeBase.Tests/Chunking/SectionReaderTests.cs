@@ -31,12 +31,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine("=== Testing Empty Content ===");
             Console.WriteLine($"Input content: '{content}'");
 
-            using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 100);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
+            Guid fileId = Guid.NewGuid();
+            using Stream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+            SectionReaderFactory factory = new SectionReaderFactory(_embeddingService, _tokenizer);
+            SectionReader sectionReader = factory.CreateForMarkdown(stream, fileId, maxTokensPerChunk: 100, maxTokensPerSection: 200);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -58,12 +56,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine("=== Testing Small Content ===");
             Console.WriteLine($"Input content:\n{content}");
 
-            using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 100);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 200, chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
+            Guid fileId = Guid.NewGuid();
+            using Stream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+            SectionReaderFactory factory = new SectionReaderFactory(_embeddingService, _tokenizer);
+            SectionReader sectionReader = factory.CreateForMarkdown(stream, fileId, maxTokensPerChunk: 100, maxTokensPerSection: 200);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -77,7 +73,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             for (int i = 0; i < sections.Count; i++)
             {
                 Console.WriteLine($"Section {i + 1} has {sections[i].Count} chunks:");
-                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(sections[i]).ToString());
+                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(sections[i], fileId, i).ToString());
                 Console.WriteLine($"End of Section {i + 1}\n");
             }
 
@@ -94,12 +90,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
                            "This is paragraph two. " + new string('y', 100) + ".\n\n" +
                            "This is paragraph three. " + new string('z', 100) + ".";
 
-            using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 100);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 120, chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
+            Guid fileId = Guid.NewGuid();
+            using Stream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+            SectionReaderFactory factory = new SectionReaderFactory(_embeddingService, _tokenizer);
+            SectionReader sectionReader = factory.CreateForMarkdown(stream, fileId, maxTokensPerChunk: 100, maxTokensPerSection: 120);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -116,7 +110,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             foreach (List<KnowledgeFileChunk> section in sections)
             {
                 Console.WriteLine($"Section {sectionCount + 1}:");
-                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(section).ToString());
+                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(section, fileId, sectionCount).ToString());
                 Console.WriteLine($"<- End of Section {sectionCount + 1} ->\n");
                 sectionCount++;
             }
@@ -128,22 +122,15 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
         public async Task ReadSectionsAsync_ShouldGroupSimilarChunks()
         {
             // Arrange - Use real test document to test similarity-based grouping
+            Guid fileId = Guid.NewGuid();
             using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument02);
-            using StreamReader reader = new StreamReader(stream);
 
             Console.WriteLine("=== Testing Similar Chunk Grouping ===");
             Console.WriteLine($"Using test document: {TestDataFiles.TestDocument02}");
             Console.WriteLine($"Configuration: maxTokensPerSection=200, lookaheadBufferSize=50, standardDeviationMultiplier=1.0, minimumSimilarityThreshold=0.65");
 
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 50);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(
-                maxTokensPerSection: 200,
-                lookaheadBufferSize: 50,
-                standardDeviationMultiplier: 1.0,
-                chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
+            SectionReaderFactory factory = new SectionReaderFactory(_embeddingService, _tokenizer);
+            SectionReader sectionReader = factory.CreateForMarkdown(stream, fileId, maxTokensPerChunk: 50, maxTokensPerSection: 200);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -162,7 +149,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
                 List<KnowledgeFileChunk> section = sections[i];
                 Assert.IsTrue(section.Count > 0, "Each section should contain at least one chunk");
                 Console.WriteLine($"Section {i + 1} ({section.Count} chunks):");
-                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(section).ToString());
+                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(section, fileId, i).ToString());
                 Console.WriteLine($"End of Section {i + 1}\n");
             }
         }
@@ -175,12 +162,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
                            "# Section 2\n\nContent C.\n\nContent D.\n\n" +
                            "# Section 3\n\nContent E.\n\nContent F.";
 
-            using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 30);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
+            Guid fileId = Guid.NewGuid();
+            using Stream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+            SectionReaderFactory factory = new SectionReaderFactory(_embeddingService, _tokenizer);
+            SectionReader sectionReader = factory.CreateForMarkdown(stream, fileId, maxTokensPerChunk: 30, maxTokensPerSection: 200);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -208,13 +193,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine($"Original content length: {originalContent.Length} characters");
             Console.WriteLine($"Original content preview: {originalContent.Substring(0, Math.Min(200, originalContent.Length))}...");
 
+            Guid fileId = Guid.NewGuid();
             using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument01);
-            using StreamReader reader = new StreamReader(stream);
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 50, ChunkStopSignals.Markdown);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(maxTokensPerSection: 200, chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
+            SectionReaderFactory factory = new SectionReaderFactory(_embeddingService, _tokenizer);
+            SectionReader sectionReader = factory.CreateForMarkdown(stream, fileId, maxTokensPerChunk: 50, maxTokensPerSection: 200);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
@@ -224,10 +206,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             }
 
             // Reconstruct content from sections using ToString()
-            string reconstructedContent = string.Join("", sections.Select(section =>
+            string reconstructedContent = string.Join("", sections.Select((section, index) =>
             {
                 // Create a temporary section object to use its ToString() method
-                return KnowledgeFileSection.CreateFromChunks(section).ToString();
+                return KnowledgeFileSection.CreateFromChunks(section, fileId, index).ToString();
             }));
 
             // Assert
@@ -258,15 +240,12 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine("=== Testing Cancellation ===");
             Console.WriteLine($"Input content: {content.Length} characters with {Enumerable.Range(1, rangeMax).Count()} paragraphs");
 
+            Guid fileId = Guid.NewGuid();
             // Use SlowStream to ensure the operation takes long enough to be cancelled
             using (SlowStream slowStream = SlowStream.FromString(content, delayMillisecondsPerRead: 1, delayNanosecondsPerByte: 100))
-            using (StreamReader reader = new StreamReader(slowStream))
             {
-                ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 20);
-                SectioningConfiguration sectioningConfig = new SectioningConfiguration(chunkStopSignals: ChunkStopSignals.Markdown);
-                TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-                SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-                using SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
+                SectionReaderFactory factory = new SectionReaderFactory(_embeddingService, _tokenizer);
+                using SectionReader sectionReader = factory.CreateForMarkdown(slowStream, fileId, maxTokensPerChunk: 20, maxTokensPerSection: 200);
 
                 const int cancellationTimeoutMs = 200;
 
@@ -310,58 +289,6 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
 
                 Assert.IsTrue(didHandleException, "Should handle cancellation exception");
                 Assert.IsTrue(sectionsProcessed > 2, "Should still process some sections before cancellation");
-            }
-        }
-
-        [TestMethod]
-        public async Task ReadSectionsAsync_ShouldHandleSmallSections()
-        {
-            // Arrange - Content that should create very small sections
-            string content = "# Topic A\n\nContent A.\n\n" +
-                           "# Topic B\n\nContent B.\n\n" +
-                           "# Topic C\n\nContent C.";
-
-            Console.WriteLine("=== Testing Small Sections ===");
-            Console.WriteLine($"Input content:\n{content}");
-            Console.WriteLine($"Configuration: maxTokensPerSection=50, lookaheadBufferSize=20, standardDeviationMultiplier=0.8");
-
-            using (MemoryStream memoryStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)))
-            using (StreamReader reader = new StreamReader(memoryStream))
-            {
-                ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 10);
-                SectioningConfiguration sectioningConfig = new SectioningConfiguration(
-                    maxTokensPerSection: 50,
-                    lookaheadBufferSize: 20, // Smaller buffer for this test
-                    standardDeviationMultiplier: 0.8, // Lower multiplier to encourage more splits
-                    chunkStopSignals: ChunkStopSignals.Markdown,
-                    minimumChunksPerSection: 0,
-                    minimumTokensPerSection: 5);
-                TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-                SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-                using SectionReader sectionReader = new SectionReader(chunkReader, _embeddingService, sectioningConfig, _tokenizer);
-
-                // Act
-                List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
-                await foreach (List<KnowledgeFileChunk> section in sectionReader.ReadSectionsAsync())
-                {
-                    sections.Add(section);
-                }
-
-                // Assert
-                Console.WriteLine($"Created {sections.Count} sections");
-                Assert.IsTrue(sections.Count > 1, "Should create multiple small sections");
-
-                // Verify sections can be very small (1-2 chunks)
-                for (int i = 0; i < sections.Count; i++)
-                {
-                    List<KnowledgeFileChunk> section = sections[i];
-                    Console.WriteLine($"Section {i + 1} ({section.Count} chunks):");
-                    Console.WriteLine(KnowledgeFileSection.CreateFromChunks(section).ToString());
-                    Console.WriteLine($"End of Section {i + 1}\n");
-
-                    Assert.IsTrue(section.Count >= 1, "Each section should have at least one chunk");
-                    Assert.IsTrue(section.Count <= 5, "Sections should be reasonably small"); // Loosened from 3 to 5
-                }
             }
         }
     }

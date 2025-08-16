@@ -419,6 +419,7 @@ namespace EasyReasy.VectorStorage.Tests
                 IEnumerable<StoredVector> results = await sequentialStore.FindMostSimilarAsync(query, 10);
                 int resultCount = results.Count();
             }
+
             sequentialSearchTimer.Stop();
 
             long sequentialSearchTimeMs = sequentialSearchTimer.ElapsedMilliseconds;

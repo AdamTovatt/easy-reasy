@@ -8,61 +8,65 @@ namespace EasyReasy.KnowledgeBase.Searching
     /// </summary>
     public class SearchableKnowledgeStore : ISearchableKnowledgeStore
     {
-        /// <summary>
-        /// Gets the file store. This implementation throws <see cref="NotImplementedException"/>.
-        /// </summary>
-        public IFileStore Files => throw new NotImplementedException();
+        private readonly IFileStore _fileStore;
+        private readonly ISectionStore _sectionStore;
+        private readonly IChunkStore _chunkStore;
+        private readonly IKnowledgeVectorStore _chunksVectorStore;
+        private readonly IKnowledgeVectorStore _sectionsVectorStore;
 
         /// <summary>
-        /// Gets the section store. This implementation throws <see cref="NotImplementedException"/>.
+        /// Initializes a new instance of the <see cref="SearchableKnowledgeStore"/> class.
         /// </summary>
-        public ISectionStore Sections => throw new NotImplementedException();
-
-        /// <summary>
-        /// Gets the chunk store. This implementation throws <see cref="NotImplementedException"/>.
-        /// </summary>
-        public IChunkStore Chunks => throw new NotImplementedException();
-
-        /// <summary>
-        /// Gets the vector store for searching chunks within a specific section.
-        /// This implementation throws <see cref="NotImplementedException"/>.
-        /// </summary>
-        /// <param name="sectionId">The unique identifier of the section.</param>
-        /// <returns>A vector store for chunk-level searches.</returns>
-        public IKnowledgeVectorStore GetChunksVectorStore(Guid sectionId)
+        /// <param name="fileStore">The file store.</param>
+        /// <param name="sectionStore">The section store.</param>
+        /// <param name="chunkStore">The chunk store.</param>
+        /// <param name="chunksVectorStore">The vector store for chunk searches.</param>
+        /// <param name="sectionsVectorStore">The vector store for section searches.</param>
+        public SearchableKnowledgeStore(
+            IFileStore fileStore,
+            ISectionStore sectionStore,
+            IChunkStore chunkStore,
+            IKnowledgeVectorStore chunksVectorStore,
+            IKnowledgeVectorStore sectionsVectorStore)
         {
-            throw new NotImplementedException();
+            _fileStore = fileStore ?? throw new ArgumentNullException(nameof(fileStore));
+            _sectionStore = sectionStore ?? throw new ArgumentNullException(nameof(sectionStore));
+            _chunkStore = chunkStore ?? throw new ArgumentNullException(nameof(chunkStore));
+            _chunksVectorStore = chunksVectorStore ?? throw new ArgumentNullException(nameof(chunksVectorStore));
+            _sectionsVectorStore = sectionsVectorStore ?? throw new ArgumentNullException(nameof(sectionsVectorStore));
         }
 
         /// <summary>
-        /// Gets the vector store for searching files.
-        /// This implementation throws <see cref="NotImplementedException"/>.
+        /// Gets the file store.
         /// </summary>
-        /// <returns>A vector store for file-level searches.</returns>
-        public IKnowledgeVectorStore GetFilesVectorStore()
+        public IFileStore Files => _fileStore;
+
+        /// <summary>
+        /// Gets the section store.
+        /// </summary>
+        public ISectionStore Sections => _sectionStore;
+
+        /// <summary>
+        /// Gets the chunk store.
+        /// </summary>
+        public IChunkStore Chunks => _chunkStore;
+
+        /// <summary>
+        /// Gets the vector store for searching all chunks across all sections.
+        /// </summary>
+        /// <returns>A vector store for chunk-level searches.</returns>
+        public IKnowledgeVectorStore GetChunksVectorStore()
         {
-            throw new NotImplementedException();
+            return _chunksVectorStore;
         }
 
         /// <summary>
         /// Gets the vector store for searching sections.
-        /// This implementation throws <see cref="NotImplementedException"/>.
         /// </summary>
         /// <returns>A vector store for section-level searches.</returns>
         public IKnowledgeVectorStore GetSectionsVectorStore()
         {
-            throw new NotImplementedException();
-        }
-
-        /// <summary>
-        /// Gets the vector store for searching sections within a specific file.
-        /// This implementation throws <see cref="NotImplementedException"/>.
-        /// </summary>
-        /// <param name="fileId">The unique identifier of the file.</param>
-        /// <returns>A vector store for section-level searches within the specified file.</returns>
-        public IKnowledgeVectorStore GetSectionsVectorStore(Guid fileId)
-        {
-            throw new NotImplementedException();
+            return _sectionsVectorStore;
         }
     }
 }

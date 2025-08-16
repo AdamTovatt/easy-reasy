@@ -17,7 +17,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
         }
 
         [TestCleanup]
-        public void TestCleanup()
+        public async Task TestCleanupAsync()
         {
             _knowledgeStore = null!;
 
@@ -30,6 +30,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
                     {
                         File.Delete(_testDbPath);
                     }
+
                     break;
                 }
                 catch (IOException)
@@ -37,7 +38,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
                     if (i == 2) // Last attempt
                         break;
 
-                    Thread.Sleep(100); // Wait a bit before retrying
+                    await Task.Delay(100); // Wait a bit before retrying
                 }
             }
         }
@@ -293,12 +294,12 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             Assert.IsFalse(await _knowledgeStore.Files.ExistsAsync(file.Id));
             Assert.IsNull(await _knowledgeStore.Files.GetAsync(file.Id));
 
-            // Sections and chunks should still exist since we only deleted the file
-            // (they would be deleted by foreign key cascade in a real scenario)
+            // Sections and chunks should be cascade deleted when the file is deleted
+            // due to foreign key constraints with ON DELETE CASCADE
             KnowledgeFileSection? retrievedSection = await _knowledgeStore.Sections.GetAsync(section.Id);
             KnowledgeFileChunk? retrievedChunk = await _knowledgeStore.Chunks.GetAsync(chunk.Id);
-            Assert.IsNotNull(retrievedSection);
-            Assert.IsNotNull(retrievedChunk);
+            Assert.IsNull(retrievedSection);
+            Assert.IsNull(retrievedChunk);
         }
 
         [TestMethod]

@@ -19,33 +19,31 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth", "EasyReasy
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Tests", "EasyReasy.Auth.Tests\EasyReasy.Auth.Tests.csproj", "{8F761197-B6E7-4118-8469-FBFC9487A658}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.VectorStorage", "EasyReasy.VectorStorage\EasyReasy.VectorStorage.csproj", "{3B545E2A-A821-4DE9-9D20-C922C191B306}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.VectorStorage", "EasyReasy.VectorStorage\EasyReasy.VectorStorage.csproj", "{3B545E2A-A821-4DE9-9D20-C922C191B306}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.VectorStorage.Tests", "EasyReasy.VectorStorage.Tests\EasyReasy.VectorStorage.Tests.csproj", "{D2EA13C4-9644-412B-8353-C53E11334E32}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.VectorStorage.Tests", "EasyReasy.VectorStorage.Tests\EasyReasy.VectorStorage.Tests.csproj", "{D2EA13C4-9644-412B-8353-C53E11334E32}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.Auth.Client", "EasyReasy.Auth.Client\EasyReasy.Auth.Client.csproj", "{A9D59EAC-53D7-4433-BE4D-30B9C9253E8F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Client", "EasyReasy.Auth.Client\EasyReasy.Auth.Client.csproj", "{A9D59EAC-53D7-4433-BE4D-30B9C9253E8F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.Auth.Client.Tests", "EasyReasy.Auth.Client.Tests\EasyReasy.Auth.Client.Tests.csproj", "{293AA1B4-E783-41A3-8FE5-86D8D3C03F59}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Client.Tests", "EasyReasy.Auth.Client.Tests\EasyReasy.Auth.Client.Tests.csproj", "{293AA1B4-E783-41A3-8FE5-86D8D3C03F59}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase", "EasyReasy.KnowledgeBase\EasyReasy.KnowledgeBase.csproj", "{35DA6BDE-DCF6-4257-809A-EC99E35C7704}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.KnowledgeBase", "EasyReasy.KnowledgeBase\EasyReasy.KnowledgeBase.csproj", "{35DA6BDE-DCF6-4257-809A-EC99E35C7704}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Tests", "EasyReasy.KnowledgeBase.Tests\EasyReasy.KnowledgeBase.Tests.csproj", "{E513921E-51D1-4C34-B28C-60D33B6152F9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.KnowledgeBase.Tests", "EasyReasy.KnowledgeBase.Tests\EasyReasy.KnowledgeBase.Tests.csproj", "{E513921E-51D1-4C34-B28C-60D33B6152F9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.BertTokenization", "EasyReasy.KnowledgeBase.BertTokenization\EasyReasy.KnowledgeBase.BertTokenization.csproj", "{040049AA-F860-433A-9459-7CC96C5FD771}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.KnowledgeBase.BertTokenization", "EasyReasy.KnowledgeBase.BertTokenization\EasyReasy.KnowledgeBase.BertTokenization.csproj", "{040049AA-F860-433A-9459-7CC96C5FD771}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.BertTokenization.Tests", "EasyReasy.KnowledgeBase.BertTokenization.Tests\EasyReasy.KnowledgeBase.BertTokenization.Tests.csproj", "{F8CE4344-CBF1-4BAC-A0CB-A636F3E4C999}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.KnowledgeBase.BertTokenization.Tests", "EasyReasy.KnowledgeBase.BertTokenization.Tests\EasyReasy.KnowledgeBase.BertTokenization.Tests.csproj", "{F8CE4344-CBF1-4BAC-A0CB-A636F3E4C999}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.OllamaGeneration", "EasyReasy.KnowledgeBase.OllamaGeneration\EasyReasy.KnowledgeBase.OllamaGeneration.csproj", "{FB94084C-6704-433C-B1C1-D2E07DB8E0A3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.KnowledgeBase.OllamaGeneration", "EasyReasy.KnowledgeBase.OllamaGeneration\EasyReasy.KnowledgeBase.OllamaGeneration.csproj", "{FB94084C-6704-433C-B1C1-D2E07DB8E0A3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.OllamaGeneration.Tests", "EasyReasy.KnowledgeBase.OllamaGeneration.Tests\EasyReasy.KnowledgeBase.OllamaGeneration.Tests.csproj", "{22CBEE76-A8A6-433B-B663-5B897864DB35}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.KnowledgeBase.OllamaGeneration.Tests", "EasyReasy.KnowledgeBase.OllamaGeneration.Tests\EasyReasy.KnowledgeBase.OllamaGeneration.Tests.csproj", "{22CBEE76-A8A6-433B-B663-5B897864DB35}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Storage.FileSystem", "EasyReasy.KnowledgeBase.Storage.FileSystem\EasyReasy.KnowledgeBase.Storage.FileSystem.csproj", "{CA318E8B-B569-4DBE-BC2C-128AD6AE462F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.KnowledgeBase.Storage.Sqlite", "EasyReasy.KnowledgeBase.Storage.Sqlite\EasyReasy.KnowledgeBase.Storage.Sqlite.csproj", "{9D51795E-005A-4990-969C-CAF2242D16AE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Storage.Sqlite", "EasyReasy.KnowledgeBase.Storage.Sqlite\EasyReasy.KnowledgeBase.Storage.Sqlite.csproj", "{9D51795E-005A-4990-969C-CAF2242D16AE}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.KnowledgeBase.Storage.Sqlite.Tests", "EasyReasy.KnowledgeBase.Storage.Sqlite.Tests\EasyReasy.KnowledgeBase.Storage.Sqlite.Tests.csproj", "{A2B7D037-FB01-44A8-8DE1-710625A61048}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Storage.Sqlite.Tests", "EasyReasy.KnowledgeBase.Storage.Sqlite.Tests\EasyReasy.KnowledgeBase.Storage.Sqlite.Tests.csproj", "{A2B7D037-FB01-44A8-8DE1-710625A61048}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore", "EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore\EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore.csproj", "{3A29AB19-84AE-45FD-9B31-452B4C45896B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore", "EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore\EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore.csproj", "{3A29AB19-84AE-45FD-9B31-452B4C45896B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -125,10 +123,6 @@ Global
 		{22CBEE76-A8A6-433B-B663-5B897864DB35}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{22CBEE76-A8A6-433B-B663-5B897864DB35}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{22CBEE76-A8A6-433B-B663-5B897864DB35}.Release|Any CPU.Build.0 = Release|Any CPU
-		{CA318E8B-B569-4DBE-BC2C-128AD6AE462F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{CA318E8B-B569-4DBE-BC2C-128AD6AE462F}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{CA318E8B-B569-4DBE-BC2C-128AD6AE462F}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{CA318E8B-B569-4DBE-BC2C-128AD6AE462F}.Release|Any CPU.Build.0 = Release|Any CPU
 		{9D51795E-005A-4990-969C-CAF2242D16AE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{9D51795E-005A-4990-969C-CAF2242D16AE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9D51795E-005A-4990-969C-CAF2242D16AE}.Release|Any CPU.ActiveCfg = Release|Any CPU

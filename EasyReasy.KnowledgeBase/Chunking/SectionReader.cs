@@ -397,6 +397,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
             {
                 _ownedStreamReader?.Dispose();
             }
+
             _disposed = true;
         }
     }

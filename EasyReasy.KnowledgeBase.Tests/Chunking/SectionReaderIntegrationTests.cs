@@ -67,12 +67,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Console.WriteLine("=== Integration Test: Cancellation with Real Embeddings ===");
             Console.WriteLine($"Input content: {content.Length} characters with {rangeMax} paragraphs");
 
-            using StreamReader reader = new StreamReader(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)));
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 20);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(chunkStopSignals: ChunkStopSignals.Markdown);
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
+            Guid fileId = Guid.NewGuid();
+            using Stream stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+            SectionReaderFactory factory = new SectionReaderFactory(_ollamaEmbeddingService, _tokenizer);
+            SectionReader sectionReader = factory.CreateForMarkdown(stream, fileId, maxTokensPerChunk: 20, maxTokensPerSection: 200);
 
             const int cancellationTimeoutMs = 200; // 200 ms for real embeddings
 
@@ -121,28 +119,21 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Assert.IsNotNull(_ollamaEmbeddingService);
 
             // Arrange - Use real test document to test similarity-based grouping
+            Guid fileId = Guid.NewGuid();
             using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument03);
-            using StreamReader reader = new StreamReader(stream);
-
-            ChunkingConfiguration chunkingConfig = new ChunkingConfiguration(_tokenizer, 100, ChunkStopSignals.Markdown);
-            SectioningConfiguration sectioningConfig = new SectioningConfiguration(
-                maxTokensPerSection: 1000,
-                lookaheadBufferSize: 100,
-                standardDeviationMultiplier: 1.0,
-                chunkStopSignals: ChunkStopSignals.Markdown);
-
-            TextSegmentReader textSegmentReader = TextSegmentReader.CreateForMarkdown(reader);
-            SegmentBasedChunkReader chunkReader = new SegmentBasedChunkReader(textSegmentReader, chunkingConfig);
-            SectionReader sectionReader = new SectionReader(chunkReader, _ollamaEmbeddingService, sectioningConfig, _tokenizer);
+            SectionReaderFactory factory = new SectionReaderFactory(_ollamaEmbeddingService, _tokenizer);
+            SectionReader sectionReader = factory.CreateForMarkdown(stream, fileId, maxTokensPerChunk: 100, maxTokensPerSection: 1000);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
+            int sectionIndex = 0;
             await foreach (List<KnowledgeFileChunk> chunks in sectionReader.ReadSectionsAsync())
             {
                 Console.WriteLine("=== SECTION START ===");
-                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(chunks).ToString("\n-------------\n"));
-                int tokenCount = _tokenizer.CountTokens(KnowledgeFileSection.CreateFromChunks(chunks).ToString());
+                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(chunks, fileId, sectionIndex).ToString("\n-------------\n"));
+                int tokenCount = _tokenizer.CountTokens(KnowledgeFileSection.CreateFromChunks(chunks, fileId, sectionIndex).ToString());
                 Console.WriteLine($"=== SECTION ENDED WITH {tokenCount} TOKENS ===");
+                sectionIndex++;
             }
         }
 
@@ -152,20 +143,23 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             Assert.IsNotNull(_ollamaEmbeddingService);
 
             // Arrange - Use real test document to test similarity-based grouping
+            Guid fileId = Guid.NewGuid();
             using Stream stream = await _resourceManager.GetResourceStreamAsync(TestDataFiles.TestDocument04);
 
             SectionReaderFactory readerFactory = new SectionReaderFactory(_ollamaEmbeddingService, _tokenizer);
 
-            SectionReader sectionReader = readerFactory.CreateForMarkdown(stream, 100, 1000);
+            SectionReader sectionReader = readerFactory.CreateForMarkdown(stream, fileId, maxTokensPerChunk: 100, maxTokensPerSection: 1000);
 
             // Act
             List<List<KnowledgeFileChunk>> sections = new List<List<KnowledgeFileChunk>>();
+            int sectionIndex = 0;
             await foreach (List<KnowledgeFileChunk> chunks in sectionReader.ReadSectionsAsync())
             {
                 Console.WriteLine("=== SECTION START ===");
-                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(chunks).ToString("\n-------------\n"));
-                int tokenCount = _tokenizer.CountTokens(KnowledgeFileSection.CreateFromChunks(chunks).ToString());
+                Console.WriteLine(KnowledgeFileSection.CreateFromChunks(chunks, fileId, sectionIndex).ToString("\n-------------\n"));
+                int tokenCount = _tokenizer.CountTokens(KnowledgeFileSection.CreateFromChunks(chunks, fileId, sectionIndex).ToString());
                 Console.WriteLine($"=== SECTION ENDED WITH {tokenCount} TOKENS ===");
+                sectionIndex++;
             }
         }
     }
