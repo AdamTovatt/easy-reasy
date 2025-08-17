@@ -1,4 +1,4 @@
-﻿using EasyReasy.KnowledgeBase.Searchings;
+﻿using EasyReasy.KnowledgeBase.Searching;
 using EasyReasy.KnowledgeBase.Storage;
 
 namespace EasyReasy.KnowledgeBase.Searching

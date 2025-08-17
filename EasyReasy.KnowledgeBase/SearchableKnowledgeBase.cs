@@ -1,8 +1,9 @@
-﻿using EasyReasy.KnowledgeBase.ConfidenceRating;
+﻿using EasyReasy.KnowledgeBase.Chunking;
+using EasyReasy.KnowledgeBase.ConfidenceRating;
 using EasyReasy.KnowledgeBase.Generation;
+using EasyReasy.KnowledgeBase.Indexing;
 using EasyReasy.KnowledgeBase.Models;
 using EasyReasy.KnowledgeBase.Searching;
-using EasyReasy.KnowledgeBase.Searchings;
 using EasyReasy.KnowledgeBase.Storage;
 
 namespace EasyReasy.KnowledgeBase
@@ -23,6 +24,11 @@ namespace EasyReasy.KnowledgeBase
         public IEmbeddingService EmbeddingService { get; set; }
 
         /// <summary>
+        /// Gets or sets the tokenizer used for text processing.
+        /// </summary>
+        public ITokenizer Tokenizer { get; set; }
+
+        /// <summary>
         /// Gets or sets the maximum number of search results to return.
         /// </summary>
         public int MaxSearchResultsCount { get; set; }
@@ -32,11 +38,24 @@ namespace EasyReasy.KnowledgeBase
         /// </summary>
         /// <param name="searchableKnowledgeStore">The searchable knowledge store.</param>
         /// <param name="embeddingService">The embedding service for vector conversion.</param>
-        public SearchableKnowledgeBase(ISearchableKnowledgeStore searchableKnowledgeStore, IEmbeddingService embeddingService)
+        /// <param name="tokenizer">The tokenizer for text processing.</param>
+        public SearchableKnowledgeBase(ISearchableKnowledgeStore searchableKnowledgeStore, IEmbeddingService embeddingService, ITokenizer tokenizer)
         {
             SearchableKnowledgeStore = searchableKnowledgeStore;
             EmbeddingService = embeddingService;
+            Tokenizer = tokenizer;
             MaxSearchResultsCount = 10;
+        }
+
+        /// <summary>
+        /// Creates an indexer that can be used to add documents to this knowledge base.
+        /// </summary>
+        /// <param name="customEmbeddingService">Optional custom embedding service to use for indexing. If not provided, uses the default embedding service.</param>
+        /// <returns>An indexer instance that can consume file sources.</returns>
+        public IIndexer CreateIndexer(IEmbeddingService? customEmbeddingService = null)
+        {
+            IEmbeddingService embeddingServiceToUse = customEmbeddingService ?? EmbeddingService;
+            return new KnowledgeBaseIndexer(SearchableKnowledgeStore, embeddingServiceToUse, Tokenizer);
         }
 
         /// <summary>

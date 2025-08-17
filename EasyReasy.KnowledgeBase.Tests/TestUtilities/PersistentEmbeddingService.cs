@@ -1,4 +1,6 @@
+using EasyReasy.KnowledgeBase.Chunking;
 using EasyReasy.KnowledgeBase.Generation;
+using EasyReasy.KnowledgeBase.Models;
 using System.Text.Json;
 
 namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
@@ -189,6 +191,83 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         {
             using FileStream fileStream = File.OpenRead(filePath);
             return Deserialize(fileStream);
+        }
+
+        /// <summary>
+        /// Initializes a persistent embedding service by either loading from an existing file
+        /// or creating embeddings for the specified documents and saving them.
+        /// </summary>
+        /// <param name="filePath">The path where the persistent embedding service should be saved/loaded.</param>
+        /// <param name="embeddingService">The embedding service to use for generating embeddings.</param>
+        /// <param name="tokenizer">The tokenizer to use for text processing.</param>
+        /// <param name="resourceManager">The resource manager to access documents.</param>
+        /// <param name="maxTokensPerChunk">The maximum number of tokens per chunk.</param>
+        /// <param name="maxTokensPerSection">The maximum number of tokens per section.</param>
+        /// <param name="documents">The test documents to create embeddings for.</param>
+        /// <returns>A persistent embedding service with embeddings for all document chunks.</returns>
+        public static async Task<PersistentEmbeddingService> InitializeFromDocumentsAsync(
+            string filePath,
+            IEmbeddingService embeddingService,
+            ITokenizer tokenizer,
+            ResourceManager resourceManager,
+            int maxTokensPerChunk = 100,
+            int maxTokensPerSection = 1000,
+            params Resource[] documents)
+        {
+            // Check if persistent embedding service file already exists
+            if (File.Exists(filePath))
+            {
+                Console.WriteLine($"Loading existing persistent embedding service from {filePath}");
+                return Deserialize(filePath);
+            }
+
+            Console.WriteLine($"Creating new persistent embedding service for {documents.Length} documents");
+
+            // Create a new persistent embedding service
+            PersistentEmbeddingService persistentService = new PersistentEmbeddingService(embeddingService.ModelName, embeddingService.Dimensions);
+
+            // Process each document
+            foreach (Resource document in documents)
+            {
+                Console.WriteLine($"Processing document: {document.Path}");
+
+                Guid fileId = Guid.NewGuid();
+                using Stream stream = await resourceManager.GetResourceStreamAsync(document);
+
+                // Create section reader with real embedding service
+                SectionReaderFactory factory = new SectionReaderFactory(embeddingService, tokenizer);
+                SectionReader sectionReader = factory.CreateForMarkdown(stream, fileId, maxTokensPerChunk, maxTokensPerSection);
+
+                // Read sections and extract embeddings from chunks
+                await foreach (List<KnowledgeFileChunk> chunks in sectionReader.ReadSectionsAsync())
+                {
+                    foreach (KnowledgeFileChunk chunk in chunks)
+                    {
+                        if (chunk.ContainsVector())
+                        {
+                            // Get the text content for this chunk
+                            string chunkText = chunk.Content;
+
+                            // Get the embedding from the chunk
+                            float[]? embedding = chunk.Embedding;
+
+                            if (embedding == null)
+                            {
+                                throw new NullReferenceException($"The chunk embedding for a chunk was unexpectedly null");
+                            }
+
+                            // Add to persistent service
+                            persistentService.AddEmbedding(chunkText, embedding);
+                        }
+                    }
+                }
+            }
+
+            // Save the persistent embedding service
+            Console.WriteLine($"Saving persistent embedding service to {filePath}");
+            persistentService.Serialize(filePath);
+
+            return persistentService;
         }
     }
 }

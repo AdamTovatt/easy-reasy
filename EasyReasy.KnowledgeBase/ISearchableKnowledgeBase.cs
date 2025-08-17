@@ -1,4 +1,6 @@
-﻿using EasyReasy.KnowledgeBase.Searching;
+﻿using EasyReasy.KnowledgeBase.Generation;
+using EasyReasy.KnowledgeBase.Indexing;
+using EasyReasy.KnowledgeBase.Searching;
 
 namespace EasyReasy.KnowledgeBase
 {
@@ -7,6 +9,13 @@ namespace EasyReasy.KnowledgeBase
     /// </summary>
     public interface ISearchableKnowledgeBase
     {
+        /// <summary>
+        /// Creates an indexer that can be used to add documents to this knowledge base.
+        /// </summary>
+        /// <param name="customEmbeddingService">Optional custom embedding service to use for indexing. If not provided, uses the default embedding service.</param>
+        /// <returns>An indexer instance that can consume file sources.</returns>
+        IIndexer CreateIndexer(IEmbeddingService? customEmbeddingService = null);
+
         /// <summary>
         /// Searches in the knowledgebase for relevant content.
         /// </summary>

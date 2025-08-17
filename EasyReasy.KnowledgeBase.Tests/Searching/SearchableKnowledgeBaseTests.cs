@@ -5,12 +5,15 @@ using EasyReasy.KnowledgeBase.ConfidenceRating;
 using EasyReasy.KnowledgeBase.Generation;
 using EasyReasy.KnowledgeBase.Models;
 using EasyReasy.KnowledgeBase.OllamaGeneration;
+using EasyReasy.KnowledgeBase.Indexing;
 using EasyReasy.KnowledgeBase.Searching;
 using EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore;
 using EasyReasy.KnowledgeBase.Storage.Sqlite;
+using EasyReasy.KnowledgeBase.Tests.TestFileSources;
 using EasyReasy.KnowledgeBase.Tests.TestUtilities;
 using System.Diagnostics;
 using System.Reflection;
+using EasyReasy.VectorStorage;
 
 namespace EasyReasy.KnowledgeBase.Tests.Searching
 {
@@ -21,8 +24,10 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
 
         private static ResourceManager _resourceManager = null!;
         private static ITokenizer _tokenizer = null!;
-        private static IEmbeddingService? _ollamaEmbeddingService = null;
-        private static PersistentEmbeddingService? _persistentEmbeddingService = null;
+        private static IEmbeddingService _ollamaEmbeddingService = null!;
+        private static PersistentEmbeddingService _persistentEmbeddingService = null!;
+        private static SearchableKnowledgeBase _searchableKnowledgeBase = null!;
+        private static CosineVectorStore _cosineVectorStore = null!;
 
         [ClassInitialize]
         public static async Task BeforeAll(TestContext testContext)
@@ -42,17 +47,70 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
                     OllamaTestEnvironmentVariables.OllamaEmbeddingModelName.GetValue());
 
                 // Initialize persistent embedding service
-                _persistentEmbeddingService = await InitializePersistentEmbeddingServiceAsync(
+                _persistentEmbeddingService = await PersistentEmbeddingService.InitializeFromDocumentsAsync(
+                    _persistentEmbeddingPath,
+                    _ollamaEmbeddingService,
+                    _tokenizer,
+                    _resourceManager,
+                    maxTokensPerChunk: 100,
+                    maxTokensPerSection: 1000,
                     TestDataFiles.TestDocument01,
                     TestDataFiles.TestDocument02,
                     TestDataFiles.TestDocument03,
                     TestDataFiles.TestDocument04);
+
+                _searchableKnowledgeBase = await CreateSearchableKnowledgeBaseAsync();
+
+                await IndexFileSourcesAsync(CreateFileSourceProvider());
             }
             catch (Exception exception)
             {
                 Console.WriteLine($"Could not load TestEnvironmentVariables.txt: {exception.Message}");
                 Assert.Inconclusive();
             }
+        }
+
+        private static async Task<SearchableKnowledgeBase> CreateSearchableKnowledgeBaseAsync()
+        {
+            SqliteKnowledgeStore sqliteKnowledgeStore = await SqliteKnowledgeStore.CreateAsync(TestPaths.SqliteKnowledgeStorePath);
+
+            _cosineVectorStore = new CosineVectorStore(_persistentEmbeddingService.Dimensions);
+
+            if (File.Exists(TestPaths.CosineVectorStorePath))
+            {
+                using (Stream vectorStoreStream = File.OpenRead(TestPaths.CosineVectorStorePath))
+                {
+                    await _cosineVectorStore.LoadAsync(vectorStoreStream);
+                }
+            }
+
+            EasyReasyVectorStore chunksVectorStore = new EasyReasyVectorStore(_cosineVectorStore);
+
+            SearchableKnowledgeStore searchableKnowledgeStore = new SearchableKnowledgeStore(sqliteKnowledgeStore, chunksVectorStore);
+            SearchableKnowledgeBase searchableKnowledgeBase = new SearchableKnowledgeBase(searchableKnowledgeStore, _ollamaEmbeddingService, _tokenizer);
+
+            return searchableKnowledgeBase;
+        }
+
+        private static async Task IndexFileSourcesAsync(IFileSourceProvider fileSourceProvider)
+        {
+            IIndexer indexer = _searchableKnowledgeBase.CreateIndexer(_persistentEmbeddingService);
+
+            foreach (IFileSource fileSource in await fileSourceProvider.GetAllFilesAsync())
+            {
+                await indexer.ConsumeAsync(fileSource);
+            }
+
+            await _cosineVectorStore.SaveAsync(File.OpenWrite(TestPaths.CosineVectorStorePath));
+        }
+
+        private static IFileSourceProvider CreateFileSourceProvider()
+        {
+            InMemoryFileSourceProvider inMemoryFileSourceProvider = new InMemoryFileSourceProvider();
+
+            inMemoryFileSourceProvider.AddFile(new TestFileSource(Guid.Parse("771d384b-0956-4bb0-90c8-39c2db4e8461"), TestDataFiles.TestDocument03, _resourceManager));
+
+            return inMemoryFileSourceProvider;
         }
 
         [ClassCleanup]
@@ -64,140 +122,13 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
             }
         }
 
-        private static SectionReader CreateSectionReader(Stream contentStream, Guid fileId, IEmbeddingService embeddingService)
+        [DataTestMethod]
+        [DataRow("How does authentication work?")]
+        public async Task SearchAsync_WithTestDocuments_ShouldReturnRelevantResults(string query)
         {
-            SectionReaderFactory factory = new SectionReaderFactory(embeddingService, _tokenizer);
-            SectionReader sectionReader = factory.CreateForMarkdown(contentStream, fileId, maxTokensPerChunk: 100, maxTokensPerSection: 1000);
-            return sectionReader;
-        }
-
-        /// <summary>
-        /// Initializes a persistent embedding service by either loading from an existing file
-        /// or creating embeddings for the specified documents and saving them.
-        /// </summary>
-        /// <param name="documents">The test documents to create embeddings for.</param>
-        /// <returns>A persistent embedding service with embeddings for all document chunks.</returns>
-        private static async Task<PersistentEmbeddingService> InitializePersistentEmbeddingServiceAsync(params Resource[] documents)
-        {
-            if (_ollamaEmbeddingService == null)
-            {
-                throw new NullReferenceException("The ollama embedding service was null");
-            }
-
-            // Check if persistent embedding service file already exists
-            if (File.Exists(_persistentEmbeddingPath))
-            {
-                Console.WriteLine($"Loading existing persistent embedding service from {_persistentEmbeddingPath}");
-                return PersistentEmbeddingService.Deserialize(_persistentEmbeddingPath);
-            }
-
-            Console.WriteLine($"Creating new persistent embedding service for {documents.Length} documents");
-
-            // Create a new persistent embedding service
-            PersistentEmbeddingService persistentService = new PersistentEmbeddingService(_ollamaEmbeddingService.ModelName, _ollamaEmbeddingService.Dimensions);
-
-            // Process each document
-            foreach (Resource document in documents)
-            {
-                Console.WriteLine($"Processing document: {document.Path}");
-
-                Guid fileId = Guid.NewGuid();
-                using Stream stream = await _resourceManager.GetResourceStreamAsync(document);
-
-                // Create section reader with real embedding service
-                SectionReader sectionReader = CreateSectionReader(stream, fileId, _ollamaEmbeddingService);
-
-                // Read sections and extract embeddings from chunks
-                await foreach (List<KnowledgeFileChunk> chunks in sectionReader.ReadSectionsAsync())
-                {
-                    foreach (KnowledgeFileChunk chunk in chunks)
-                    {
-                        if (chunk.ContainsVector())
-                        {
-                            // Get the text content for this chunk
-                            string chunkText = chunk.Content;
-
-                            // Get the embedding from the chunk
-                            float[]? embedding = chunk.Embedding;
-
-                            if (embedding == null)
-                            {
-                                throw new NullReferenceException($"The chunk embedding for a chunk was unexpectedly null");
-                            }
-
-                            // Add to persistent service
-                            persistentService.AddEmbedding(chunkText, embedding);
-                        }
-                    }
-                }
-            }
-
-            // Save the persistent embedding service
-            Console.WriteLine($"Saving persistent embedding service to {_persistentEmbeddingPath}");
-            persistentService.Serialize(_persistentEmbeddingPath);
-
-            return persistentService;
-        }
-
-        [TestMethod]
-        public async Task SearchAsync_WithTestDocuments_ShouldReturnRelevantResults()
-        {
-            // Skip test if persistent embedding service is not available
-            if (_persistentEmbeddingService == null)
-            {
-                Assert.Inconclusive("Persistent embedding service not available. Set environment variables to run integration tests.");
-                return;
-            }
-
-            if (_ollamaEmbeddingService == null)
-            {
-                Assert.Inconclusive("Ollama embedding service not available. Set environment variables to run integration tests.");
-                return;
-            }
-
-            // Arrange
-            Dictionary<Guid, Resource> filesToIndex = new Dictionary<Guid, Resource>();
-            filesToIndex.Add(Guid.NewGuid(), TestDataFiles.TestDocument03);
-
-            SqliteKnowledgeStore sqliteKnowledgeStore = await SqliteKnowledgeStore.CreateAsync(TestPaths.SqliteKnowledgeStorePath);
-            EasyReasyVectorStore chunksVectorStore = new EasyReasyVectorStore(new VectorStorage.CosineVectorStore(_persistentEmbeddingService.Dimensions));
-            SearchableKnowledgeStore searchableKnowledgeStore = new SearchableKnowledgeStore(sqliteKnowledgeStore, chunksVectorStore);
-            SearchableKnowledgeBase searchableKnowledgeBase = new SearchableKnowledgeBase(searchableKnowledgeStore, _ollamaEmbeddingService);
-
-            foreach (Guid fileId in filesToIndex.Keys)
-            {
-                using (Stream resourceStream = await _resourceManager.GetResourceStreamAsync(filesToIndex[fileId]))
-                {
-                    SectionReader sectionReader = CreateSectionReader(resourceStream, fileId, _persistentEmbeddingService);
-
-                    await sqliteKnowledgeStore.Files.AddAsync(new KnowledgeFile(fileId, filesToIndex[fileId].Path, new byte[1])); // TODO! use real hash
-
-                    int sectionIndex = 0;
-                    await foreach (List<KnowledgeFileChunk> chunks in sectionReader.ReadSectionsAsync())
-                    {
-                        KnowledgeFileSection section = KnowledgeFileSection.CreateFromChunks(chunks, fileId, sectionIndex);
-                        await sqliteKnowledgeStore.Sections.AddAsync(section);
-
-                        foreach (KnowledgeFileChunk chunk in chunks)
-                        {
-                            await sqliteKnowledgeStore.Chunks.AddAsync(chunk);
-
-                            if (chunk.Embedding == null)
-                            {
-                                throw new ArgumentNullException(nameof(chunk));
-                            }
-
-                            await chunksVectorStore.AddAsync(chunk.Id, chunk.Embedding);
-                        }
-
-                        sectionIndex++;
-                    }
-                }
-            }
-
             // Act
             Stopwatch stopwatch = Stopwatch.StartNew();
-            IKnowledgeBaseSearchResult searchResult = await searchableKnowledgeBase.SearchAsync("How does authentication work?", 3);
+            IKnowledgeBaseSearchResult searchResult = await _searchableKnowledgeBase.SearchAsync(query, 5);
             KnowledgeBaseSearchResult? result = searchResult as KnowledgeBaseSearchResult;
 
             stopwatch.Stop();

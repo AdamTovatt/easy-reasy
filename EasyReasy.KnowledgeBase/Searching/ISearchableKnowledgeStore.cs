@@ -1,6 +1,6 @@
 ﻿using EasyReasy.KnowledgeBase.Storage;
 
-namespace EasyReasy.KnowledgeBase.Searchings
+namespace EasyReasy.KnowledgeBase.Searching
 {
     /// <summary>
     /// Defines the contract for a searchable knowledge store that provides vector-based search capabilities.
