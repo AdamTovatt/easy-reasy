@@ -42,5 +42,12 @@ namespace EasyReasy.KnowledgeBase.Storage
         /// <param name="chunkIndex">The zero-based index of the chunk within the section.</param>
         /// <returns>A task that represents the asynchronous operation. The result contains the chunk if found; otherwise, null.</returns>
         Task<KnowledgeFileChunk?> GetByIndexAsync(Guid sectionId, int chunkIndex);
+
+        /// <summary>
+        /// Retrieves all chunks belonging to a specific section.
+        /// </summary>
+        /// <param name="sectionId">The unique identifier of the section.</param>
+        /// <returns>A task that represents the asynchronous operation. The result contains a list of chunks that belong to the section.</returns>
+        Task<IEnumerable<KnowledgeFileChunk>> GetBySectionAsync(Guid sectionId);
     }
 }

@@ -57,7 +57,11 @@ namespace EasyReasy.KnowledgeBase.Models
             FileId = fileId;
             SectionIndex = sectionIndex;
             Summary = summary;
-            Chunks = chunks;
+            Chunks = chunks ?? throw new ArgumentNullException(nameof(chunks));
+            
+            if (chunks.Count == 0)
+                throw new ArgumentException("A knowledge file section must contain at least one chunk.", nameof(chunks));
+                
             Embedding = embedding;
         }
 

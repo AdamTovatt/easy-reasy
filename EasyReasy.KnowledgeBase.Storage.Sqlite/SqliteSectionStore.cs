@@ -10,16 +10,19 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
     public class SqliteSectionStore : ISectionStore, IExplicitPersistence
     {
         private readonly string _connectionString;
+        private readonly IChunkStore _chunkStore;
         private bool _isInitialized = false;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="SqliteSectionStore"/> class with the specified connection string.
+        /// Initializes a new instance of the <see cref="SqliteSectionStore"/> class with the specified connection string and chunk store.
         /// </summary>
         /// <param name="connectionString">The SQLite connection string to use for database operations.</param>
-        /// <exception cref="ArgumentNullException">Thrown when the connection string is null.</exception>
-        public SqliteSectionStore(string connectionString)
+        /// <param name="chunkStore">The chunk store to use for loading chunks.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the connection string or chunk store is null.</exception>
+        public SqliteSectionStore(string connectionString, IChunkStore chunkStore)
         {
             _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+            _chunkStore = chunkStore ?? throw new ArgumentNullException(nameof(chunkStore));
         }
 
         /// <summary>
@@ -122,17 +125,22 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
                 FROM knowledge_sections 
                 WHERE id = @Id";
 
+            IEnumerable<KnowledgeFileChunk> chunks = await _chunkStore.GetBySectionAsync(sectionId);
+
             using SqliteCommand command = new SqliteCommand(selectSql, connection);
             command.Parameters.AddWithValue("@Id", sectionId.ToString());
 
             using SqliteDataReader reader = await command.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
+                Guid sectionIdFromDb = Guid.Parse(reader.GetString("id"));
+                List<KnowledgeFileChunk> chunksList = chunks.ToList();
+
                 return new KnowledgeFileSection(
-                    Guid.Parse(reader.GetString("id")),
+                    sectionIdFromDb,
                     Guid.Parse(reader.GetString("file_id")),
                     reader.GetInt32("section_index"),
-                    new List<KnowledgeFileChunk>(), // Chunks will be loaded separately if needed
+                    chunksList,
                     reader.IsDBNull("summary") ? null : reader.GetString("summary"),
                     reader.IsDBNull("embedding") ? null : ConvertBytesToEmbedding((byte[])reader.GetValue("embedding"))
                 )
@@ -170,11 +178,15 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             using SqliteDataReader reader = await command.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
+                Guid sectionId = Guid.Parse(reader.GetString("id"));
+                IEnumerable<KnowledgeFileChunk> chunks = await _chunkStore.GetBySectionAsync(sectionId);
+                List<KnowledgeFileChunk> chunksList = chunks.ToList();
+
                 return new KnowledgeFileSection(
-                    Guid.Parse(reader.GetString("id")),
+                    sectionId,
                     Guid.Parse(reader.GetString("file_id")),
                     reader.GetInt32("section_index"),
-                    new List<KnowledgeFileChunk>(), // Chunks will be loaded separately if needed
+                    chunksList,
                     reader.IsDBNull("summary") ? null : reader.GetString("summary"),
                     reader.IsDBNull("embedding") ? null : ConvertBytesToEmbedding((byte[])reader.GetValue("embedding"))
                 )

@@ -16,8 +16,8 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             // Use a temporary file for testing persistence
             _testDbPath = Path.GetTempFileName();
             _fileStore = new SqliteFileStore($"Data Source={_testDbPath}");
-            _sectionStore = new SqliteSectionStore($"Data Source={_testDbPath}");
             _chunkStore = new SqliteChunkStore($"Data Source={_testDbPath}");
+            _sectionStore = new SqliteSectionStore($"Data Source={_testDbPath}", _chunkStore);
         }
 
         [TestCleanup]
@@ -36,6 +36,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
                     {
                         File.Delete(_testDbPath);
                     }
+
                     break;
                 }
                 catch (IOException)
@@ -46,6 +47,30 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
                     Thread.Sleep(100); // Wait a bit before retrying
                 }
             }
+        }
+
+        /// <summary>
+        /// Helper method to create a valid section with chunks for testing.
+        /// </summary>
+        private async Task<KnowledgeFileSection> CreateValidSectionAsync(Guid fileId, int sectionIndex, string summary = "Test section")
+        {
+            await Task.CompletedTask;
+
+            Guid sectionId = Guid.NewGuid();
+            KnowledgeFileChunk chunk = new KnowledgeFileChunk(
+                Guid.NewGuid(),
+                sectionId,
+                0,
+                $"Test chunk content for section {sectionIndex}",
+                new float[] { 0.1f, 0.2f, 0.3f }
+            );
+
+            List<KnowledgeFileChunk> chunks = new List<KnowledgeFileChunk> { chunk };
+
+            // Create section using the CreateFromChunks method
+            KnowledgeFileSection section = KnowledgeFileSection.CreateFromChunks(chunks, fileId, sectionIndex);
+            section.Summary = summary;
+            return section;
         }
 
         [TestMethod]
@@ -59,45 +84,36 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "persistent.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Persistent section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Persistent section");
             await _sectionStore.AddAsync(section);
 
-            KnowledgeFileChunk chunk = new KnowledgeFileChunk(
-                Guid.NewGuid(),
-                section.Id,
-                0,
-                "Persistent chunk content",
-                new float[] { 0.1f, 0.2f, 0.3f }
-            );
-            await _chunkStore.AddAsync(chunk);
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             // Act - Create new store instances with the same database file
             SqliteFileStore newFileStore = new SqliteFileStore($"Data Source={_testDbPath}");
-            SqliteSectionStore newSectionStore = new SqliteSectionStore($"Data Source={_testDbPath}");
             SqliteChunkStore newChunkStore = new SqliteChunkStore($"Data Source={_testDbPath}");
+            SqliteSectionStore newSectionStore = new SqliteSectionStore($"Data Source={_testDbPath}", newChunkStore);
             await newFileStore.LoadAsync();
-            await newSectionStore.LoadAsync();
             await newChunkStore.LoadAsync();
+            await newSectionStore.LoadAsync();
 
             // Assert - Data should still be there
             KnowledgeFile? retrievedFile = await newFileStore.GetAsync(file.Id);
             KnowledgeFileSection? retrievedSection = await newSectionStore.GetAsync(section.Id);
-            KnowledgeFileChunk? retrievedChunk = await newChunkStore.GetAsync(chunk.Id);
 
             Assert.IsNotNull(retrievedFile);
             Assert.IsNotNull(retrievedSection);
-            Assert.IsNotNull(retrievedChunk);
             Assert.AreEqual(file.Id, retrievedFile.Id);
             Assert.AreEqual(section.Id, retrievedSection.Id);
-            Assert.AreEqual(chunk.Id, retrievedChunk.Id);
-            Assert.AreEqual(chunk.Content, retrievedChunk.Content);
-            CollectionAssert.AreEqual(chunk.Embedding, retrievedChunk.Embedding);
+            Assert.IsTrue(retrievedSection.Chunks.Count > 0);
+
+            KnowledgeFileChunk? retrievedChunk = await newChunkStore.GetAsync(retrievedSection.Chunks[0].Id);
+            Assert.IsNotNull(retrievedChunk);
+            Assert.AreEqual(retrievedSection.Chunks[0].Content, retrievedChunk.Content);
+            CollectionAssert.AreEqual(retrievedSection.Chunks[0].Embedding, retrievedChunk.Embedding);
         }
 
         [TestMethod]
@@ -111,14 +127,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "shared.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Shared section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Shared section");
             await _sectionStore.AddAsync(section);
+
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             KnowledgeFileChunk chunk = new KnowledgeFileChunk(
                 Guid.NewGuid(),
@@ -131,8 +146,8 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
 
             // Act - Create second store instances
             SqliteFileStore secondFileStore = new SqliteFileStore($"Data Source={_testDbPath}");
-            SqliteSectionStore secondSectionStore = new SqliteSectionStore($"Data Source={_testDbPath}");
             SqliteChunkStore secondChunkStore = new SqliteChunkStore($"Data Source={_testDbPath}");
+            SqliteSectionStore secondSectionStore = new SqliteSectionStore($"Data Source={_testDbPath}", secondChunkStore);
             await secondFileStore.LoadAsync();
             await secondSectionStore.LoadAsync();
             await secondChunkStore.LoadAsync();
@@ -162,22 +177,25 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "original.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Original section"
-            );
-            await _sectionStore.AddAsync(section);
-
+            Guid sectionId = Guid.NewGuid();
+            List<KnowledgeFileChunk> chunks = new List<KnowledgeFileChunk>();
             KnowledgeFileChunk chunk = new KnowledgeFileChunk(
                 Guid.NewGuid(),
-                section.Id,
+                sectionId,
                 0,
                 "Original chunk content",
                 new float[] { 0.1f, 0.2f, 0.3f }
             );
+            chunks.Add(chunk);
+
+            KnowledgeFileSection section = new KnowledgeFileSection(
+                sectionId,
+                file.Id,
+                0,
+                chunks,
+                "Original section"
+            );
+            await _sectionStore.AddAsync(section);
             await _chunkStore.AddAsync(chunk);
 
             SqliteChunkStore secondChunkStore = new SqliteChunkStore($"Data Source={_testDbPath}");
@@ -202,21 +220,24 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "to-delete.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "To delete section"
-            );
-            await _sectionStore.AddAsync(section);
-
+            Guid sectionId = Guid.NewGuid();
+            List<KnowledgeFileChunk> chunks = new List<KnowledgeFileChunk>();
             KnowledgeFileChunk chunk = new KnowledgeFileChunk(
                 Guid.NewGuid(),
-                section.Id,
+                sectionId,
                 0,
                 "To delete chunk content"
             );
+            chunks.Add(chunk);
+
+            KnowledgeFileSection section = new KnowledgeFileSection(
+                sectionId,
+                file.Id,
+                0,
+                chunks,
+                "To delete section"
+            );
+            await _sectionStore.AddAsync(section);
             await _chunkStore.AddAsync(chunk);
 
             SqliteChunkStore secondChunkStore = new SqliteChunkStore($"Data Source={_testDbPath}");
@@ -239,8 +260,8 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
 
             // Act
             SqliteFileStore fileStore = new SqliteFileStore($"Data Source={dbPath}");
-            SqliteSectionStore sectionStore = new SqliteSectionStore($"Data Source={dbPath}");
             SqliteChunkStore chunkStore = new SqliteChunkStore($"Data Source={dbPath}");
+            SqliteSectionStore sectionStore = new SqliteSectionStore($"Data Source={dbPath}", chunkStore);
             await fileStore.LoadAsync();
             await sectionStore.LoadAsync();
             await chunkStore.LoadAsync();
@@ -267,23 +288,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "test.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Test section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Test section");
             await _sectionStore.AddAsync(section);
 
-            KnowledgeFileChunk chunk = new KnowledgeFileChunk(
-                Guid.NewGuid(),
-                section.Id,
-                0,
-                "Test chunk content",
-                new float[] { 0.1f, 0.2f, 0.3f }
-            );
-            await _chunkStore.AddAsync(chunk);
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             // Assert - File should exist and contain data
             Assert.IsTrue(File.Exists(_testDbPath));
@@ -302,14 +313,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "test.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Test section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Test section");
             await _sectionStore.AddAsync(section);
+
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             KnowledgeFileChunk chunk = new KnowledgeFileChunk(
                 Guid.NewGuid(),
@@ -325,8 +335,8 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
 
             // Create new stores to verify database integrity
             SqliteFileStore newFileStore = new SqliteFileStore($"Data Source={_testDbPath}");
-            SqliteSectionStore newSectionStore = new SqliteSectionStore($"Data Source={_testDbPath}");
             SqliteChunkStore newChunkStore = new SqliteChunkStore($"Data Source={_testDbPath}");
+            SqliteSectionStore newSectionStore = new SqliteSectionStore($"Data Source={_testDbPath}", newChunkStore);
             await newFileStore.LoadAsync();
             await newSectionStore.LoadAsync();
             await newChunkStore.LoadAsync();
@@ -335,14 +345,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile newFile = new KnowledgeFile(Guid.NewGuid(), "new.txt", new byte[] { 5, 6, 7, 8 });
             await newFileStore.AddAsync(newFile);
 
-            KnowledgeFileSection newSection = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                newFile.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "New section"
-            );
+            KnowledgeFileSection newSection = await CreateValidSectionAsync(newFile.Id, 0, "New section");
             await newSectionStore.AddAsync(newSection);
+
+            foreach (KnowledgeFileChunk sectionChunk in newSection.Chunks)
+            {
+                await newChunkStore.AddAsync(sectionChunk);
+            }
 
             KnowledgeFileChunk newChunk = new KnowledgeFileChunk(
                 Guid.NewGuid(),
@@ -368,14 +377,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "concurrent.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Concurrent section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Concurrent section");
             await _sectionStore.AddAsync(section);
+
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             SqliteChunkStore secondChunkStore = new SqliteChunkStore($"Data Source={_testDbPath}");
             await secondChunkStore.LoadAsync();
@@ -419,14 +427,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "concurrent-read.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Concurrent read section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Concurrent read section");
             await _sectionStore.AddAsync(section);
+
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             KnowledgeFileChunk chunk = new KnowledgeFileChunk(
                 Guid.NewGuid(),
@@ -471,14 +478,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "large-embedding.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Large embedding section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Large embedding section");
             await _sectionStore.AddAsync(section);
+
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             float[] largeEmbedding = new float[10000]; // 10K embedding
             for (int i = 0; i < largeEmbedding.Length; i++)
@@ -516,14 +522,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "many-chunks.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Many chunks section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Many chunks section");
             await _sectionStore.AddAsync(section);
+
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             const int chunkCount = 100;
 
@@ -568,8 +573,8 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
 
             // Act & Assert - Should work with missing file
             SqliteFileStore fileStore = new SqliteFileStore($"Data Source={missingDbPath}");
-            SqliteSectionStore sectionStore = new SqliteSectionStore($"Data Source={missingDbPath}");
             SqliteChunkStore chunkStore = new SqliteChunkStore($"Data Source={missingDbPath}");
+            SqliteSectionStore sectionStore = new SqliteSectionStore($"Data Source={missingDbPath}", chunkStore);
             await fileStore.LoadAsync();
             await sectionStore.LoadAsync();
             await chunkStore.LoadAsync();
@@ -577,21 +582,19 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "missing-file.txt", new byte[] { 1, 2, 3, 4 });
             await fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Missing file section"
-            );
-            await sectionStore.AddAsync(section);
-
+            // Create a valid section with chunks
+            Guid sectionId = Guid.NewGuid();
+            List<KnowledgeFileChunk> chunks = new List<KnowledgeFileChunk>();
             KnowledgeFileChunk chunk = new KnowledgeFileChunk(
                 Guid.NewGuid(),
-                section.Id,
+                sectionId,
                 0,
                 "Missing file chunk content"
             );
+            chunks.Add(chunk);
+
+            KnowledgeFileSection section = KnowledgeFileSection.CreateFromChunks(chunks, file.Id, 0);
+            await sectionStore.AddAsync(section);
             await chunkStore.AddAsync(chunk);
 
             Assert.IsTrue(await fileStore.ExistsAsync(file.Id));
@@ -617,14 +620,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "foreign-key.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Foreign key section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Foreign key section");
             await _sectionStore.AddAsync(section);
+
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             KnowledgeFileChunk chunk = new KnowledgeFileChunk(
                 Guid.NewGuid(),
@@ -655,14 +657,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "section-deletion.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Section deletion section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Section deletion section");
             await _sectionStore.AddAsync(section);
+
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             KnowledgeFileChunk chunk = new KnowledgeFileChunk(
                 Guid.NewGuid(),
@@ -692,14 +693,13 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "long-content.txt", new byte[] { 1, 2, 3, 4 });
             await _fileStore.AddAsync(file);
 
-            KnowledgeFileSection section = new KnowledgeFileSection(
-                Guid.NewGuid(),
-                file.Id,
-                0,
-                new List<KnowledgeFileChunk>(),
-                "Long content section"
-            );
+            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Long content section");
             await _sectionStore.AddAsync(section);
+
+            foreach (KnowledgeFileChunk sectionChunk in section.Chunks)
+            {
+                await _chunkStore.AddAsync(sectionChunk);
+            }
 
             string longContent = new string('x', 50000); // 50K character content
 

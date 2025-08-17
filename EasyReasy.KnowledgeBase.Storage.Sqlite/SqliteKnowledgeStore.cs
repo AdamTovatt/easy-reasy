@@ -31,8 +31,9 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
                 throw new ArgumentException("Connection string cannot be null or empty.", nameof(connectionString));
 
             Files = new SqliteFileStore(connectionString);
-            Chunks = new SqliteChunkStore(connectionString);
-            Sections = new SqliteSectionStore(connectionString);
+            SqliteChunkStore chunkStore = new SqliteChunkStore(connectionString);
+            Chunks = chunkStore;
+            Sections = new SqliteSectionStore(connectionString, chunkStore);
         }
 
         /// <summary>

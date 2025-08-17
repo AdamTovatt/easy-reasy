@@ -256,6 +256,44 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return null;
         }
 
+        /// <summary>
+        /// Retrieves all knowledge file chunks belonging to a specific section.
+        /// </summary>
+        /// <param name="sectionId">The unique identifier of the section.</param>
+        /// <returns>A collection of chunks that belong to the section.</returns>
+        public async Task<IEnumerable<KnowledgeFileChunk>> GetBySectionAsync(Guid sectionId)
+        {
+            if (!_isInitialized)
+                await LoadAsync();
+
+            using SqliteConnection connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+
+            const string selectSql = @"
+                SELECT id, section_id, chunk_index, content, embedding 
+                FROM knowledge_chunks 
+                WHERE section_id = @SectionId 
+                ORDER BY chunk_index";
+
+            using SqliteCommand command = new SqliteCommand(selectSql, connection);
+            command.Parameters.AddWithValue("@SectionId", sectionId.ToString());
+
+            List<KnowledgeFileChunk> chunks = new List<KnowledgeFileChunk>();
+            using SqliteDataReader reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                chunks.Add(new KnowledgeFileChunk(
+                    Guid.Parse(reader.GetString("id")),
+                    Guid.Parse(reader.GetString("section_id")),
+                    reader.GetInt32("chunk_index"),
+                    reader.GetString("content"),
+                    reader.IsDBNull("embedding") ? null : ConvertBytesToEmbedding((byte[])reader.GetValue("embedding"))
+                ));
+            }
+
+            return chunks;
+        }
+
         private async Task<string> GetFileIdFromSectionAsync(Guid sectionId)
         {
             using SqliteConnection connection = new SqliteConnection(_connectionString);
