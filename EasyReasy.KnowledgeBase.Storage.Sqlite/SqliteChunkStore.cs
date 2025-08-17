@@ -114,6 +114,53 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return null;
         }
 
+        public async Task<IEnumerable<KnowledgeFileChunk>> GetAsync(IEnumerable<Guid> chunkIds)
+        {
+            if (chunkIds == null)
+                throw new ArgumentNullException(nameof(chunkIds));
+
+            if (!chunkIds.Any())
+                return Enumerable.Empty<KnowledgeFileChunk>();
+
+            if (!_isInitialized)
+                await LoadAsync();
+
+            using SqliteConnection connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+
+            List<KnowledgeFileChunk> chunks = new List<KnowledgeFileChunk>();
+            List<Guid> chunkIdList = chunkIds.ToList();
+
+            // Build the SQL query with placeholders for all IDs
+            string placeholders = string.Join(",", chunkIdList.Select((_, index) => $"@Id{index}"));
+            string selectSql = $@"
+                SELECT id, section_id, chunk_index, content, embedding 
+                FROM knowledge_chunks 
+                WHERE id IN ({placeholders})";
+
+            using SqliteCommand command = new SqliteCommand(selectSql, connection);
+            
+            // Add parameters for each ID
+            for (int i = 0; i < chunkIdList.Count; i++)
+            {
+                command.Parameters.AddWithValue($"@Id{i}", chunkIdList[i].ToString());
+            }
+
+            using SqliteDataReader reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                chunks.Add(new KnowledgeFileChunk(
+                    Guid.Parse(reader.GetString("id")),
+                    Guid.Parse(reader.GetString("section_id")),
+                    reader.GetInt32("chunk_index"),
+                    reader.GetString("content"),
+                    reader.IsDBNull("embedding") ? null : ConvertBytesToEmbedding((byte[])reader.GetValue("embedding"))
+                ));
+            }
+
+            return chunks;
+        }
+
         public async Task<bool> DeleteByFileAsync(Guid fileId)
         {
             if (!_isInitialized)

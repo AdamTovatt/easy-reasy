@@ -205,6 +205,239 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
         }
 
         [TestMethod]
+        public async Task GetAsync_WithMultipleIds_ShouldReturnAllExistingChunks()
+        {
+            // Arrange
+            await _fileStore.LoadAsync();
+            await _sectionStore.LoadAsync();
+            await _chunkStore.LoadAsync();
+
+            KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "test.txt", new byte[] { 1, 2, 3, 4 });
+            await _fileStore.AddAsync(file);
+
+            KnowledgeFileSection section = new KnowledgeFileSection(
+                Guid.NewGuid(),
+                file.Id,
+                0,
+                new List<KnowledgeFileChunk>(),
+                "Test summary"
+            );
+            await _sectionStore.AddAsync(section);
+
+            KnowledgeFileChunk chunk1 = new KnowledgeFileChunk(
+                Guid.NewGuid(),
+                section.Id,
+                0,
+                "Chunk 1 content",
+                new float[] { 0.1f, 0.2f }
+            );
+            KnowledgeFileChunk chunk2 = new KnowledgeFileChunk(
+                Guid.NewGuid(),
+                section.Id,
+                1,
+                "Chunk 2 content",
+                new float[] { 0.3f, 0.4f }
+            );
+            KnowledgeFileChunk chunk3 = new KnowledgeFileChunk(
+                Guid.NewGuid(),
+                section.Id,
+                2,
+                "Chunk 3 content",
+                new float[] { 0.5f, 0.6f }
+            );
+
+            await _chunkStore.AddAsync(chunk1);
+            await _chunkStore.AddAsync(chunk2);
+            await _chunkStore.AddAsync(chunk3);
+
+            List<Guid> chunkIds = new List<Guid> { chunk1.Id, chunk2.Id, chunk3.Id };
+
+            // Act
+            IEnumerable<KnowledgeFileChunk> results = await _chunkStore.GetAsync(chunkIds);
+
+            // Assert
+            List<KnowledgeFileChunk> resultList = results.ToList();
+            Assert.AreEqual(3, resultList.Count);
+            Assert.IsTrue(resultList.Any(c => c.Id == chunk1.Id && c.Content == "Chunk 1 content"));
+            Assert.IsTrue(resultList.Any(c => c.Id == chunk2.Id && c.Content == "Chunk 2 content"));
+            Assert.IsTrue(resultList.Any(c => c.Id == chunk3.Id && c.Content == "Chunk 3 content"));
+        }
+
+        [TestMethod]
+        public async Task GetAsync_WithMultipleIds_ShouldReturnOnlyExistingChunks()
+        {
+            // Arrange
+            await _fileStore.LoadAsync();
+            await _sectionStore.LoadAsync();
+            await _chunkStore.LoadAsync();
+
+            KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "test.txt", new byte[] { 1, 2, 3, 4 });
+            await _fileStore.AddAsync(file);
+
+            KnowledgeFileSection section = new KnowledgeFileSection(
+                Guid.NewGuid(),
+                file.Id,
+                0,
+                new List<KnowledgeFileChunk>(),
+                "Test summary"
+            );
+            await _sectionStore.AddAsync(section);
+
+            KnowledgeFileChunk chunk1 = new KnowledgeFileChunk(
+                Guid.NewGuid(),
+                section.Id,
+                0,
+                "Chunk 1 content"
+            );
+            KnowledgeFileChunk chunk2 = new KnowledgeFileChunk(
+                Guid.NewGuid(),
+                section.Id,
+                1,
+                "Chunk 2 content"
+            );
+
+            await _chunkStore.AddAsync(chunk1);
+            await _chunkStore.AddAsync(chunk2);
+
+            Guid nonExistentId = Guid.NewGuid();
+            List<Guid> chunkIds = new List<Guid> { chunk1.Id, nonExistentId, chunk2.Id };
+
+            // Act
+            IEnumerable<KnowledgeFileChunk> results = await _chunkStore.GetAsync(chunkIds);
+
+            // Assert
+            List<KnowledgeFileChunk> resultList = results.ToList();
+            Assert.AreEqual(2, resultList.Count);
+            Assert.IsTrue(resultList.Any(c => c.Id == chunk1.Id));
+            Assert.IsTrue(resultList.Any(c => c.Id == chunk2.Id));
+            Assert.IsFalse(resultList.Any(c => c.Id == nonExistentId));
+        }
+
+        [TestMethod]
+        public async Task GetAsync_WithMultipleIds_ShouldReturnEmptyCollection_WhenNoChunksExist()
+        {
+            // Arrange
+            await _chunkStore.LoadAsync();
+            List<Guid> nonExistentIds = new List<Guid> { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+
+            // Act
+            IEnumerable<KnowledgeFileChunk> results = await _chunkStore.GetAsync(nonExistentIds);
+
+            // Assert
+            Assert.IsFalse(results.Any());
+        }
+
+        [TestMethod]
+        public async Task GetAsync_WithMultipleIds_ShouldReturnEmptyCollection_WhenEmptyCollectionProvided()
+        {
+            // Arrange
+            await _chunkStore.LoadAsync();
+            List<Guid> emptyList = new List<Guid>();
+
+            // Act
+            IEnumerable<KnowledgeFileChunk> results = await _chunkStore.GetAsync(emptyList);
+
+            // Assert
+            Assert.IsFalse(results.Any());
+        }
+
+        [TestMethod]
+        public async Task GetAsync_WithMultipleIds_ShouldThrow_WhenNullCollectionProvided()
+        {
+            // Arrange
+            await _chunkStore.LoadAsync();
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentNullException>(() => _chunkStore.GetAsync((IEnumerable<Guid>)null!));
+        }
+
+        [TestMethod]
+        public async Task GetAsync_WithMultipleIds_ShouldInitializeDatabase_WhenNotInitialized()
+        {
+            // Arrange
+            await _fileStore.LoadAsync();
+            await _sectionStore.LoadAsync();
+
+            KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "test.txt", new byte[] { 1, 2, 3, 4 });
+            await _fileStore.AddAsync(file);
+
+            KnowledgeFileSection section = new KnowledgeFileSection(
+                Guid.NewGuid(),
+                file.Id,
+                0,
+                new List<KnowledgeFileChunk>(),
+                "Test summary"
+            );
+            await _sectionStore.AddAsync(section);
+
+            KnowledgeFileChunk chunk = new KnowledgeFileChunk(
+                Guid.NewGuid(),
+                section.Id,
+                0,
+                "Test chunk content"
+            );
+            await _chunkStore.AddAsync(chunk);
+
+            List<Guid> chunkIds = new List<Guid> { chunk.Id };
+
+            // Act
+            IEnumerable<KnowledgeFileChunk> results = await _chunkStore.GetAsync(chunkIds);
+
+            // Assert
+            List<KnowledgeFileChunk> resultList = results.ToList();
+            Assert.AreEqual(1, resultList.Count);
+            Assert.AreEqual(chunk.Id, resultList[0].Id);
+        }
+
+        [TestMethod]
+        public async Task GetAsync_WithMultipleIds_ShouldHandleLargeNumberOfIds()
+        {
+            // Arrange
+            await _fileStore.LoadAsync();
+            await _sectionStore.LoadAsync();
+            await _chunkStore.LoadAsync();
+
+            KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "test.txt", new byte[] { 1, 2, 3, 4 });
+            await _fileStore.AddAsync(file);
+
+            KnowledgeFileSection section = new KnowledgeFileSection(
+                Guid.NewGuid(),
+                file.Id,
+                0,
+                new List<KnowledgeFileChunk>(),
+                "Test summary"
+            );
+            await _sectionStore.AddAsync(section);
+
+            // Create 50 chunks
+            List<KnowledgeFileChunk> chunks = new List<KnowledgeFileChunk>();
+            for (int i = 0; i < 50; i++)
+            {
+                KnowledgeFileChunk chunk = new KnowledgeFileChunk(
+                    Guid.NewGuid(),
+                    section.Id,
+                    i,
+                    $"Chunk {i} content"
+                );
+                chunks.Add(chunk);
+                await _chunkStore.AddAsync(chunk);
+            }
+
+            List<Guid> chunkIds = chunks.Select(c => c.Id).ToList();
+
+            // Act
+            IEnumerable<KnowledgeFileChunk> results = await _chunkStore.GetAsync(chunkIds);
+
+            // Assert
+            List<KnowledgeFileChunk> resultList = results.ToList();
+            Assert.AreEqual(50, resultList.Count);
+            for (int i = 0; i < 50; i++)
+            {
+                Assert.IsTrue(resultList.Any(c => c.Content == $"Chunk {i} content"));
+            }
+        }
+
+        [TestMethod]
         public async Task GetAsync_ShouldInitializeDatabase_WhenNotInitialized()
         {
             // Arrange

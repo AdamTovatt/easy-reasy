@@ -22,6 +22,13 @@ namespace EasyReasy.KnowledgeBase.Storage
         Task<KnowledgeFileChunk?> GetAsync(Guid chunkId);
 
         /// <summary>
+        /// Retrieves multiple chunks by their unique identifiers.
+        /// </summary>
+        /// <param name="chunkIds">The collection of unique identifiers of the chunks to retrieve.</param>
+        /// <returns>A task that represents the asynchronous operation. The result contains a list of chunks that were found.</returns>
+        Task<IEnumerable<KnowledgeFileChunk>> GetAsync(IEnumerable<Guid> chunkIds);
+
+        /// <summary>
         /// Deletes all chunks belonging to a specific file.
         /// </summary>
         /// <param name="fileId">The unique identifier of the file whose chunks should be deleted.</param>
