@@ -94,10 +94,10 @@ namespace EasyReasy.KnowledgeBase.Searching
             }
 
             // Return sections ordered by relevance, with their content
-            return string.Join("\n\n", 
+            return string.Join("\n\n",
                 RelevantSections
                     .OrderByDescending(r => r.Relevance.CosineSimilarity)
                     .Select(r => r.Item.ToString()));
         }
     }
-} 
+}

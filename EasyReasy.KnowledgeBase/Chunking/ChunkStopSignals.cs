@@ -18,13 +18,13 @@ namespace EasyReasy.KnowledgeBase.Chunking
         public static readonly string[] Markdown =
         [
                 "# ",       // Top-level heading
-                "## ",      // Second-level heading
-                "### ",     // Third-level heading
-                "#### ",    // Fourth-level heading
-                "##### ",   // Fifth-level heading
-                "###### ",  // Sixth-level heading
-                "```",      // Code block
-                "**",       // Bold text
+            "## ",      // Second-level heading
+            "### ",     // Third-level heading
+            "#### ",    // Fourth-level heading
+            "##### ",   // Fifth-level heading
+            "###### ",  // Sixth-level heading
+            "```",      // Code block
+            "**",       // Bold text
         ];
     }
 }

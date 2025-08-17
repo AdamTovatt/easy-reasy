@@ -21,21 +21,21 @@
         public static readonly string[] Markdown =
         [
                 "\n\n# ",    // New top-level heading
-                "\n## ",     // New second-level heading
-                "\n### ",    // New third-level heading
-                "\n#### ",   // New fourth-level heading
-                "\n##### ",  // New fifth-level heading
-                "\n###### ", // New sixth-level heading
-                "\n\n",      // Double line breaks (paragraph breaks)
-                "\n- ",      // Unordered list items
-                "\n* ",      // Alternative unordered list items
-                "\n+ ",      // Alternative unordered list items
-                "\n1. ",     // Ordered list items (simplified - just checking for "1.")
-                "\n```\n",   // End of code blocks
-                "\n",        // Single line breaks
-                ". ",        // Sentence endings
-                "! ",        // Exclamation marks
-                "? "         // Question marks
+            "\n## ",     // New second-level heading
+            "\n### ",    // New third-level heading
+            "\n#### ",   // New fourth-level heading
+            "\n##### ",  // New fifth-level heading
+            "\n###### ", // New sixth-level heading
+            "\n\n",      // Double line breaks (paragraph breaks)
+            "\n- ",      // Unordered list items
+            "\n* ",      // Alternative unordered list items
+            "\n+ ",      // Alternative unordered list items
+            "\n1. ",     // Ordered list items (simplified - just checking for "1.")
+            "\n```\n",   // End of code blocks
+            "\n",        // Single line breaks
+            ". ",        // Sentence endings
+            "! ",        // Exclamation marks
+            "? "         // Question marks
         ];
     }
 }

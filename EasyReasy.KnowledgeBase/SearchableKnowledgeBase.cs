@@ -54,7 +54,7 @@ namespace EasyReasy.KnowledgeBase
                 float[] queryVector = await EmbeddingService.EmbedAsync(query, cancellationToken);
                 IKnowledgeVectorStore chunksVectorStore = SearchableKnowledgeStore.GetChunksVectorStore();
                 IEnumerable<IKnowledgeVector> chunkResults = await chunksVectorStore.SearchAsync(queryVector, maxSearchResultsCount ?? MaxSearchResultsCount);
-                
+
                 // 2. Get actual chunks and create WithSimilarity objects
                 List<WithSimilarity<KnowledgeFileChunk>> chunksWithSimilarity = new List<WithSimilarity<KnowledgeFileChunk>>();
                 foreach (IKnowledgeVector chunkVector in chunkResults)
@@ -67,12 +67,12 @@ namespace EasyReasy.KnowledgeBase
                         chunksWithSimilarity.Add(chunkWithSimilarity);
                     }
                 }
-                
+
                 // 3. Group chunks by section and calculate section-level relevance
                 Dictionary<Guid, List<WithSimilarity<KnowledgeFileChunk>>> sectionsByChunks = chunksWithSimilarity
                     .GroupBy(c => c.Item.SectionId)
                     .ToDictionary(g => g.Key, g => g.ToList());
-                
+
                 // 4. Get complete sections and calculate relevance metrics
                 List<RelevanceRatedEntry<KnowledgeFileSection>> relevantSections = new List<RelevanceRatedEntry<KnowledgeFileSection>>();
                 foreach (KeyValuePair<Guid, List<WithSimilarity<KnowledgeFileChunk>>> sectionGroup in sectionsByChunks)
@@ -85,7 +85,7 @@ namespace EasyReasy.KnowledgeBase
                         relevantSections.Add(new RelevanceRatedEntry<KnowledgeFileSection>(section, sectionRelevance));
                     }
                 }
-                
+
                 return new KnowledgeBaseSearchResult(
                     relevantSections: relevantSections.OrderByDescending(r => r.Relevance.CosineSimilarity).ToList(),
                     query: query);
@@ -104,31 +104,31 @@ namespace EasyReasy.KnowledgeBase
         /// <param name="allChunks">All chunks with similarity scores for normalization.</param>
         /// <returns>Relevance metrics for the section.</returns>
         private KnowledgebaseRelevanceMetrics CalculateSectionRelevanceMetrics(
-            KnowledgeFileSection section, 
+            KnowledgeFileSection section,
             List<WithSimilarity<KnowledgeFileChunk>> sectionChunks,
             List<WithSimilarity<KnowledgeFileChunk>> allChunks)
         {
             // Extract similarity scores for this section's chunks
             double[] sectionSimilarities = sectionChunks.Select(c => c.Similarity).ToArray();
-            
+
             // Extract all similarity scores for normalization
             double[] allSimilarities = allChunks.Select(c => c.Similarity).ToArray();
-            
+
             // Calculate metrics using ConfidenceMath
             double maxSimilarity = sectionSimilarities.Max();
             double avgSimilarity = ConfidenceMath.CalculateMean(sectionSimilarities);
             double standardDeviation = ConfidenceMath.CalculateStandardDeviation(allSimilarities);
-            
+
             // Normalize scores to 0-100 range
             double minSimilarity = allSimilarities.Min();
             double maxOverallSimilarity = allSimilarities.Max();
             double[] normalizedScores = ConfidenceMath.MinMaxNormalization(sectionSimilarities, minSimilarity, maxOverallSimilarity);
             double normalizedScore = ConfidenceMath.CalculateMean(normalizedScores);
-            
+
             // Use the best similarity as the primary metric, but consider coverage
             double coverageFactor = (double)sectionChunks.Count / section.Chunks.Count;
             double finalSimilarity = maxSimilarity * coverageFactor;
-            
+
             return new KnowledgebaseRelevanceMetrics(
                 cosineSimilarity: finalSimilarity,
                 relevanceScore: ConfidenceMath.RoundToInt(finalSimilarity * 100),

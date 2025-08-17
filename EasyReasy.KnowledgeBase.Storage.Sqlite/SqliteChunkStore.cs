@@ -139,7 +139,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
                 WHERE id IN ({placeholders})";
 
             using SqliteCommand command = new SqliteCommand(selectSql, connection);
-            
+
             // Add parameters for each ID
             for (int i = 0; i < chunkIdList.Count; i++)
             {

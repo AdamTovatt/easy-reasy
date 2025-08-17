@@ -1,6 +1,4 @@
-﻿using EasyReasy.KnowledgeBase.Models;
-
-namespace EasyReasy.KnowledgeBase.Searching
+﻿namespace EasyReasy.KnowledgeBase.Searching
 {
     /// <summary>
     /// Represents a knowledge vector with an associated identifier and vector data.

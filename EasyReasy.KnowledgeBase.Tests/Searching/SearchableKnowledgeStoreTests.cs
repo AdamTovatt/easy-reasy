@@ -1,6 +1,5 @@
 using EasyReasy.KnowledgeBase.Models;
 using EasyReasy.KnowledgeBase.Searching;
-using EasyReasy.KnowledgeBase.Searchings;
 using EasyReasy.KnowledgeBase.Storage;
 
 namespace EasyReasy.KnowledgeBase.Tests.Searching
@@ -184,6 +183,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
             public Task AddAsync(KnowledgeFileChunk chunk) => Task.CompletedTask;
             public Task<bool> DeleteByFileAsync(Guid fileId) => Task.FromResult(true);
             public Task<KnowledgeFileChunk?> GetAsync(Guid chunkId) => Task.FromResult<KnowledgeFileChunk?>(null);
+            public Task<IEnumerable<KnowledgeFileChunk>> GetAsync(IEnumerable<Guid> chunkIds) => Task.FromResult<IEnumerable<KnowledgeFileChunk>>(Array.Empty<KnowledgeFileChunk>());
             public Task<KnowledgeFileChunk?> GetByIndexAsync(Guid sectionId, int chunkIndex) => Task.FromResult<KnowledgeFileChunk?>(null);
         }
 
@@ -196,4 +196,4 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
 
         #endregion
     }
-} 
+}
