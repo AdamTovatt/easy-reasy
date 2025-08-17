@@ -24,6 +24,12 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         /// The model name to use for embeddings (e.g., llama3.1).
         /// </summary>
         [EnvironmentVariableName(minLength: 3)]
-        public static readonly VariableName OllamaModelName = new VariableName("OLLAMA_MODEL_NAME");
+        public static readonly VariableName OllamaEmbeddingModelName = new VariableName("OLLAMA_MODEL_NAME");
+
+        /// <summary>
+        /// The model name to use for completions (e.g., llama3.1).
+        /// </summary>
+        [EnvironmentVariableName(minLength: 3)]
+        public static readonly VariableName OllamaCompletionsModelName = new VariableName("OLLAMA_COMPLETIONS_MODEL_NAME");
     }
 }

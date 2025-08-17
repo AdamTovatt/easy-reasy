@@ -9,4 +9,7 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_API_KEY=your-ollama-api-key-here
 
 # The model name to use for embeddings
-OLLAMA_MODEL_NAME=llama3.1 
+OLLAMA_MODEL_NAME=nomic-embed-text
+
+# The model name to use for completions
+OLLAMA_COMPLETIONS_MODEL_NAME=llama3.2:3b

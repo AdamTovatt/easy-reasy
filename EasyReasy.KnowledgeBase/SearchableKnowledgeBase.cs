@@ -87,7 +87,7 @@ namespace EasyReasy.KnowledgeBase
                 }
 
                 return new KnowledgeBaseSearchResult(
-                    relevantSections: relevantSections.OrderByDescending(r => r.Relevance.CosineSimilarity).ToList(),
+                    relevantSections: relevantSections.OrderByDescending(r => r.Relevance.NormalizedScore).ToList(),
                     query: query);
             }
             catch (Exception ex)

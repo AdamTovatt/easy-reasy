@@ -1,5 +1,6 @@
 using EasyReasy.KnowledgeBase.ConfidenceRating;
 using EasyReasy.KnowledgeBase.Models;
+using System.Text;
 
 namespace EasyReasy.KnowledgeBase.Searching
 {
@@ -93,11 +94,20 @@ namespace EasyReasy.KnowledgeBase.Searching
                 return string.Empty;
             }
 
-            // Return sections ordered by relevance, with their content
-            return string.Join("\n\n",
-                RelevantSections
-                    .OrderByDescending(r => r.Relevance.CosineSimilarity)
-                    .Select(r => r.Item.ToString()));
+            StringBuilder stringBuilder = new StringBuilder();
+
+            foreach (RelevanceRatedEntry<KnowledgeFileSection> section in RelevantSections)
+            {
+                stringBuilder.AppendLine($"--- START OF NEW CONTEXT SECTION ---");
+
+                if (section.Item.AdditionalContext != null)
+                    stringBuilder.AppendLine(section.Item.AdditionalContext);
+
+                stringBuilder.AppendLine(section.Item.ToString());
+            }
+
+            stringBuilder.AppendLine("--- END OF CONTEXT SEARCH RESULT ---");
+            return stringBuilder.ToString();
         }
     }
 }

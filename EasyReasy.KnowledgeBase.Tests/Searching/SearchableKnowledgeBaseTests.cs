@@ -5,11 +5,9 @@ using EasyReasy.KnowledgeBase.Generation;
 using EasyReasy.KnowledgeBase.Models;
 using EasyReasy.KnowledgeBase.OllamaGeneration;
 using EasyReasy.KnowledgeBase.Searching;
-using EasyReasy.KnowledgeBase.Storage;
 using EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore;
 using EasyReasy.KnowledgeBase.Storage.Sqlite;
 using EasyReasy.KnowledgeBase.Tests.TestUtilities;
-using System.IO;
 using System.Reflection;
 
 namespace EasyReasy.KnowledgeBase.Tests.Searching
@@ -39,7 +37,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
                 _ollamaEmbeddingService = await EasyReasyOllamaEmbeddingService.CreateAsync(
                     OllamaTestEnvironmentVariables.OllamaBaseUrl.GetValue(),
                     OllamaTestEnvironmentVariables.OllamaApiKey.GetValue(),
-                    OllamaTestEnvironmentVariables.OllamaModelName.GetValue());
+                    OllamaTestEnvironmentVariables.OllamaEmbeddingModelName.GetValue());
 
                 // Initialize persistent embedding service
                 _persistentEmbeddingService = await InitializePersistentEmbeddingServiceAsync(
@@ -196,7 +194,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
             }
 
             // Act
-            IKnowledgeBaseSearchResult searchResult = await searchableKnowledgeBase.SearchAsync("test query");
+            IKnowledgeBaseSearchResult searchResult = await searchableKnowledgeBase.SearchAsync("How does authentication work?", 3);
             KnowledgeBaseSearchResult? result = searchResult as KnowledgeBaseSearchResult;
 
             // Assert

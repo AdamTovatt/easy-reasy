@@ -38,7 +38,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Chunking
             _ollamaEmbeddingService = await EasyReasyOllamaEmbeddingService.CreateAsync(
                 OllamaTestEnvironmentVariables.OllamaBaseUrl.GetValue(),
                 OllamaTestEnvironmentVariables.OllamaApiKey.GetValue(),
-                OllamaTestEnvironmentVariables.OllamaModelName.GetValue());
+                OllamaTestEnvironmentVariables.OllamaEmbeddingModelName.GetValue());
         }
 
         [ClassCleanup]
