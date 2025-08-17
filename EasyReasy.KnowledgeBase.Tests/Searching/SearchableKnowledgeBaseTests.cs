@@ -1,6 +1,7 @@
 using EasyReasy.EnvironmentVariables;
 using EasyReasy.KnowledgeBase.BertTokenization;
 using EasyReasy.KnowledgeBase.Chunking;
+using EasyReasy.KnowledgeBase.ConfidenceRating;
 using EasyReasy.KnowledgeBase.Generation;
 using EasyReasy.KnowledgeBase.Models;
 using EasyReasy.KnowledgeBase.OllamaGeneration;
@@ -8,6 +9,7 @@ using EasyReasy.KnowledgeBase.Searching;
 using EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore;
 using EasyReasy.KnowledgeBase.Storage.Sqlite;
 using EasyReasy.KnowledgeBase.Tests.TestUtilities;
+using System.Diagnostics;
 using System.Reflection;
 
 namespace EasyReasy.KnowledgeBase.Tests.Searching
@@ -194,12 +196,21 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
             }
 
             // Act
+            Stopwatch stopwatch = Stopwatch.StartNew();
             IKnowledgeBaseSearchResult searchResult = await searchableKnowledgeBase.SearchAsync("How does authentication work?", 3);
             KnowledgeBaseSearchResult? result = searchResult as KnowledgeBaseSearchResult;
+
+            stopwatch.Stop();
 
             // Assert
             Assert.IsNotNull(result);
 
+            foreach (RelevanceRatedEntry<KnowledgeFileSection> section in result.RelevantSections)
+            {
+                Console.WriteLine($"Relevance: {section.Relevance.RelevanceScore}");
+            }
+
+            Console.WriteLine($"Search time: {stopwatch.ElapsedMilliseconds} ms");
             Console.WriteLine(result.GetAsContextString());
         }
     }

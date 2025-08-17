@@ -57,10 +57,20 @@ namespace EasyReasy.KnowledgeBase
 
                 // 2. Get actual chunks and create WithSimilarity objects
                 List<WithSimilarity<KnowledgeFileChunk>> chunksWithSimilarity = new List<WithSimilarity<KnowledgeFileChunk>>();
+
+                // Get all chunk IDs from the search results
+                IEnumerable<Guid> chunkIds = chunkResults.Select(cv => cv.Id);
+
+                // Retrieve all chunks in a single batch operation
+                IEnumerable<KnowledgeFileChunk> chunks = await SearchableKnowledgeStore.Chunks.GetAsync(chunkIds);
+
+                // Create a dictionary for quick lookup of chunks by ID
+                Dictionary<Guid, KnowledgeFileChunk> chunksById = chunks.ToDictionary(c => c.Id);
+
+                // Create WithSimilarity objects for chunks that contain vectors
                 foreach (IKnowledgeVector chunkVector in chunkResults)
                 {
-                    KnowledgeFileChunk? chunk = await SearchableKnowledgeStore.Chunks.GetAsync(chunkVector.Id);
-                    if (chunk != null && chunk.ContainsVector())
+                    if (chunksById.TryGetValue(chunkVector.Id, out KnowledgeFileChunk? chunk) && chunk.ContainsVector())
                     {
                         // Use the existing WithSimilarity infrastructure
                         WithSimilarity<KnowledgeFileChunk> chunkWithSimilarity = WithSimilarity<KnowledgeFileChunk>.CreateBetween(chunk, queryVector);
@@ -68,7 +78,7 @@ namespace EasyReasy.KnowledgeBase
                     }
                 }
 
-                // 3. Group chunks by section and calculate section-level relevance
+                // 3. Group chunks by section
                 Dictionary<Guid, List<WithSimilarity<KnowledgeFileChunk>>> sectionsByChunks = chunksWithSimilarity
                     .GroupBy(c => c.Item.SectionId)
                     .ToDictionary(g => g.Key, g => g.ToList());
@@ -87,7 +97,10 @@ namespace EasyReasy.KnowledgeBase
                 }
 
                 return new KnowledgeBaseSearchResult(
-                    relevantSections: relevantSections.OrderByDescending(r => r.Relevance.NormalizedScore).ToList(),
+                    relevantSections: relevantSections
+                        .OrderByDescending(r => r.Relevance.CosineSimilarity)
+                        .ThenByDescending(r => r.Relevance.NormalizedScore)
+                        .ToList(),
                     query: query);
             }
             catch (Exception ex)
@@ -108,32 +121,56 @@ namespace EasyReasy.KnowledgeBase
             List<WithSimilarity<KnowledgeFileChunk>> sectionChunks,
             List<WithSimilarity<KnowledgeFileChunk>> allChunks)
         {
-            // Extract similarity scores for this section's chunks
+            // Guards
+            if (sectionChunks.Count == 0 || section.Chunks.Count == 0)
+            {
+                return new KnowledgebaseRelevanceMetrics(
+                    cosineSimilarity: 0.0,
+                    relevanceScore: 0,
+                    normalizedScore: 0.0,
+                    standardDeviation: 0.0);
+            }
+
+            int sectionTotalChunks = section.Chunks.Count;
+            int sectionHitChunks = sectionChunks.Count;
+
+            // Clamp similarities and cache section data
+            double sumSim = 0.0;
+            for (int i = 0; i < sectionHitChunks; i++)
+            {
+                double s = sectionChunks[i].Similarity;
+                if (s < 0.0) s = 0.0;
+                else if (s > 1.0) s = 1.0;
+                sectionChunks[i] = new WithSimilarity<KnowledgeFileChunk>(sectionChunks[i].Item, s);
+                sumSim += s;
+            }
+
             double[] sectionSimilarities = sectionChunks.Select(c => c.Similarity).ToArray();
+            double[] allSimilarities = allChunks.Select(c => Math.Clamp(c.Similarity, 0.0, 1.0)).ToArray();
 
-            // Extract all similarity scores for normalization
-            double[] allSimilarities = allChunks.Select(c => c.Similarity).ToArray();
+            // Core signals
+            double maxSim = sectionSimilarities.Max();
+            int k = Math.Min(3, sectionSimilarities.Length);
+            double meanTopK = sectionSimilarities.OrderByDescending(s => s).Take(k).Average();
 
-            // Calculate metrics using ConfidenceMath
-            double maxSimilarity = sectionSimilarities.Max();
-            double avgSimilarity = ConfidenceMath.CalculateMean(sectionSimilarities);
-            double standardDeviation = ConfidenceMath.CalculateStandardDeviation(allSimilarities);
+            // Coverage: mean similarity across the whole section (missing chunks count as 0), then dampen
+            double meanOverSection = sumSim / (double)Math.Max(1, sectionTotalChunks);
+            double coverage = Math.Sqrt(meanOverSection);
 
-            // Normalize scores to 0-100 range
-            double minSimilarity = allSimilarities.Min();
-            double maxOverallSimilarity = allSimilarities.Max();
-            double[] normalizedScores = ConfidenceMath.MinMaxNormalization(sectionSimilarities, minSimilarity, maxOverallSimilarity);
-            double normalizedScore = ConfidenceMath.CalculateMean(normalizedScores);
+            // Stable normalization (z-score over this result set)
+            double globalMean = ConfidenceMath.CalculateMean(allSimilarities);
+            double globalStd = Math.Max(ConfidenceMath.CalculateStandardDeviation(allSimilarities), 1e-12);
+            double meanZ = sectionSimilarities.Select(s => (s - globalMean) / globalStd).Average();
+            double normalizedScore = (1.0 / (1.0 + Math.Exp(-meanZ))) * 100.0;
 
-            // Use the best similarity as the primary metric, but consider coverage
-            double coverageFactor = (double)sectionChunks.Count / section.Chunks.Count;
-            double finalSimilarity = maxSimilarity * coverageFactor;
+            // Composite score (weights sum to 1.0)
+            double composite = (0.55 * maxSim) + (0.35 * meanTopK) + (0.10 * coverage);
 
             return new KnowledgebaseRelevanceMetrics(
-                cosineSimilarity: finalSimilarity,
-                relevanceScore: ConfidenceMath.RoundToInt(finalSimilarity * 100),
+                cosineSimilarity: composite,
+                relevanceScore: ConfidenceMath.RoundToInt(composite * 100.0),
                 normalizedScore: normalizedScore,
-                standardDeviation: standardDeviation);
+                standardDeviation: globalStd);
         }
     }
 }
