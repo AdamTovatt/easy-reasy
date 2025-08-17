@@ -124,6 +124,7 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
 
         [DataTestMethod]
         [DataRow("How does authentication work?")]
+        [DataRow("What is EasyReasy.Auth?")]
         public async Task SearchAsync_WithTestDocuments_ShouldReturnRelevantResults(string query)
         {
             // Act
