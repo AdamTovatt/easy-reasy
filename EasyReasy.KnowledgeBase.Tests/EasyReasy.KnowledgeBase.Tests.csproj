@@ -17,9 +17,11 @@
 
   <ItemGroup>
     <None Remove="TestData\TestDocument01.md" />
+    <None Remove="TestData\TestDocument05.md" />
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="TestData\TestDocument05.md" />
     <EmbeddedResource Include="TestData\TestDocument04.md" />
     <EmbeddedResource Include="TestData\TestDocument03.md" />
     <EmbeddedResource Include="TestData\TestDocument02.md" />

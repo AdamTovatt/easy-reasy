@@ -57,7 +57,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
                     TestDataFiles.TestDocument01,
                     TestDataFiles.TestDocument02,
                     TestDataFiles.TestDocument03,
-                    TestDataFiles.TestDocument04);
+                    TestDataFiles.TestDocument04,
+                    TestDataFiles.TestDocument05);
 
                 _searchableKnowledgeBase = await CreateSearchableKnowledgeBaseAsync();
 
@@ -109,6 +110,8 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
             InMemoryFileSourceProvider inMemoryFileSourceProvider = new InMemoryFileSourceProvider();
 
             inMemoryFileSourceProvider.AddFile(new TestFileSource(Guid.Parse("771d384b-0956-4bb0-90c8-39c2db4e8461"), TestDataFiles.TestDocument03, _resourceManager));
+            inMemoryFileSourceProvider.AddFile(new TestFileSource(Guid.Parse("34310682-66bf-479d-9b3e-1a2ff327cf66"), TestDataFiles.TestDocument04, _resourceManager));
+            inMemoryFileSourceProvider.AddFile(new TestFileSource(Guid.Parse("3cde82b1-9494-4a65-bd22-b796aff514f4"), TestDataFiles.TestDocument05, _resourceManager));
 
             return inMemoryFileSourceProvider;
         }
@@ -125,6 +128,9 @@ namespace EasyReasy.KnowledgeBase.Tests.Searching
         [DataTestMethod]
         [DataRow("How does authentication work?")]
         [DataRow("What is EasyReasy.Auth?")]
+        [DataRow("What does camels eat?")]
+        [DataRow("Vad är en betabuffis?")]
+        [DataRow("Är korgbuffisar farliga?")]
         public async Task SearchAsync_WithTestDocuments_ShouldReturnRelevantResults(string query)
         {
             // Act
