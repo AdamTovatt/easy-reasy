@@ -4,16 +4,28 @@ using System.Data;
 
 namespace EasyReasy.KnowledgeBase.Storage.Sqlite
 {
+    /// <summary>
+    /// SQLite-based implementation of the file store for managing knowledge files.
+    /// </summary>
     public class SqliteFileStore : IFileStore, IExplicitPersistence
     {
         private readonly string _connectionString;
         private bool _isInitialized = false;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SqliteFileStore"/> class with the specified connection string.
+        /// </summary>
+        /// <param name="connectionString">The SQLite connection string to use for database operations.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the connection string is null.</exception>
         public SqliteFileStore(string connectionString)
         {
             _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         }
 
+        /// <summary>
+        /// Loads and initializes the file store database schema.
+        /// </summary>
+        /// <param name="cancellationToken">Optional cancellation token to cancel the operation.</param>
         public async Task LoadAsync(CancellationToken cancellationToken = default)
         {
             if (_isInitialized) return;
@@ -22,6 +34,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             _isInitialized = true;
         }
 
+        /// <summary>
+        /// Saves the file store data. For SQLite, this is a no-op as data is saved transactionally.
+        /// </summary>
+        /// <param name="cancellationToken">Optional cancellation token to cancel the operation.</param>
+        /// <returns>A completed task.</returns>
         public Task SaveAsync(CancellationToken cancellationToken = default)
         {
             // No explicit save needed for SQLite as it's transactional
@@ -44,6 +61,12 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await command.ExecuteNonQueryAsync();
         }
 
+        /// <summary>
+        /// Adds a new knowledge file to the store.
+        /// </summary>
+        /// <param name="file">The file to add.</param>
+        /// <returns>The unique identifier of the added file.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when the file is null.</exception>
         public async Task<Guid> AddAsync(KnowledgeFile file)
         {
             if (file == null)
@@ -68,6 +91,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return file.Id;
         }
 
+        /// <summary>
+        /// Retrieves a knowledge file by its unique identifier.
+        /// </summary>
+        /// <param name="fileId">The unique identifier of the file to retrieve.</param>
+        /// <returns>The file if found; otherwise, null.</returns>
         public async Task<KnowledgeFile?> GetAsync(Guid fileId)
         {
             if (!_isInitialized)
@@ -101,6 +129,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return null;
         }
 
+        /// <summary>
+        /// Checks if a knowledge file exists in the store.
+        /// </summary>
+        /// <param name="fileId">The unique identifier of the file to check.</param>
+        /// <returns>True if the file exists; otherwise, false.</returns>
         public async Task<bool> ExistsAsync(Guid fileId)
         {
             if (!_isInitialized)
@@ -124,6 +157,10 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return count > 0;
         }
 
+        /// <summary>
+        /// Retrieves all knowledge files from the store.
+        /// </summary>
+        /// <returns>A collection of all knowledge files.</returns>
         public async Task<IEnumerable<KnowledgeFile>> GetAllAsync()
         {
             if (!_isInitialized)
@@ -158,6 +195,12 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return files;
         }
 
+        /// <summary>
+        /// Updates an existing knowledge file in the store.
+        /// </summary>
+        /// <param name="file">The file to update.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the file is null.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the file does not exist in the store.</exception>
         public async Task UpdateAsync(KnowledgeFile file)
         {
             if (file == null)
@@ -184,6 +227,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
                 throw new InvalidOperationException($"File with ID {file.Id} does not exist.");
         }
 
+        /// <summary>
+        /// Deletes a knowledge file from the store.
+        /// </summary>
+        /// <param name="fileId">The unique identifier of the file to delete.</param>
+        /// <returns>True if the file was deleted; otherwise, false.</returns>
         public async Task<bool> DeleteAsync(Guid fileId)
         {
             if (!_isInitialized)

@@ -70,7 +70,8 @@ namespace EasyReasy.KnowledgeBase.Models
         /// <returns>A new <see cref="KnowledgeFileSection"/> containing the provided chunks.</returns>
         public static KnowledgeFileSection CreateFromChunks(List<KnowledgeFileChunk> chunks, Guid fileId, int sectionIndex)
         {
-            return new KnowledgeFileSection(Guid.NewGuid(), fileId, sectionIndex, chunks);
+            Guid sectionId = chunks.Count > 0 ? chunks[0].SectionId : Guid.NewGuid(); // Use the section id from the first chunk if possible
+            return new KnowledgeFileSection(sectionId, fileId, sectionIndex, chunks);
         }
 
         /// <summary>

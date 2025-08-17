@@ -4,16 +4,28 @@ using System.Data;
 
 namespace EasyReasy.KnowledgeBase.Storage.Sqlite
 {
+    /// <summary>
+    /// SQLite-based implementation of the section store for managing knowledge file sections.
+    /// </summary>
     public class SqliteSectionStore : ISectionStore, IExplicitPersistence
     {
         private readonly string _connectionString;
         private bool _isInitialized = false;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SqliteSectionStore"/> class with the specified connection string.
+        /// </summary>
+        /// <param name="connectionString">The SQLite connection string to use for database operations.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the connection string is null.</exception>
         public SqliteSectionStore(string connectionString)
         {
             _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         }
 
+        /// <summary>
+        /// Loads and initializes the section store database schema.
+        /// </summary>
+        /// <param name="cancellationToken">Optional cancellation token to cancel the operation.</param>
         public async Task LoadAsync(CancellationToken cancellationToken = default)
         {
             if (_isInitialized) return;
@@ -22,6 +34,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             _isInitialized = true;
         }
 
+        /// <summary>
+        /// Saves the section store data. For SQLite, this is a no-op as data is saved transactionally.
+        /// </summary>
+        /// <param name="cancellationToken">Optional cancellation token to cancel the operation.</param>
+        /// <returns>A completed task.</returns>
         public Task SaveAsync(CancellationToken cancellationToken = default)
         {
             // No explicit save needed for SQLite as it's transactional
@@ -56,6 +73,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await indexCommand.ExecuteNonQueryAsync();
         }
 
+        /// <summary>
+        /// Adds a new knowledge file section to the store.
+        /// </summary>
+        /// <param name="section">The section to add.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the section is null.</exception>
         public async Task AddAsync(KnowledgeFileSection section)
         {
             if (section == null)
@@ -82,6 +104,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await command.ExecuteNonQueryAsync();
         }
 
+        /// <summary>
+        /// Retrieves a knowledge file section by its unique identifier.
+        /// </summary>
+        /// <param name="sectionId">The unique identifier of the section to retrieve.</param>
+        /// <returns>The section if found; otherwise, null.</returns>
         public async Task<KnowledgeFileSection?> GetAsync(Guid sectionId)
         {
             if (!_isInitialized)
@@ -117,6 +144,12 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return null;
         }
 
+        /// <summary>
+        /// Retrieves a knowledge file section by its file identifier and section index.
+        /// </summary>
+        /// <param name="fileId">The unique identifier of the file.</param>
+        /// <param name="sectionIndex">The index of the section within the file.</param>
+        /// <returns>The section if found; otherwise, null.</returns>
         public async Task<KnowledgeFileSection?> GetByIndexAsync(Guid fileId, int sectionIndex)
         {
             if (!_isInitialized)
@@ -153,6 +186,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return null;
         }
 
+        /// <summary>
+        /// Deletes all sections associated with a specific file.
+        /// </summary>
+        /// <param name="fileId">The unique identifier of the file whose sections should be deleted.</param>
+        /// <returns>True if any sections were deleted; otherwise, false.</returns>
         public async Task<bool> DeleteByFileAsync(Guid fileId)
         {
             if (!_isInitialized)

@@ -672,6 +672,7 @@ namespace EasyReasy.VectorStorage.Tests
                 {
                     vector[j] = (float)(i + 1) + (j * 0.001f); // Create unique patterns
                 }
+
                 await store.AddAsync(new StoredVector(Guid.NewGuid(), vector));
             }
 
@@ -708,6 +709,7 @@ namespace EasyReasy.VectorStorage.Tests
                 {
                     vector[j] = (float)(i + 1) + (j * 0.001f); // Create unique patterns
                 }
+
                 await store.AddAsync(new StoredVector(Guid.NewGuid(), vector));
             }
 
@@ -743,6 +745,7 @@ namespace EasyReasy.VectorStorage.Tests
                 {
                     vector[j] = (float)(i + 1) + (j * 0.001f); // Create unique patterns
                 }
+
                 await store.AddAsync(new StoredVector(Guid.NewGuid(), vector));
             }
 
@@ -778,6 +781,7 @@ namespace EasyReasy.VectorStorage.Tests
                 {
                     vector[j] = (float)(i + 1) + (j * 0.001f); // Create unique patterns
                 }
+
                 await store.AddAsync(new StoredVector(Guid.NewGuid(), vector));
             }
 

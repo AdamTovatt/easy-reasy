@@ -13,9 +13,11 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         /// </summary>
         public string ModelName => "mock-embedding-model";
 
+        public int Dimensions => 384;
+
         public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
         {
-            float[] embedding = new float[384];
+            float[] embedding = new float[Dimensions];
 
             int hash = text.GetHashCode();
             Random random = new Random(hash);

@@ -4,16 +4,28 @@ using System.Data;
 
 namespace EasyReasy.KnowledgeBase.Storage.Sqlite
 {
+    /// <summary>
+    /// SQLite-based implementation of the chunk store for managing knowledge file chunks.
+    /// </summary>
     public class SqliteChunkStore : IChunkStore, IExplicitPersistence
     {
         private readonly string _connectionString;
         private bool _isInitialized = false;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SqliteChunkStore"/> class with the specified connection string.
+        /// </summary>
+        /// <param name="connectionString">The SQLite connection string to use for database operations.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the connection string is null.</exception>
         public SqliteChunkStore(string connectionString)
         {
             _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
         }
 
+        /// <summary>
+        /// Loads and initializes the chunk store database schema.
+        /// </summary>
+        /// <param name="cancellationToken">Optional cancellation token to cancel the operation.</param>
         public async Task LoadAsync(CancellationToken cancellationToken = default)
         {
             if (_isInitialized) return;
@@ -22,6 +34,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             _isInitialized = true;
         }
 
+        /// <summary>
+        /// Saves the chunk store data. For SQLite, this is a no-op as data is saved transactionally.
+        /// </summary>
+        /// <param name="cancellationToken">Optional cancellation token to cancel the operation.</param>
+        /// <returns>A completed task.</returns>
         public Task SaveAsync(CancellationToken cancellationToken = default)
         {
             // No explicit save needed for SQLite as it's transactional
@@ -57,6 +74,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await indexCommand.ExecuteNonQueryAsync();
         }
 
+        /// <summary>
+        /// Adds a new knowledge file chunk to the store.
+        /// </summary>
+        /// <param name="chunk">The chunk to add.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the chunk is null.</exception>
         public async Task AddAsync(KnowledgeFileChunk chunk)
         {
             if (chunk == null)
@@ -83,6 +105,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await command.ExecuteNonQueryAsync();
         }
 
+        /// <summary>
+        /// Retrieves a knowledge file chunk by its unique identifier.
+        /// </summary>
+        /// <param name="chunkId">The unique identifier of the chunk to retrieve.</param>
+        /// <returns>The chunk if found; otherwise, null.</returns>
         public async Task<KnowledgeFileChunk?> GetAsync(Guid chunkId)
         {
             if (!_isInitialized)
@@ -114,6 +141,12 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return null;
         }
 
+        /// <summary>
+        /// Retrieves multiple knowledge file chunks by their unique identifiers.
+        /// </summary>
+        /// <param name="chunkIds">The collection of unique identifiers of the chunks to retrieve.</param>
+        /// <returns>A collection of chunks that were found.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when the chunkIds collection is null.</exception>
         public async Task<IEnumerable<KnowledgeFileChunk>> GetAsync(IEnumerable<Guid> chunkIds)
         {
             if (chunkIds == null)
@@ -161,6 +194,11 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return chunks;
         }
 
+        /// <summary>
+        /// Deletes all chunks associated with a specific file.
+        /// </summary>
+        /// <param name="fileId">The unique identifier of the file whose chunks should be deleted.</param>
+        /// <returns>True if any chunks were deleted; otherwise, false.</returns>
         public async Task<bool> DeleteByFileAsync(Guid fileId)
         {
             if (!_isInitialized)
@@ -180,6 +218,12 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return rowsAffected > 0;
         }
 
+        /// <summary>
+        /// Retrieves a knowledge file chunk by its section identifier and chunk index.
+        /// </summary>
+        /// <param name="sectionId">The unique identifier of the section.</param>
+        /// <param name="chunkIndex">The index of the chunk within the section.</param>
+        /// <returns>The chunk if found; otherwise, null.</returns>
         public async Task<KnowledgeFileChunk?> GetByIndexAsync(Guid sectionId, int chunkIndex)
         {
             if (!_isInitialized)

@@ -145,7 +145,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
                     // Yield current section if it has content
                     if (currentSectionChunks.Count > 0)
                     {
-                        yield return ConvertToKnowledgeFileChunks(currentSectionChunks, currentSectionIndex);
+                        yield return ConvertToKnowledgeFileChunks(currentSectionChunks);
                         currentSectionIndex++;
                     }
 
@@ -168,7 +168,7 @@ namespace EasyReasy.KnowledgeBase.Chunking
             // Yield final section if it has content
             if (currentSectionChunks.Count > 0)
             {
-                yield return ConvertToKnowledgeFileChunks(currentSectionChunks, currentSectionIndex);
+                yield return ConvertToKnowledgeFileChunks(currentSectionChunks);
             }
         }
 
@@ -176,9 +176,8 @@ namespace EasyReasy.KnowledgeBase.Chunking
         /// Converts a list of ChunkContent to a list of KnowledgeFileChunk objects with proper section relationships.
         /// </summary>
         /// <param name="chunkContents">The chunk content objects to convert.</param>
-        /// <param name="sectionIndex">The index of the section these chunks belong to.</param>
         /// <returns>A list of KnowledgeFileChunk objects with proper relationships.</returns>
-        private List<KnowledgeFileChunk> ConvertToKnowledgeFileChunks(List<ChunkContent> chunkContents, int sectionIndex)
+        private List<KnowledgeFileChunk> ConvertToKnowledgeFileChunks(List<ChunkContent> chunkContents)
         {
             Guid sectionId = Guid.NewGuid();
             List<KnowledgeFileChunk> chunks = new List<KnowledgeFileChunk>();

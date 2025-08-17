@@ -12,7 +12,6 @@ namespace EasyReasy.KnowledgeBase.Searching
         private readonly ISectionStore _sectionStore;
         private readonly IChunkStore _chunkStore;
         private readonly IKnowledgeVectorStore _chunksVectorStore;
-        private readonly IKnowledgeVectorStore _sectionsVectorStore;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SearchableKnowledgeStore"/> class.
@@ -26,14 +25,32 @@ namespace EasyReasy.KnowledgeBase.Searching
             IFileStore fileStore,
             ISectionStore sectionStore,
             IChunkStore chunkStore,
-            IKnowledgeVectorStore chunksVectorStore,
-            IKnowledgeVectorStore sectionsVectorStore)
+            IKnowledgeVectorStore chunksVectorStore)
         {
             _fileStore = fileStore ?? throw new ArgumentNullException(nameof(fileStore));
             _sectionStore = sectionStore ?? throw new ArgumentNullException(nameof(sectionStore));
             _chunkStore = chunkStore ?? throw new ArgumentNullException(nameof(chunkStore));
             _chunksVectorStore = chunksVectorStore ?? throw new ArgumentNullException(nameof(chunksVectorStore));
-            _sectionsVectorStore = sectionsVectorStore ?? throw new ArgumentNullException(nameof(sectionsVectorStore));
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SearchableKnowledgeStore"/> class using a knowledge store.
+        /// </summary>
+        /// <param name="knowledgeStore">The knowledge store containing file, section, and chunk stores.</param>
+        /// <param name="chunksVectorStore">The vector store for chunk searches.</param>
+        /// <param name="sectionsVectorStore">The vector store for section searches.</param>
+        /// <exception cref="ArgumentNullException">Thrown when any parameter is null.</exception>
+        public SearchableKnowledgeStore(
+            IKnowledgeStore knowledgeStore,
+            IKnowledgeVectorStore chunksVectorStore)
+        {
+            if (knowledgeStore == null)
+                throw new ArgumentNullException(nameof(knowledgeStore));
+
+            _fileStore = knowledgeStore.Files ?? throw new ArgumentNullException(nameof(knowledgeStore.Files));
+            _sectionStore = knowledgeStore.Sections ?? throw new ArgumentNullException(nameof(knowledgeStore.Sections));
+            _chunkStore = knowledgeStore.Chunks ?? throw new ArgumentNullException(nameof(knowledgeStore.Chunks));
+            _chunksVectorStore = chunksVectorStore ?? throw new ArgumentNullException(nameof(chunksVectorStore));
         }
 
         /// <summary>
@@ -58,15 +75,6 @@ namespace EasyReasy.KnowledgeBase.Searching
         public IKnowledgeVectorStore GetChunksVectorStore()
         {
             return _chunksVectorStore;
-        }
-
-        /// <summary>
-        /// Gets the vector store for searching sections.
-        /// </summary>
-        /// <returns>A vector store for section-level searches.</returns>
-        public IKnowledgeVectorStore GetSectionsVectorStore()
-        {
-            return _sectionsVectorStore;
         }
     }
 }

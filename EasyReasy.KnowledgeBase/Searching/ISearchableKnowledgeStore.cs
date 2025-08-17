@@ -12,11 +12,5 @@ namespace EasyReasy.KnowledgeBase.Searchings
         /// </summary>
         /// <returns>A vector store for chunk-level searches.</returns>
         IKnowledgeVectorStore GetChunksVectorStore();
-
-        /// <summary>
-        /// Gets the vector store for searching sections.
-        /// </summary>
-        /// <returns>A vector store for section-level searches.</returns>
-        IKnowledgeVectorStore GetSectionsVectorStore();
     }
 }

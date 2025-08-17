@@ -9,7 +9,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void Constructor_WithModelName_ShouldSetModelName()
         {
             // Arrange & Act
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model-v1");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model-v1", 2);
 
             // Assert
             Assert.AreEqual("test-model-v1", service.ModelName);
@@ -26,7 +26,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
             };
 
             // Act
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model-v2", embeddings);
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model-v2", 3, embeddings);
 
             // Assert
             Assert.AreEqual("test-model-v2", service.ModelName);
@@ -38,7 +38,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void AddEmbedding_ShouldStoreEmbedding()
         {
             // Arrange
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model", 3);
             string text = "test query";
             float[] embedding = new float[] { 0.1f, 0.2f, 0.3f };
 
@@ -55,7 +55,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void EmbedAsync_WithExistingEmbedding_ShouldReturnEmbedding()
         {
             // Arrange
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model", 3);
             string text = "test query";
             float[] embedding = new float[] { 0.1f, 0.2f, 0.3f };
             service.AddEmbedding(text, embedding);
@@ -71,7 +71,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void EmbedAsync_WithNonExistentEmbedding_ShouldThrowKeyNotFoundException()
         {
             // Arrange
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model", 3);
 
             // Act & Assert
             KeyNotFoundException exception = Assert.ThrowsExceptionAsync<KeyNotFoundException>(
@@ -83,7 +83,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void Serialize_WithEmbeddings_ShouldSerializeCorrectly()
         {
             // Arrange
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model-v3");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model-v3", 2);
             service.AddEmbedding("text1", new float[] { 0.1f, 0.2f });
             service.AddEmbedding("text2", new float[] { 0.3f, 0.4f });
 
@@ -100,7 +100,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void Deserialize_WithValidStream_ShouldDeserializeCorrectly()
         {
             // Arrange
-            PersistentEmbeddingService originalService = new PersistentEmbeddingService("test-model-v4");
+            PersistentEmbeddingService originalService = new PersistentEmbeddingService("test-model-v4", 2);
             originalService.AddEmbedding("text1", new float[] { 0.1f, 0.2f });
             originalService.AddEmbedding("text2", new float[] { 0.3f, 0.4f });
             Stream serializedStream = originalService.Serialize();
@@ -124,7 +124,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void SerializeDeserialize_WithEmptyService_ShouldPreserveModelName()
         {
             // Arrange
-            PersistentEmbeddingService originalService = new PersistentEmbeddingService("empty-test-model");
+            PersistentEmbeddingService originalService = new PersistentEmbeddingService("empty-test-model", 3);
 
             // Act
             Stream serializedStream = originalService.Serialize();
@@ -139,7 +139,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void SerializeDeserialize_WithComplexEmbeddings_ShouldPreserveAllData()
         {
             // Arrange
-            PersistentEmbeddingService originalService = new PersistentEmbeddingService("complex-test-model");
+            PersistentEmbeddingService originalService = new PersistentEmbeddingService("complex-test-model", 3); // This test uses multiple different sizes, that should not be done for real
             originalService.AddEmbedding("short", new float[] { 0.1f });
             originalService.AddEmbedding("long", new float[] { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1.0f });
             originalService.AddEmbedding("negative", new float[] { -0.1f, -0.2f, -0.3f });
@@ -198,7 +198,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void RemoveEmbedding_ShouldRemoveEmbedding()
         {
             // Arrange
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model", 2);
             service.AddEmbedding("test text", new float[] { 0.1f, 0.2f });
 
             // Act
@@ -213,7 +213,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void RemoveEmbedding_WithNonExistentText_ShouldReturnFalse()
         {
             // Arrange
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model", 3);
 
             // Act
             bool removed = service.RemoveEmbedding("non-existent text");
@@ -226,7 +226,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void Clear_ShouldRemoveAllEmbeddings()
         {
             // Arrange
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model", 1);
             service.AddEmbedding("text1", new float[] { 0.1f });
             service.AddEmbedding("text2", new float[] { 0.2f });
 
@@ -243,7 +243,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void GetAllEmbeddings_ShouldReturnCopyOfEmbeddings()
         {
             // Arrange
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model", 1);
             service.AddEmbedding("text1", new float[] { 0.1f });
 
             // Act
@@ -260,7 +260,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         {
             // Arrange
             string filePath = Path.GetTempFileName();
-            PersistentEmbeddingService service = new PersistentEmbeddingService("file-test-model");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("file-test-model", 2);
             service.AddEmbedding("text1", new float[] { 0.1f, 0.2f });
             service.AddEmbedding("text2", new float[] { 0.3f, 0.4f });
 
@@ -288,7 +288,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         {
             // Arrange
             string filePath = Path.GetTempFileName();
-            PersistentEmbeddingService originalService = new PersistentEmbeddingService("file-test-model-v2");
+            PersistentEmbeddingService originalService = new PersistentEmbeddingService("file-test-model-v2", 2);
             originalService.AddEmbedding("text1", new float[] { 0.1f, 0.2f });
             originalService.AddEmbedding("text2", new float[] { 0.3f, 0.4f });
 
@@ -325,7 +325,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         {
             // Arrange
             string filePath = Path.GetTempFileName();
-            PersistentEmbeddingService originalService = new PersistentEmbeddingService("file-complex-test-model");
+            PersistentEmbeddingService originalService = new PersistentEmbeddingService("file-complex-test-model", 3); // This test uses multiple different sizes, that should not be done for real
             originalService.AddEmbedding("short", new float[] { 0.1f });
             originalService.AddEmbedding("long", new float[] { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1.0f });
             originalService.AddEmbedding("negative", new float[] { -0.1f, -0.2f, -0.3f });
@@ -376,7 +376,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         public void Serialize_WithInvalidPath_ShouldThrowException()
         {
             // Arrange
-            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model");
+            PersistentEmbeddingService service = new PersistentEmbeddingService("test-model", 3);
             string invalidPath = Path.Combine("non-existent-directory", "test.json");
 
             // Act & Assert
@@ -389,7 +389,7 @@ namespace EasyReasy.KnowledgeBase.Tests.TestUtilities
         {
             // Arrange
             string filePath = Path.GetTempFileName();
-            PersistentEmbeddingService originalService = new PersistentEmbeddingService("file-empty-test-model");
+            PersistentEmbeddingService originalService = new PersistentEmbeddingService("file-empty-test-model", 3);
 
             try
             {
