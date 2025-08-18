@@ -22,11 +22,11 @@ This package is built with the philosophy that no dependencies should be require
 ### Available Packages for Implementations
 
 - **EasyReasy.KnowledgeBase**: Core library with interfaces and models
-- **EasyReasy.KnowledgeBase.Storage.Sqlite**: SQLite-based storage implementation
-- **EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore**: Vector storage integration
-- **EasyReasy.VectorStorage**: High-performance vector storage and similarity search
-- **EasyReasy.KnowledgeBase.BertTokenization**: BERT-based tokenization
-- **EasyReasy.KnowledgeBase.OllamaGeneration**: Ollama integration for embeddings and generation
+- **[EasyReasy.KnowledgeBase.Storage.Sqlite](../EasyReasy.KnowledgeBase.Storage.Sqlite/README.md)**: SQLite-based storage implementation
+- **[EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore](../EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore/README.md)**: Vector storage integration
+- **[EasyReasy.VectorStorage](../EasyReasy.VectorStorage/README.md)**: High-performance vector storage and similarity search
+- **[EasyReasy.KnowledgeBase.BertTokenization](../EasyReasy.KnowledgeBase.BertTokenization/README.md)**: BERT-based tokenization
+- **[EasyReasy.KnowledgeBase.OllamaGeneration](../EasyReasy.KnowledgeBase.OllamaGeneration/README.md)**: Ollama integration for embeddings and generation
 
 ## Quick Start
 

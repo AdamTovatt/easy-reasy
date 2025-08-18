@@ -19,6 +19,9 @@ As the system grew, **EasyReasy.ByteShelfProvider** was added to extend the same
 ### Vector Storage and AI
 **EasyReasy.VectorStorage** represents the latest expansion, offering high-performance vector similarity search with cosine similarity. Even in the complex world of AI and vector operations, the same easy-to-use approach prevails.
 
+### Knowledge Management and RAG Systems
+**EasyReasy.KnowledgeBase** and its ecosystem bring the same philosophy to knowledge management and RAG (Retrieval-Augmented Generation) systems. With extremely performant, memory efficient and intelligent document chunking, semantic sectioning, and comprehensive storage solutions, it provides everything needed to build sophisticated knowledge bases while maintaining the familiar easy-to-use approach.
+
 ## Projects
 
 | Project | NuGet | Description |
@@ -29,6 +32,11 @@ As the system grew, **EasyReasy.ByteShelfProvider** was added to extend the same
 | [EasyReasy.Auth](EasyReasy.Auth/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.Auth-blue.svg)](https://www.nuget.org/packages/EasyReasy.Auth) | JWT authentication and claims handling |
 | [EasyReasy.Auth.Client](EasyReasy.Auth.Client/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.Auth.Client-blue.svg)](https://www.nuget.org/packages/EasyReasy.Auth.Client) | Lightweight client library for EasyReasy.Auth servers |
 | [EasyReasy.VectorStorage](EasyReasy.VectorStorage/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.VectorStorage-blue.svg)](https://www.nuget.org/packages/EasyReasy.VectorStorage) | High-performance vector similarity search with cosine similarity |
+| [EasyReasy.KnowledgeBase](EasyReasy.KnowledgeBase/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.KnowledgeBase-blue.svg)](https://www.nuget.org/packages/EasyReasy.KnowledgeBase) | Intelligent document chunking and knowledge management for RAG systems |
+| [EasyReasy.KnowledgeBase.Storage.Sqlite](EasyReasy.KnowledgeBase.Storage.Sqlite/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.KnowledgeBase.Storage.Sqlite-blue.svg)](https://www.nuget.org/packages/EasyReasy.KnowledgeBase.Storage.Sqlite) | SQLite-based storage implementation for knowledge base |
+| [EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore](EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore-blue.svg)](https://www.nuget.org/packages/EasyReasy.KnowledgeBase.Storage.IntegratedVectorStore) | Vector storage integration for knowledge base |
+| [EasyReasy.KnowledgeBase.BertTokenization](EasyReasy.KnowledgeBase.BertTokenization/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.KnowledgeBase.BertTokenization-blue.svg)](https://www.nuget.org/packages/EasyReasy.KnowledgeBase.BertTokenization) | BERT-based tokenization for knowledge base |
+| [EasyReasy.KnowledgeBase.OllamaGeneration](EasyReasy.KnowledgeBase.OllamaGeneration/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.KnowledgeBase.OllamaGeneration-blue.svg)](https://www.nuget.org/packages/EasyReasy.KnowledgeBase.OllamaGeneration) | Ollama integration for embeddings and generation |
 
 ## Documentation
 
