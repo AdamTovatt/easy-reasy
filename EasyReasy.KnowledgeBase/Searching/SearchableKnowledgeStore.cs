@@ -19,7 +19,6 @@ namespace EasyReasy.KnowledgeBase.Searching
         /// <param name="sectionStore">The section store.</param>
         /// <param name="chunkStore">The chunk store.</param>
         /// <param name="chunksVectorStore">The vector store for chunk searches.</param>
-        /// <param name="sectionsVectorStore">The vector store for section searches.</param>
         public SearchableKnowledgeStore(
             IFileStore fileStore,
             ISectionStore sectionStore,
@@ -37,7 +36,6 @@ namespace EasyReasy.KnowledgeBase.Searching
         /// </summary>
         /// <param name="knowledgeStore">The knowledge store containing file, section, and chunk stores.</param>
         /// <param name="chunksVectorStore">The vector store for chunk searches.</param>
-        /// <param name="sectionsVectorStore">The vector store for section searches.</param>
         /// <exception cref="ArgumentNullException">Thrown when any parameter is null.</exception>
         public SearchableKnowledgeStore(
             IKnowledgeStore knowledgeStore,
