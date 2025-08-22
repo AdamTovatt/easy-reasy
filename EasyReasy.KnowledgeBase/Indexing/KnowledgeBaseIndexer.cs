@@ -52,7 +52,7 @@ namespace EasyReasy.KnowledgeBase.Indexing
 
             // Generate hash from the file content
             byte[] fileHash;
-            using (Stream hashStream = fileSource.CreateReadStream())
+            using (Stream hashStream = await fileSource.CreateReadStreamAsync())
             {
                 fileHash = StreamHashHelper.GenerateSha256Hash(hashStream);
             }
@@ -79,7 +79,7 @@ namespace EasyReasy.KnowledgeBase.Indexing
             }
 
             // Create section reader and process the file
-            using (Stream contentStream = fileSource.CreateReadStream())
+            using (Stream contentStream = await fileSource.CreateReadStreamAsync())
             {
                 SectionReaderFactory factory = new SectionReaderFactory(_embeddingService, _tokenizer);
                 SectionReader sectionReader = factory.CreateForMarkdown(contentStream, fileSource.FileId, _maxTokensPerChunk, _maxTokensPerSection);

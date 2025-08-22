@@ -395,8 +395,9 @@ new SectioningConfiguration(
 - `IndexAsync(IFileSource fileSource, CancellationToken cancellationToken)`: Index documents from a file source
 
 **IFileSource**
-- `Name`: string - Name of the file source
-- `GetContentAsync(CancellationToken cancellationToken)`: Get the content of the file
+- `FileId`: Guid - Gets the unique identifier for this file
+- `FileName`: string - Gets the name of the file
+- `CreateReadStreamAsync()`: Task<Stream> - Creates a new read stream for the file content
 
 **IFileSourceProvider**
 - `GetFileSourcesAsync(CancellationToken cancellationToken)`: Get available file sources

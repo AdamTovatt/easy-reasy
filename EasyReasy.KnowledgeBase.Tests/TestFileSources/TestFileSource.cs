@@ -38,9 +38,9 @@ namespace EasyReasy.KnowledgeBase.Tests.TestFileSources
         /// Creates a new read stream for the file content.
         /// </summary>
         /// <returns>A stream that can be used to read the file content.</returns>
-        public Stream CreateReadStream()
+        public Task<Stream> CreateReadStreamAsync()
         {
-            return _resourceManager.GetResourceStreamAsync(_resource).Result;
+            return _resourceManager.GetResourceStreamAsync(_resource);
         }
     }
 }

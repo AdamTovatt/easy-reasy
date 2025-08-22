@@ -19,6 +19,6 @@ namespace EasyReasy.KnowledgeBase.Indexing
         /// Creates a new read stream for the file content.
         /// </summary>
         /// <returns>A stream that can be used to read the file content.</returns>
-        Stream CreateReadStream();
+        Task<Stream> CreateReadStreamAsync();
     }
 }
