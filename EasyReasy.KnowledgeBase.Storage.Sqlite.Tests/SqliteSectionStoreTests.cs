@@ -112,8 +112,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
                 file.Id,
                 0,
                 chunks,
-                "Test summary",
-                new float[] { 0.1f, 0.2f, 0.3f }
+                "Test summary"
             )
             {
                 AdditionalContext = "Additional context"
@@ -135,7 +134,6 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             Assert.AreEqual(section.SectionIndex, retrieved.SectionIndex);
             Assert.AreEqual(section.Summary, retrieved.Summary);
             Assert.AreEqual(section.AdditionalContext, retrieved.AdditionalContext);
-            CollectionAssert.AreEqual(section.Embedding, retrieved.Embedding);
         }
 
         [TestMethod]
@@ -185,7 +183,6 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
 
             KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Test summary");
             section.AdditionalContext = "Additional context";
-            section.Embedding = new float[] { 0.1f, 0.2f, 0.3f };
             await _sectionStore.AddAsync(section);
 
             foreach (KnowledgeFileChunk chunk in section.Chunks)
@@ -203,7 +200,6 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             Assert.AreEqual(section.SectionIndex, result.SectionIndex);
             Assert.AreEqual(section.Summary, result.Summary);
             Assert.AreEqual(section.AdditionalContext, result.AdditionalContext);
-            CollectionAssert.AreEqual(section.Embedding, result.Embedding);
             Assert.AreEqual(1, section.Chunks.Count);
             Assert.IsNotNull(section.Chunks.FirstOrDefault()?.Content);
         }
@@ -259,7 +255,6 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
 
             KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 5, "Test summary");
             section.AdditionalContext = "Additional context";
-            section.Embedding = new float[] { 0.1f, 0.2f, 0.3f };
             await _sectionStore.AddAsync(section);
 
             foreach (KnowledgeFileChunk chunk in section.Chunks)
@@ -277,7 +272,6 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             Assert.AreEqual(section.SectionIndex, result.SectionIndex);
             Assert.AreEqual(section.Summary, result.Summary);
             Assert.AreEqual(section.AdditionalContext, result.AdditionalContext);
-            CollectionAssert.AreEqual(section.Embedding, result.Embedding);
         }
 
         [TestMethod]
@@ -436,11 +430,9 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             // Act - Add sections
             KnowledgeFileSection section1 = await CreateValidSectionAsync(file.Id, 0, "Section 1");
             section1.AdditionalContext = "Context 1";
-            section1.Embedding = new float[] { 0.1f, 0.2f };
 
             KnowledgeFileSection section2 = await CreateValidSectionAsync(file.Id, 1, "Section 2");
             section2.AdditionalContext = "Context 2";
-            section2.Embedding = new float[] { 0.3f, 0.4f };
 
             await _sectionStore.AddAsync(section1);
 
@@ -495,7 +487,6 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
 
             KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, null!);
             section.AdditionalContext = null; // null additional context
-            section.Embedding = null; // null embedding
             await _sectionStore.AddAsync(section);
 
             foreach (KnowledgeFileChunk chunk in section.Chunks)
@@ -510,42 +501,8 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite.Tests
             Assert.IsNotNull(retrieved);
             Assert.IsNull(retrieved.Summary);
             Assert.IsNull(retrieved.AdditionalContext);
-            Assert.IsNull(retrieved.Embedding);
         }
 
-        [TestMethod]
-        public async Task Section_ShouldHandleLargeEmbeddings()
-        {
-            // Arrange
-            await _fileStore.LoadAsync();
-            await _sectionStore.LoadAsync();
 
-            KnowledgeFile file = new KnowledgeFile(Guid.NewGuid(), "test.txt", new byte[] { 1, 2, 3, 4 });
-            await _fileStore.AddAsync(file);
-
-            float[] largeEmbedding = new float[1000];
-            for (int i = 0; i < largeEmbedding.Length; i++)
-            {
-                largeEmbedding[i] = (float)i / 1000f;
-            }
-
-            KnowledgeFileSection section = await CreateValidSectionAsync(file.Id, 0, "Large embedding test");
-            section.Embedding = largeEmbedding;
-            await _sectionStore.AddAsync(section);
-
-            foreach (KnowledgeFileChunk chunk in section.Chunks)
-            {
-                await _chunkStore.AddAsync(chunk);
-            }
-
-            // Act
-            KnowledgeFileSection? retrieved = await _sectionStore.GetAsync(section.Id);
-
-            // Assert
-            Assert.IsNotNull(retrieved);
-            Assert.IsNotNull(retrieved.Embedding);
-            Assert.AreEqual(largeEmbedding.Length, retrieved.Embedding.Length);
-            CollectionAssert.AreEqual(largeEmbedding, retrieved.Embedding);
-        }
     }
 }

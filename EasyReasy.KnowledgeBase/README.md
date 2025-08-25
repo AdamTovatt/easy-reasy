@@ -560,10 +560,6 @@ foreach (KnowledgeFileChunk chunk in chunks)
 foreach (KnowledgeFileSection section in sections)
 {
     await knowledgeStore.Sections.AddAsync(section);
-    if (section.Embedding != null)
-    {
-        await vectorStore.AddAsync(section.Id, section.Embedding);
-    }
 }
 ```
 
@@ -644,7 +640,7 @@ Manages sections containing multiple chunks:
 
 ```csharp
 // Add a section
-await sectionStore.AddAsync(new KnowledgeFileSection(id, fileId, index, chunks, summary, embedding));
+await sectionStore.AddAsync(new KnowledgeFileSection(id, fileId, index, chunks, summary));
 
 // Get section by ID
 KnowledgeFileSection? section = await sectionStore.GetAsync(sectionId);
@@ -715,6 +711,11 @@ public class KnowledgeFile
     public Guid Id { get; set; }
     public string Name { get; set; }
     public byte[] Hash { get; set; } // Content hash for integrity
+    public DateTime ProcessedAt { get; set; } // When the file was processed
+    public IndexingStatus Status { get; set; } // Current indexing status
+    
+    public KnowledgeFile(Guid id, string name, byte[] hash); // Defaults ProcessedAt to UtcNow, Status to Pending
+    public KnowledgeFile(Guid id, string name, byte[] hash, DateTime processedAt, IndexingStatus status);
 }
 ```
 
@@ -739,7 +740,7 @@ public class KnowledgeFileChunk : IVectorObject
 Represents a section containing multiple chunks:
 
 ```csharp
-public class KnowledgeFileSection : IVectorObject
+public class KnowledgeFileSection
 {
     public Guid Id { get; set; }
     public Guid FileId { get; set; }
@@ -747,11 +748,8 @@ public class KnowledgeFileSection : IVectorObject
     public string? Summary { get; set; }
     public string? AdditionalContext { get; set; }
     public List<KnowledgeFileChunk> Chunks { get; set; }
-    public float[]? Embedding { get; set; }
     
     public static KnowledgeFileSection CreateFromChunks(List<KnowledgeFileChunk> chunks, Guid fileId, int sectionIndex);
-    public float[] Vector() => Embedding ?? Array.Empty<float>();
-    public bool ContainsVector() => Embedding != null;
     public override string ToString() => Combined content of all chunks;
 }
 ```

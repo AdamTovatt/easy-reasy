@@ -5,7 +5,7 @@ namespace EasyReasy.KnowledgeBase.Models
     /// <summary>
     /// Represents a section of a knowledge file containing a summary and associated chunks.
     /// </summary>
-    public class KnowledgeFileSection : IVectorObject
+    public class KnowledgeFileSection
     {
         /// <summary>
         /// Gets or sets the unique identifier for the section.
@@ -38,11 +38,6 @@ namespace EasyReasy.KnowledgeBase.Models
         public List<KnowledgeFileChunk> Chunks { get; set; }
 
         /// <summary>
-        /// Gets or sets the embedding vector for the section.
-        /// </summary>
-        public float[]? Embedding { get; set; }
-
-        /// <summary>
         /// Initializes a new instance of the <see cref="KnowledgeFileSection"/> class.
         /// </summary>
         /// <param name="id">The unique identifier for the section.</param>
@@ -50,8 +45,7 @@ namespace EasyReasy.KnowledgeBase.Models
         /// <param name="sectionIndex">The zero-based index of this section within the knowledge file.</param>
         /// <param name="chunks">The collection of chunks that belong to this section.</param>
         /// <param name="summary">The summary description of the section.</param>
-        /// <param name="embedding">The embedding vector for the section.</param>
-        public KnowledgeFileSection(Guid id, Guid fileId, int sectionIndex, List<KnowledgeFileChunk> chunks, string? summary = null, float[]? embedding = null)
+        public KnowledgeFileSection(Guid id, Guid fileId, int sectionIndex, List<KnowledgeFileChunk> chunks, string? summary = null)
         {
             Id = id;
             FileId = fileId;
@@ -61,8 +55,6 @@ namespace EasyReasy.KnowledgeBase.Models
             
             if (chunks.Count == 0)
                 throw new ArgumentException("A knowledge file section must contain at least one chunk.", nameof(chunks));
-                
-            Embedding = embedding;
         }
 
         /// <summary>
@@ -76,24 +68,6 @@ namespace EasyReasy.KnowledgeBase.Models
         {
             Guid sectionId = chunks.Count > 0 ? chunks[0].SectionId : Guid.NewGuid(); // Use the section id from the first chunk if possible
             return new KnowledgeFileSection(sectionId, fileId, sectionIndex, chunks);
-        }
-
-        /// <summary>
-        /// Returns the vector representation of the section.
-        /// </summary>
-        /// <returns>The embedding vector for the section.</returns>
-        public float[] Vector()
-        {
-            return Embedding ?? Array.Empty<float>();
-        }
-
-        /// <summary>
-        /// Returns true if the section contains a valid vector.
-        /// </summary>
-        /// <returns>True if the embedding vector is not null.</returns>
-        public bool ContainsVector()
-        {
-            return Embedding != null;
         }
 
         /// <summary>

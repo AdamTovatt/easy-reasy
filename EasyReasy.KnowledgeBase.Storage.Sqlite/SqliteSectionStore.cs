@@ -60,7 +60,6 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
                     section_index INTEGER NOT NULL,
                     summary TEXT,
                     additional_context TEXT,
-                    embedding BLOB,
                     FOREIGN KEY (file_id) REFERENCES knowledge_files (id) ON DELETE CASCADE
                 )";
 
@@ -93,8 +92,8 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await connection.OpenAsync();
 
             const string insertSql = @"
-                INSERT INTO knowledge_sections (id, file_id, section_index, summary, additional_context, embedding) 
-                VALUES (@Id, @FileId, @SectionIndex, @Summary, @AdditionalContext, @Embedding)";
+                INSERT INTO knowledge_sections (id, file_id, section_index, summary, additional_context) 
+                VALUES (@Id, @FileId, @SectionIndex, @Summary, @AdditionalContext)";
 
             using SqliteCommand command = new SqliteCommand(insertSql, connection);
             command.Parameters.AddWithValue("@Id", section.Id.ToString());
@@ -102,7 +101,6 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             command.Parameters.AddWithValue("@SectionIndex", section.SectionIndex);
             command.Parameters.AddWithValue("@Summary", section.Summary ?? (object)DBNull.Value);
             command.Parameters.AddWithValue("@AdditionalContext", section.AdditionalContext ?? (object)DBNull.Value);
-            command.Parameters.AddWithValue("@Embedding", section.Embedding != null ? ConvertEmbeddingToBytes(section.Embedding) : (object)DBNull.Value);
 
             await command.ExecuteNonQueryAsync();
         }
@@ -121,7 +119,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await connection.OpenAsync();
 
             const string selectSql = @"
-                SELECT id, file_id, section_index, summary, additional_context, embedding 
+                SELECT id, file_id, section_index, summary, additional_context 
                 FROM knowledge_sections 
                 WHERE id = @Id";
 
@@ -141,8 +139,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
                     Guid.Parse(reader.GetString("file_id")),
                     reader.GetInt32("section_index"),
                     chunksList,
-                    reader.IsDBNull("summary") ? null : reader.GetString("summary"),
-                    reader.IsDBNull("embedding") ? null : ConvertBytesToEmbedding((byte[])reader.GetValue("embedding"))
+                    reader.IsDBNull("summary") ? null : reader.GetString("summary")
                 )
                 {
                     AdditionalContext = reader.IsDBNull("additional_context") ? null : reader.GetString("additional_context")
@@ -167,7 +164,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await connection.OpenAsync();
 
             const string selectSql = @"
-                SELECT id, file_id, section_index, summary, additional_context, embedding 
+                SELECT id, file_id, section_index, summary, additional_context 
                 FROM knowledge_sections 
                 WHERE file_id = @FileId AND section_index = @SectionIndex";
 
@@ -187,8 +184,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
                     Guid.Parse(reader.GetString("file_id")),
                     reader.GetInt32("section_index"),
                     chunksList,
-                    reader.IsDBNull("summary") ? null : reader.GetString("summary"),
-                    reader.IsDBNull("embedding") ? null : ConvertBytesToEmbedding((byte[])reader.GetValue("embedding"))
+                    reader.IsDBNull("summary") ? null : reader.GetString("summary")
                 )
                 {
                     AdditionalContext = reader.IsDBNull("additional_context") ? null : reader.GetString("additional_context")
@@ -222,18 +218,6 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             return rowsAffected > 0;
         }
 
-        private static byte[] ConvertEmbeddingToBytes(float[] embedding)
-        {
-            byte[] bytes = new byte[embedding.Length * sizeof(float)];
-            Buffer.BlockCopy(embedding, 0, bytes, 0, bytes.Length);
-            return bytes;
-        }
 
-        private static float[] ConvertBytesToEmbedding(byte[] bytes)
-        {
-            float[] embedding = new float[bytes.Length / sizeof(float)];
-            Buffer.BlockCopy(bytes, 0, embedding, 0, bytes.Length);
-            return embedding;
-        }
     }
 }
