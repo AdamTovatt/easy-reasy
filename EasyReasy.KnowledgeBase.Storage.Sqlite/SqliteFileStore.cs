@@ -54,7 +54,9 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
                 CREATE TABLE IF NOT EXISTS knowledge_files (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
-                    hash BLOB NOT NULL
+                    hash BLOB NOT NULL,
+                    processed_at TEXT NOT NULL,
+                    status INTEGER NOT NULL
                 )";
 
             using SqliteCommand command = new SqliteCommand(createTableSql, connection);
@@ -79,13 +81,15 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await connection.OpenAsync();
 
             const string insertSql = @"
-                INSERT INTO knowledge_files (id, name, hash) 
-                VALUES (@Id, @Name, @Hash)";
+                INSERT INTO knowledge_files (id, name, hash, processed_at, status) 
+                VALUES (@Id, @Name, @Hash, @ProcessedAt, @Status)";
 
             using SqliteCommand command = new SqliteCommand(insertSql, connection);
             command.Parameters.AddWithValue("@Id", file.Id.ToString());
             command.Parameters.AddWithValue("@Name", file.Name);
             command.Parameters.AddWithValue("@Hash", file.Hash);
+            command.Parameters.AddWithValue("@ProcessedAt", file.ProcessedAt.ToString("O"));
+            command.Parameters.AddWithValue("@Status", (int)file.Status);
 
             await command.ExecuteNonQueryAsync();
             return file.Id;
@@ -105,7 +109,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await connection.OpenAsync();
 
             const string selectSql = @"
-                SELECT id, name, hash 
+                SELECT id, name, hash, processed_at, status 
                 FROM knowledge_files 
                 WHERE id = @Id";
 
@@ -122,7 +126,9 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
                 return new KnowledgeFile(
                     Guid.Parse(reader.GetString("id")),
                     reader.GetString("name"),
-                    hashBytes
+                    hashBytes,
+                    DateTime.Parse(reader.GetString("processed_at")),
+                    (IndexingStatus)reader.GetInt32("status")
                 );
             }
 
@@ -170,7 +176,7 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
             await connection.OpenAsync();
 
             const string selectSql = @"
-                SELECT id, name, hash 
+                SELECT id, name, hash, processed_at, status 
                 FROM knowledge_files";
 
             using SqliteCommand command = new SqliteCommand(selectSql, connection);
@@ -188,7 +194,9 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
                 files.Add(new KnowledgeFile(
                     Guid.Parse(reader.GetString("id")),
                     reader.GetString("name"),
-                    hashBytes
+                    hashBytes,
+                    DateTime.Parse(reader.GetString("processed_at")),
+                    (IndexingStatus)reader.GetInt32("status")
                 ));
             }
 
@@ -214,13 +222,15 @@ namespace EasyReasy.KnowledgeBase.Storage.Sqlite
 
             const string updateSql = @"
                 UPDATE knowledge_files 
-                SET name = @Name, hash = @Hash 
+                SET name = @Name, hash = @Hash, processed_at = @ProcessedAt, status = @Status 
                 WHERE id = @Id";
 
             using SqliteCommand command = new SqliteCommand(updateSql, connection);
             command.Parameters.AddWithValue("@Id", file.Id.ToString());
             command.Parameters.AddWithValue("@Name", file.Name);
             command.Parameters.AddWithValue("@Hash", file.Hash);
+            command.Parameters.AddWithValue("@ProcessedAt", file.ProcessedAt.ToString("O"));
+            command.Parameters.AddWithValue("@Status", (int)file.Status);
 
             int rowsAffected = await command.ExecuteNonQueryAsync();
             if (rowsAffected == 0)

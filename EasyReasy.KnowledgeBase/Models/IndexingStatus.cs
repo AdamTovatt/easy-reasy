@@ -3,7 +3,7 @@
     /// <summary>
     /// Represents the current status of a knowledge file during processing.
     /// </summary>
-    public enum KnowledgeFileStatus
+    public enum IndexingStatus
     {
         /// <summary>
         /// The file is waiting to be processed.

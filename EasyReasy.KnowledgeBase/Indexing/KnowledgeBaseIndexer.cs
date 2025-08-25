@@ -74,7 +74,7 @@ namespace EasyReasy.KnowledgeBase.Indexing
             else // File doesn't exist
             {
                 // Add the new file to the knowledge store
-                KnowledgeFile knowledgeFile = new KnowledgeFile(fileSource.FileId, fileSource.FileName, new byte[0]);
+                KnowledgeFile knowledgeFile = new KnowledgeFile(fileSource.FileId, fileSource.FileName, new byte[0], DateTime.UtcNow, IndexingStatus.Pending);
                 await _searchableKnowledgeStore.Files.AddAsync(knowledgeFile);
             }
 
@@ -116,6 +116,8 @@ namespace EasyReasy.KnowledgeBase.Indexing
             }
 
             file.Hash = fileHash;
+            file.ProcessedAt = DateTime.UtcNow;
+            file.Status = IndexingStatus.Indexed;
             await _searchableKnowledgeStore.Files.UpdateAsync(file);
             
             return true;
