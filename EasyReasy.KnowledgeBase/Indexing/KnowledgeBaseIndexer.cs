@@ -74,7 +74,7 @@ namespace EasyReasy.KnowledgeBase.Indexing
             else // File doesn't exist
             {
                 // Add the new file to the knowledge store
-                KnowledgeFile knowledgeFile = new KnowledgeFile(fileSource.FileId, fileSource.FileName, fileHash);
+                KnowledgeFile knowledgeFile = new KnowledgeFile(fileSource.FileId, fileSource.FileName, new byte[0]);
                 await _searchableKnowledgeStore.Files.AddAsync(knowledgeFile);
             }
 
@@ -107,6 +107,16 @@ namespace EasyReasy.KnowledgeBase.Indexing
                     sectionIndex++;
                 }
             }
+
+            KnowledgeFile? file = await _searchableKnowledgeStore.Files.GetAsync(fileSource.FileId);
+
+            if (file == null)
+            {
+                throw new NullReferenceException($"KnowledgeFile with id {fileSource.FileId} didn't exist even though it was just added.");
+            }
+
+            file.Hash = fileHash;
+            await _searchableKnowledgeStore.Files.UpdateAsync(file);
         }
 
         private async Task RemoveExistingFileContentAsync(Guid fileId)
