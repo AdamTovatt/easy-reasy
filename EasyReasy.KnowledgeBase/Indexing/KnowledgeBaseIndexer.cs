@@ -42,8 +42,8 @@ namespace EasyReasy.KnowledgeBase.Indexing
         /// Consumes a file source and indexes its content into the knowledge base.
         /// </summary>
         /// <param name="fileSource">The file source to index.</param>
-        /// <returns>A task that represents the asynchronous indexing operation.</returns>
-        public async Task ConsumeAsync(IFileSource fileSource)
+        /// <returns>A task that represents the asynchronous indexing operation. Returns true if content was indexed, false if the file was already up to date.</returns>
+        public async Task<bool> ConsumeAsync(IFileSource fileSource)
         {
             if (fileSource == null)
             {
@@ -63,7 +63,7 @@ namespace EasyReasy.KnowledgeBase.Indexing
             if (existingFile != null && existingFile.Hash.SequenceEqual(fileHash))
             {
                 // File already indexed with the same hash, skip processing
-                return;
+                return false;
             }
 
             // If file exists but hash is different, remove the old content
@@ -117,6 +117,8 @@ namespace EasyReasy.KnowledgeBase.Indexing
 
             file.Hash = fileHash;
             await _searchableKnowledgeStore.Files.UpdateAsync(file);
+            
+            return true;
         }
 
         private async Task RemoveExistingFileContentAsync(Guid fileId)

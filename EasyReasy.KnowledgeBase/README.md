@@ -65,7 +65,15 @@ IIndexer indexer = knowledgeBase.CreateIndexer();
 
 foreach (IFileSource fileSource in await fileSourceProvider.GetAllFilesAsync())
 {
-    await indexer.ConsumeAsync(fileSource);
+    bool wasIndexed = await indexer.ConsumeAsync(fileSource);
+    if (wasIndexed)
+    {
+        Console.WriteLine($"Indexed: {fileSource.FileName}");
+    }
+    else
+    {
+        Console.WriteLine($"Skipped (already up to date): {fileSource.FileName}");
+    }
 }
 
 // Search for relevant content
@@ -392,7 +400,7 @@ new SectioningConfiguration(
 ### Indexing Interfaces
 
 **IIndexer**
-- `IndexAsync(IFileSource fileSource, CancellationToken cancellationToken)`: Index documents from a file source
+- `ConsumeAsync(IFileSource fileSource)`: Index documents from a file source. Returns true if content was indexed, false if the file was already up to date.
 
 **IFileSource**
 - `FileId`: Guid - Gets the unique identifier for this file
@@ -406,7 +414,7 @@ new SectioningConfiguration(
 
 **KnowledgeBaseIndexer** : IIndexer
 - Constructor: `(ISearchableKnowledgeStore searchableKnowledgeStore, IEmbeddingService embeddingService, ITokenizer tokenizer, int maxTokensPerChunk = 100, int maxTokensPerSection = 1000)`
-- `ConsumeAsync(IFileSource fileSource)`: Indexes file content into knowledge base
+- `ConsumeAsync(IFileSource fileSource)`: Indexes file content into knowledge base. Returns true if content was indexed, false if the file was already up to date.
 - **Features:**
   - Content hash verification for duplicate detection
   - Automatic cleanup of old content when file changes
