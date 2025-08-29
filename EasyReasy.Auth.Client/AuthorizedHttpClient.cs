@@ -101,6 +101,29 @@ namespace EasyReasy.Auth.Client
         }
 
         /// <summary>
+        /// Forces a fresh authorization regardless of current authorization state.
+        /// This is useful when the server rejects a token that the client thinks is still valid.
+        /// </summary>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        public async Task ForceAuthorizeAsync(CancellationToken cancellationToken = default)
+        {
+            await AuthorizeAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// Clears the current authorization state and forces a fresh authorization.
+        /// This is useful when you want to ensure a completely fresh authentication flow.
+        /// </summary>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        public async Task ForceReauthorizeAsync(CancellationToken cancellationToken = default)
+        {
+            _isAuthorized = false;
+            _tokenExpiresAt = null;
+            _httpClient.DefaultRequestHeaders.Authorization = null;
+            await AuthorizeAsync(cancellationToken);
+        }
+
+        /// <summary>
         /// Checks if the current token is expired.
         /// </summary>
         /// <returns>True if the token is expired or will expire within 5 minutes; otherwise, false.</returns>
