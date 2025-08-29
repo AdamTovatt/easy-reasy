@@ -124,6 +124,45 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
 }
 ```
 
+### Handling Authorization Issues
+
+Sometimes the server may reject a token even when the client thinks it's still valid. The client provides methods to handle these scenarios:
+
+```csharp
+using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://api.example.com/"))
+{
+    AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, "api-key");
+
+    try
+    {
+        HttpResponseMessage response = await client.GetAsync("api/data");
+        // Process response
+    }
+    catch (UnauthorizedAccessException)
+    {
+        // Force a fresh authorization attempt
+        await client.ForceAuthorizeAsync();
+        
+        // Try the request again
+        HttpResponseMessage response = await client.GetAsync("api/data");
+    }
+}
+```
+
+#### Force Authorization Methods
+
+- **`ForceAuthorizeAsync()`**: Bypasses the authorization check and always performs a fresh authentication. Useful when the server rejects a token that the client thinks is still valid.
+
+- **`ForceReauthorizeAsync()`**: Clears all current authorization state and performs a completely fresh authentication. This ensures no residual state interferes with the new authentication.
+
+```csharp
+// Force fresh authentication without clearing state
+await client.ForceAuthorizeAsync();
+
+// Clear all state and perform fresh authentication
+await client.ForceReauthorizeAsync();
+```
+
 ### Token Expiration
 The client automatically handles token expiration:
 1. Detects when token expires within 5 minutes
