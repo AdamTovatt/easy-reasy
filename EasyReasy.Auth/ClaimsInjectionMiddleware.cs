@@ -28,11 +28,15 @@ namespace EasyReasy.Auth
         {
             if (context.User.Identity != null && context.User.Identity.IsAuthenticated)
             {
-                string? userId = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+                // Try ClaimTypes.NameIdentifier first (ASP.NET Core maps 'sub' claim to this)
+                // Fallback to JwtRegisteredClaimNames.Sub if mapping didn't work
+                string? userId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
                 string? tenantId = context.User.FindFirst("tenant_id")?.Value;
                 context.Items["UserId"] = userId;
                 context.Items["TenantId"] = tenantId;
             }
+
             await _next(context);
         }
     }

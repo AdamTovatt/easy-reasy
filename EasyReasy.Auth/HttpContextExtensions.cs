@@ -17,9 +17,10 @@ namespace EasyReasy.Auth
         {
             if (context == null)
                 return null;
+            // Prefer Items (set by ClaimsInjectionMiddleware), fallback to JWT claims
             if (context.Items.TryGetValue("TenantId", out object? value))
                 return value as string;
-            return null;
+            return context.GetClaimValue("tenant_id");
         }
 
         /// <summary>
@@ -31,9 +32,12 @@ namespace EasyReasy.Auth
         {
             if (context == null)
                 return null;
+            // Prefer Items (set by ClaimsInjectionMiddleware), fallback to JWT claims
             if (context.Items.TryGetValue("UserId", out object? value))
                 return value as string;
-            return null;
+            // Try both possible claim locations for user ID
+            return context.GetClaimValue(ClaimTypes.NameIdentifier)
+                ?? context.GetClaimValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub);
         }
 
         /// <summary>
