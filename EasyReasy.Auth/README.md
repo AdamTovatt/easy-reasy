@@ -62,6 +62,15 @@ The library can automatically create authentication endpoints for you. First, im
 ```csharp
 public class MyAuthService : IAuthRequestValidationService
 {
+    private readonly IUserRepository _userRepository;
+    private readonly IPasswordHasher _passwordHasher;
+
+    public MyAuthService(IUserRepository userRepository, IPasswordHasher passwordHasher)
+    {
+        _userRepository = userRepository;
+        _passwordHasher = passwordHasher;
+    }
+
     public async Task<AuthResponse?> ValidateApiKeyRequestAsync(ApiKeyAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
     {
         // Validate API key (e.g., check database, external service, etc.)
@@ -89,9 +98,12 @@ public class MyAuthService : IAuthRequestValidationService
 
     public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
     {
-        // Validate username/password (e.g., check database, hash password, etc.)
+        // Validate username/password
         var user = await _userRepository.GetByUsernameAsync(request.Username);
-        if (user == null || !VerifyPassword(request.Password, user.PasswordHash)) 
+        if (user == null) return null;
+
+        // Validate password using username as additional salt
+        if (!_passwordHasher.ValidatePassword(request.Password, user.PasswordHash, request.Username))
             return null;
 
         // Extract tenant ID from header if available
@@ -117,30 +129,50 @@ public class MyAuthService : IAuthRequestValidationService
 
 Then register the service and add endpoints in `Program.cs`:
 
+**Option A: Direct Instance (Simple cases)**
 ```csharp
-// Register your validation service
 builder.Services.AddAuthValidationService(new MyAuthService());
+```
 
-// ... other configuration ...
+**Option B: Standard DI (Recommended for services with dependencies)**
+```csharp
+// Register dependencies first
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
+
+// Register validation service using standard DI
+builder.Services.AddScoped<IAuthRequestValidationService, MyAuthService>();
+```
+
+**Complete Setup Example:**
+```csharp
+string jwtSecret = Environment.GetEnvironmentVariable("JWT_SIGNING_SECRET")!;
+
+// 1. Register authentication
+builder.Services.AddEasyReasyAuth(jwtSecret, issuer: "my-issuer");
+
+// 2. Register dependencies
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
+
+// 3. Register validation service (use AddScoped for services with database dependencies)
+builder.Services.AddScoped<IAuthRequestValidationService, MyAuthService>();
 
 var app = builder.Build();
 
-// ... other configuration ...
+// 4. Configure middleware (UseEasyReasyAuth includes UseAuthentication/UseAuthorization)
+app.UseEasyReasyAuth();
 
-// Add auth endpoints (choose which ones you want)
+// 5. Add auth endpoints (after app.Build())
 app.AddAuthEndpoints(
     app.Services.GetRequiredService<IAuthRequestValidationService>(),
     allowApiKeys: true,
     allowUsernamePassword: true);
 
-// Or add specific endpoints individually:
-// app.AddApiAuthEndpoint(app.Services.GetRequiredService<IAuthRequestValidationService>());
-// app.AddLoginAuthEndpoint(app.Services.GetRequiredService<IAuthRequestValidationService>());
-
-app.MapControllers(); // This is probably here already
-// app.MapControllers(); is not specifically required by the auth library
-// it's just to show how the layout would probably look in Program.cs
+app.MapControllers();
 ```
+
+**Note:** `AddAuthValidationService` is a convenience method that registers as Singleton. For services with database dependencies, use `AddScoped` instead (as shown in Option B).
 
 This will automatically create:
 - `POST /api/auth/apikey` - For API key authentication
@@ -242,43 +274,7 @@ public interface IPasswordHasher
 }
 ```
 
-Use it in your `IAuthRequestValidationService` implementation:
-
-```csharp
-public class MyAuthService : IAuthRequestValidationService
-{
-    private readonly IPasswordHasher _passwordHasher;
-
-    public MyAuthService(IPasswordHasher passwordHasher)
-    {
-        _passwordHasher = passwordHasher;
-    }
-
-    public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
-    {
-        // Get user from database
-        var user = await _userRepository.GetByUsernameAsync(request.Username);
-        if (user == null) return null;
-
-        // Validate password using username as additional salt
-        if (!_passwordHasher.ValidatePassword(request.Password, user.PasswordHash, request.Username))
-            return null;
-
-        // Create JWT token...
-        DateTime expiresAt = DateTime.UtcNow.AddHours(1);
-        string token = jwtTokenService.CreateToken(
-            subject: user.Id,
-            authType: "user",
-            additionalClaims: new[] { new Claim("tenant_id", user.TenantId) },
-            roles: user.Roles.ToArray(),
-            expiresAt: expiresAt);
-
-        return new AuthResponse(token, expiresAt.ToString("o"));
-    }
-}
-```
-
-Register the password hasher in `Program.cs`:
+Use it in your `IAuthRequestValidationService` implementation (see the main example above for a complete implementation with constructor injection). Register the password hasher in `Program.cs`:
 
 ```csharp
 builder.Services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
@@ -291,6 +287,16 @@ builder.Services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
 - Constant-time comparison to prevent timing attacks
 
 ## Advanced Configuration
+
+### Service Registration Options
+
+**`AddAuthValidationService` vs Standard DI:**
+- `AddAuthValidationService` is a convenience method that registers as Singleton. Use it only for simple, stateless services.
+- For services with dependencies (especially database contexts), use standard DI with `AddScoped`:
+  ```csharp
+  builder.Services.AddScoped<IAuthRequestValidationService, MyAuthService>();
+  ```
+- **Service Lifetime**: Use `AddScoped` when your validation service has database dependencies (e.g., Entity Framework DbContext). Use `AddSingleton` only if the service is stateless and thread-safe.
 
 ### Opting Out of Automatic Service Registration
 
