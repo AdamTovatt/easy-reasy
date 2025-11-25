@@ -118,6 +118,23 @@ FILE_PATH2=/path/to/file2
 # Comments are supported
 ```
 
+You can create example files programmatically:
+
+```csharp
+// Create an example file with default examples
+EnvironmentVariableHelper.WriteExampleFile("config.example.env");
+
+// Or with custom examples
+EnvironmentVariableHelper.WriteExampleFile("config.example.env", "DATABASE_URL", "postgres://localhost:5432/mydb");
+
+// Get example content as a string
+string exampleContent1 = EnvironmentVariableHelper.GetExampleContent();
+string exampleContent2 = EnvironmentVariableHelper.GetExampleContent("DATABASE_URL", "postgres://localhost:5432/mydb");
+
+// Write example content to a stream
+EnvironmentVariableHelper.WriteExampleToStream(stream, "DATABASE_URL", "postgres://localhost:5432/mydb");
+```
+
 > **Note:** This is particularly useful in unit tests where environment variables need to be configured for testing but can't be in the code, and there's no `launchSettings.json` file or built-in way like ASP.NET Core web API applications have.
 
 ### Loading from Strings and Streams

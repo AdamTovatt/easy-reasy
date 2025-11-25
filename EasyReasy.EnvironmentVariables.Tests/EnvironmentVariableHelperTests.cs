@@ -21,10 +21,14 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable("DEBUG_MODE", null);
             Environment.SetEnvironmentVariable("EMPTY_VAR", null);
 
-            // Clean up test file
+            // Clean up test files
             if (File.Exists(TestConfigFile))
             {
                 File.Delete(TestConfigFile);
+            }
+            if (File.Exists("test_example.env"))
+            {
+                File.Delete("test_example.env");
             }
         }
 
@@ -802,6 +806,217 @@ BYTESHELF_STORAGE_PATH=/mnt/ssd1/byte-shelf/storage
 BYTESHELF_CHUNK_SIZE_BYTES=27336576
 ";
             Assert.AreEqual(expected, result);
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithNoParameters_ReturnsDefaultContent()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent();
+
+            // Assert
+            string expected = @"# Use ""#"" to comment
+EXAMPLE_KEY1=example_value1
+EXAMPLE_KEY2=example_value2
+";
+            Assert.AreEqual(expected, result);
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithOneKeyValue_ReturnsContentWithOneExample()
+        {
+            // Arrange
+            string key = "TEST_KEY";
+            string value = "test_value";
+
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(key, value);
+
+            // Assert
+            string expected = $@"# Use ""#"" to comment
+{key}={value}
+";
+            Assert.AreEqual(expected, result);
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithTwoKeyValues_ReturnsContentWithTwoExamples()
+        {
+            // Arrange
+            string key1 = "TEST_KEY1";
+            string value1 = "test_value1";
+            string key2 = "TEST_KEY2";
+            string value2 = "test_value2";
+
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(key1, value1, key2, value2);
+
+            // Assert
+            string expected = $@"# Use ""#"" to comment
+{key1}={value1}
+{key2}={value2}
+";
+            Assert.AreEqual(expected, result);
+        }
+
+        [TestMethod]
+        public void WriteExampleFile_WithNoParameters_WritesDefaultContent()
+        {
+            // Arrange
+            string testFile = "test_example.env";
+
+            // Act
+            EnvironmentVariableHelper.WriteExampleFile(testFile);
+
+            // Assert
+            Assert.IsTrue(File.Exists(testFile));
+            string content = File.ReadAllText(testFile);
+            string expected = @"# Use ""#"" to comment
+EXAMPLE_KEY1=example_value1
+EXAMPLE_KEY2=example_value2
+";
+            Assert.AreEqual(expected, content);
+
+            // Cleanup
+            if (File.Exists(testFile))
+                File.Delete(testFile);
+        }
+
+        [TestMethod]
+        public void WriteExampleFile_WithOneKeyValue_WritesContentWithOneExample()
+        {
+            // Arrange
+            string testFile = "test_example.env";
+            string key = "DATABASE_URL";
+            string value = "postgres://localhost:5432/mydb";
+
+            // Act
+            EnvironmentVariableHelper.WriteExampleFile(testFile, key, value);
+
+            // Assert
+            Assert.IsTrue(File.Exists(testFile));
+            string content = File.ReadAllText(testFile);
+            string expected = $@"# Use ""#"" to comment
+{key}={value}
+";
+            Assert.AreEqual(expected, content);
+
+            // Cleanup
+            if (File.Exists(testFile))
+                File.Delete(testFile);
+        }
+
+        [TestMethod]
+        public void WriteExampleFile_WithTwoKeyValues_WritesContentWithTwoExamples()
+        {
+            // Arrange
+            string testFile = "test_example.env";
+            string key1 = "DATABASE_URL";
+            string value1 = "postgres://localhost:5432/mydb";
+            string key2 = "API_KEY";
+            string value2 = "my-secret-key";
+
+            // Act
+            EnvironmentVariableHelper.WriteExampleFile(testFile, key1, value1, key2, value2);
+
+            // Assert
+            Assert.IsTrue(File.Exists(testFile));
+            string content = File.ReadAllText(testFile);
+            string expected = $@"# Use ""#"" to comment
+{key1}={value1}
+{key2}={value2}
+";
+            Assert.AreEqual(expected, content);
+
+            // Cleanup
+            if (File.Exists(testFile))
+                File.Delete(testFile);
+        }
+
+        [TestMethod]
+        public void WriteExampleToStream_WithNoParameters_WritesDefaultContent()
+        {
+            // Arrange
+            using MemoryStream stream = new MemoryStream();
+
+            // Act
+            EnvironmentVariableHelper.WriteExampleToStream(stream);
+
+            // Assert
+            stream.Position = 0;
+            using StreamReader reader = new StreamReader(stream);
+            string content = reader.ReadToEnd();
+            string expected = @"# Use ""#"" to comment
+EXAMPLE_KEY1=example_value1
+EXAMPLE_KEY2=example_value2
+";
+            Assert.AreEqual(expected, content);
+        }
+
+        [TestMethod]
+        public void WriteExampleToStream_WithOneKeyValue_WritesContentWithOneExample()
+        {
+            // Arrange
+            using MemoryStream stream = new MemoryStream();
+            string key = "DATABASE_URL";
+            string value = "postgres://localhost:5432/mydb";
+
+            // Act
+            EnvironmentVariableHelper.WriteExampleToStream(stream, key, value);
+
+            // Assert
+            stream.Position = 0;
+            using StreamReader reader = new StreamReader(stream);
+            string content = reader.ReadToEnd();
+            string expected = $@"# Use ""#"" to comment
+{key}={value}
+";
+            Assert.AreEqual(expected, content);
+        }
+
+        [TestMethod]
+        public void WriteExampleToStream_WithTwoKeyValues_WritesContentWithTwoExamples()
+        {
+            // Arrange
+            using MemoryStream stream = new MemoryStream();
+            string key1 = "DATABASE_URL";
+            string value1 = "postgres://localhost:5432/mydb";
+            string key2 = "API_KEY";
+            string value2 = "my-secret-key";
+
+            // Act
+            EnvironmentVariableHelper.WriteExampleToStream(stream, key1, value1, key2, value2);
+
+            // Assert
+            stream.Position = 0;
+            using StreamReader reader = new StreamReader(stream);
+            string content = reader.ReadToEnd();
+            string expected = $@"# Use ""#"" to comment
+{key1}={value1}
+{key2}={value2}
+";
+            Assert.AreEqual(expected, content);
+        }
+
+        [TestMethod]
+        public void WriteExampleToStream_WithNullStream_ThrowsArgumentNullException()
+        {
+            // Act & Assert
+            Assert.ThrowsException<ArgumentNullException>(() => EnvironmentVariableHelper.WriteExampleToStream(null!));
+        }
+
+        [TestMethod]
+        public void WriteExampleToStream_WithNullStreamAndOneKeyValue_ThrowsArgumentNullException()
+        {
+            // Act & Assert
+            Assert.ThrowsException<ArgumentNullException>(() => EnvironmentVariableHelper.WriteExampleToStream(null!, "KEY", "VALUE"));
+        }
+
+        [TestMethod]
+        public void WriteExampleToStream_WithNullStreamAndTwoKeyValues_ThrowsArgumentNullException()
+        {
+            // Act & Assert
+            Assert.ThrowsException<ArgumentNullException>(() => EnvironmentVariableHelper.WriteExampleToStream(null!, "KEY1", "VALUE1", "KEY2", "VALUE2"));
         }
     }
 

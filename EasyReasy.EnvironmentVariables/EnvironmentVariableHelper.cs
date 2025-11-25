@@ -236,5 +236,152 @@ namespace EasyReasy.EnvironmentVariables
 
             return values;
         }
+
+        /// <summary>
+        /// Gets example environment variable content as a string.
+        /// Returns content with a comment line and default example key/value pairs.
+        /// </summary>
+        /// <returns>Example environment variable content string.</returns>
+        public static string GetExampleContent()
+        {
+            return GetExampleContent("EXAMPLE_KEY1", "example_value1", "EXAMPLE_KEY2", "example_value2");
+        }
+
+        /// <summary>
+        /// Gets example environment variable content as a string with one custom example.
+        /// </summary>
+        /// <param name="exampleKey1">The first example environment variable key.</param>
+        /// <param name="exampleValue1">The first example environment variable value.</param>
+        /// <returns>Example environment variable content string.</returns>
+        public static string GetExampleContent(
+            string exampleKey1,
+            string exampleValue1)
+        {
+            StringBuilder content = new StringBuilder();
+            content.AppendLine("# Use \"#\" to comment");
+            content.AppendLine($"{exampleKey1}={exampleValue1}");
+            return content.ToString();
+        }
+
+        /// <summary>
+        /// Gets example environment variable content as a string with two custom examples.
+        /// </summary>
+        /// <param name="exampleKey1">The first example environment variable key.</param>
+        /// <param name="exampleValue1">The first example environment variable value.</param>
+        /// <param name="exampleKey2">The second example environment variable key.</param>
+        /// <param name="exampleValue2">The second example environment variable value.</param>
+        /// <returns>Example environment variable content string.</returns>
+        public static string GetExampleContent(
+            string exampleKey1,
+            string exampleValue1,
+            string exampleKey2,
+            string exampleValue2)
+        {
+            StringBuilder content = new StringBuilder();
+            content.AppendLine("# Use \"#\" to comment");
+            content.AppendLine($"{exampleKey1}={exampleValue1}");
+            content.AppendLine($"{exampleKey2}={exampleValue2}");
+            return content.ToString();
+        }
+
+        /// <summary>
+        /// Writes an example environment variable file with default examples.
+        /// </summary>
+        /// <param name="filePath">The path to the file to write.</param>
+        public static void WriteExampleFile(string filePath)
+        {
+            string content = GetExampleContent();
+            File.WriteAllText(filePath, content);
+        }
+
+        /// <summary>
+        /// Writes an example environment variable file with one custom example.
+        /// </summary>
+        /// <param name="filePath">The path to the file to write.</param>
+        /// <param name="exampleKey1">The first example environment variable key.</param>
+        /// <param name="exampleValue1">The first example environment variable value.</param>
+        public static void WriteExampleFile(
+            string filePath,
+            string exampleKey1,
+            string exampleValue1)
+        {
+            string content = GetExampleContent(exampleKey1, exampleValue1);
+            File.WriteAllText(filePath, content);
+        }
+
+        /// <summary>
+        /// Writes an example environment variable file with two custom examples.
+        /// </summary>
+        /// <param name="filePath">The path to the file to write.</param>
+        /// <param name="exampleKey1">The first example environment variable key.</param>
+        /// <param name="exampleValue1">The first example environment variable value.</param>
+        /// <param name="exampleKey2">The second example environment variable key.</param>
+        /// <param name="exampleValue2">The second example environment variable value.</param>
+        public static void WriteExampleFile(
+            string filePath,
+            string exampleKey1,
+            string exampleValue1,
+            string exampleKey2,
+            string exampleValue2)
+        {
+            string content = GetExampleContent(exampleKey1, exampleValue1, exampleKey2, exampleValue2);
+            File.WriteAllText(filePath, content);
+        }
+
+        /// <summary>
+        /// Writes example environment variable content to a stream with default examples.
+        /// </summary>
+        /// <param name="stream">The stream to write to.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the stream is null.</exception>
+        public static void WriteExampleToStream(Stream stream)
+        {
+            WriteExampleToStream(stream, "EXAMPLE_KEY1", "example_value1", "EXAMPLE_KEY2", "example_value2");
+        }
+
+        /// <summary>
+        /// Writes example environment variable content to a stream with one custom example.
+        /// </summary>
+        /// <param name="stream">The stream to write to.</param>
+        /// <param name="exampleKey1">The first example environment variable key.</param>
+        /// <param name="exampleValue1">The first example environment variable value.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the stream is null.</exception>
+        public static void WriteExampleToStream(
+            Stream stream,
+            string exampleKey1,
+            string exampleValue1)
+        {
+            if (stream == null)
+                throw new ArgumentNullException(nameof(stream));
+
+            string content = GetExampleContent(exampleKey1, exampleValue1);
+            using StreamWriter writer = new StreamWriter(stream, leaveOpen: true);
+            writer.Write(content);
+            writer.Flush();
+        }
+
+        /// <summary>
+        /// Writes example environment variable content to a stream with two custom examples.
+        /// </summary>
+        /// <param name="stream">The stream to write to.</param>
+        /// <param name="exampleKey1">The first example environment variable key.</param>
+        /// <param name="exampleValue1">The first example environment variable value.</param>
+        /// <param name="exampleKey2">The second example environment variable key.</param>
+        /// <param name="exampleValue2">The second example environment variable value.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the stream is null.</exception>
+        public static void WriteExampleToStream(
+            Stream stream,
+            string exampleKey1,
+            string exampleValue1,
+            string exampleKey2,
+            string exampleValue2)
+        {
+            if (stream == null)
+                throw new ArgumentNullException(nameof(stream));
+
+            string content = GetExampleContent(exampleKey1, exampleValue1, exampleKey2, exampleValue2);
+            using StreamWriter writer = new StreamWriter(stream, leaveOpen: true);
+            writer.Write(content);
+            writer.Flush();
+        }
     }
 }
