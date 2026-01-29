@@ -1018,6 +1018,155 @@ EXAMPLE_KEY2=example_value2
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() => EnvironmentVariableHelper.WriteExampleToStream(null!, "KEY1", "VALUE1", "KEY2", "VALUE2"));
         }
+
+        [TestMethod]
+        public void GetExampleContent_WithContainerType_ReturnsExpectedContent()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfiguration));
+
+            // Assert
+            Assert.IsTrue(result.Contains("# Use \"#\" to comment"));
+            Assert.IsTrue(result.Contains("TEST_VAR_1=<YOUR_TEST_VAR_1>"));
+            Assert.IsTrue(result.Contains("TEST_VAR_2=<YOUR_TEST_VAR_2>"));
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithContainerTypeWithDescription_IncludesDescriptionComment()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithDescription));
+
+            // Assert
+            Assert.IsTrue(result.Contains("# Database connection string"));
+            Assert.IsTrue(result.Contains("DATABASE_URL=<YOUR_DATABASE_URL>"));
+            Assert.IsTrue(result.Contains("# Secret key for JWT token signing"));
+            Assert.IsTrue(result.Contains("JWT_SECRET=<YOUR_JWT_SECRET>"));
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithContainerTypeWithMinLength_IncludesMinLengthComment()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithDescription));
+
+            // Assert
+            Assert.IsTrue(result.Contains("# Min length: 32"));
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithContainerTypeWithRange_GeneratesMultipleEntries()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithRangeNoMinCount));
+
+            // Assert
+            Assert.IsTrue(result.Contains("# API endpoints"));
+            Assert.IsTrue(result.Contains("API_ENDPOINT_1=<YOUR_API_ENDPOINT_1>"));
+            Assert.IsTrue(result.Contains("API_ENDPOINT_2=<YOUR_API_ENDPOINT_2>"));
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithContainerTypeWithRangeMinCount_GeneratesMinCountEntries()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithRangeAndDescription));
+
+            // Assert
+            Assert.IsTrue(result.Contains("# File storage paths"));
+            Assert.IsTrue(result.Contains("# Min count: 3"));
+            Assert.IsTrue(result.Contains("FILE_PATH_1=<YOUR_FILE_PATH_1>"));
+            Assert.IsTrue(result.Contains("FILE_PATH_2=<YOUR_FILE_PATH_2>"));
+            Assert.IsTrue(result.Contains("FILE_PATH_3=<YOUR_FILE_PATH_3>"));
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithContainerTypeWithoutAttribute_ThrowsArgumentException()
+        {
+            // Act & Assert
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithoutAttribute)));
+            Assert.IsTrue(exception.Message.Contains("is not marked with EnvironmentVariableNameContainerAttribute"));
+        }
+
+        [TestMethod]
+        public void WriteExampleFile_WithContainerType_WritesExpectedContent()
+        {
+            // Arrange
+            string testFile = "test_container_example.env";
+
+            try
+            {
+                // Act
+                EnvironmentVariableHelper.WriteExampleFile(testFile, typeof(TestConfigurationWithDescription));
+
+                // Assert
+                Assert.IsTrue(File.Exists(testFile));
+                string content = File.ReadAllText(testFile);
+                Assert.IsTrue(content.Contains("# Database connection string"));
+                Assert.IsTrue(content.Contains("DATABASE_URL=<YOUR_DATABASE_URL>"));
+                Assert.IsTrue(content.Contains("# Min length: 32"));
+                Assert.IsTrue(content.Contains("JWT_SECRET=<YOUR_JWT_SECRET>"));
+            }
+            finally
+            {
+                // Cleanup
+                if (File.Exists(testFile))
+                    File.Delete(testFile);
+            }
+        }
+
+        [TestMethod]
+        public void WriteExampleToStream_WithContainerType_WritesExpectedContent()
+        {
+            // Arrange
+            using MemoryStream stream = new MemoryStream();
+
+            // Act
+            EnvironmentVariableHelper.WriteExampleToStream(stream, typeof(TestConfigurationWithDescription));
+
+            // Assert
+            stream.Position = 0;
+            using StreamReader reader = new StreamReader(stream);
+            string content = reader.ReadToEnd();
+            Assert.IsTrue(content.Contains("# Database connection string"));
+            Assert.IsTrue(content.Contains("DATABASE_URL=<YOUR_DATABASE_URL>"));
+            Assert.IsTrue(content.Contains("# Min length: 32"));
+            Assert.IsTrue(content.Contains("JWT_SECRET=<YOUR_JWT_SECRET>"));
+        }
+
+        [TestMethod]
+        public void WriteExampleToStream_WithContainerTypeAndNullStream_ThrowsArgumentNullException()
+        {
+            // Act & Assert
+            Assert.ThrowsException<ArgumentNullException>(() => EnvironmentVariableHelper.WriteExampleToStream(null!, typeof(TestConfiguration)));
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithEmptyContainer_ReturnsHeaderOnly()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestEmptyConfiguration));
+
+            // Assert
+            string expected = "# Use \"#\" to comment\r\n";
+            Assert.AreEqual(expected, result);
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithMixedConfig_ReturnsCorrectContent()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithRangeAndDescription));
+
+            // Assert
+            Assert.IsTrue(result.Contains("# Single variable"));
+            Assert.IsTrue(result.Contains("SINGLE_VAR=<YOUR_SINGLE_VAR>"));
+            Assert.IsTrue(result.Contains("# File storage paths"));
+            Assert.IsTrue(result.Contains("# Min count: 3"));
+            Assert.IsTrue(result.Contains("FILE_PATH_1=<YOUR_FILE_PATH_1>"));
+            Assert.IsTrue(result.Contains("FILE_PATH_2=<YOUR_FILE_PATH_2>"));
+            Assert.IsTrue(result.Contains("FILE_PATH_3=<YOUR_FILE_PATH_3>"));
+        }
     }
 
     [EnvironmentVariableNameContainer]
@@ -1053,5 +1202,32 @@ EXAMPLE_KEY2=example_value2
     {
         [EnvironmentVariableName]
         public static readonly VariableName Variable1 = new VariableName("TEST_VAR_1");
+    }
+
+    [EnvironmentVariableNameContainer]
+    public static class TestConfigurationWithDescription
+    {
+        [EnvironmentVariableName(description: "Database connection string")]
+        public static readonly VariableName DatabaseUrl = new VariableName("DATABASE_URL");
+
+        [EnvironmentVariableName(32, "Secret key for JWT token signing")]
+        public static readonly VariableName JwtSecret = new VariableName("JWT_SECRET");
+    }
+
+    [EnvironmentVariableNameContainer]
+    public static class TestConfigurationWithRangeAndDescription
+    {
+        [EnvironmentVariableName(description: "Single variable")]
+        public static readonly VariableName SingleVar = new VariableName("SINGLE_VAR");
+
+        [EnvironmentVariableNameRange(3, "File storage paths")]
+        public static readonly VariableNameRange FilePaths = new VariableNameRange("FILE_PATH");
+    }
+
+    [EnvironmentVariableNameContainer]
+    public static class TestConfigurationWithRangeNoMinCount
+    {
+        [EnvironmentVariableNameRange(description: "API endpoints")]
+        public static readonly VariableNameRange ApiEndpoints = new VariableNameRange("API_ENDPOINT");
     }
 }

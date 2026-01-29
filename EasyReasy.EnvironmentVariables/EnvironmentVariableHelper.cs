@@ -285,6 +285,93 @@ namespace EasyReasy.EnvironmentVariables
         }
 
         /// <summary>
+        /// Gets example environment variable content as a string based on a container type.
+        /// The container type should be marked with <see cref="EnvironmentVariableNameContainerAttribute"/>.
+        /// </summary>
+        /// <param name="containerType">The type of the environment variable container class.</param>
+        /// <returns>Example environment variable content string with comments for descriptions and requirements.</returns>
+        /// <exception cref="ArgumentException">Thrown when the type is not marked with EnvironmentVariableNameContainerAttribute.</exception>
+        public static string GetExampleContent(Type containerType)
+        {
+            if (containerType.GetCustomAttribute<EnvironmentVariableNameContainerAttribute>() == null)
+            {
+                throw new ArgumentException($"Type {containerType.Name} is not marked with EnvironmentVariableNameContainerAttribute.");
+            }
+
+            StringBuilder content = new StringBuilder();
+            content.AppendLine("# Use \"#\" to comment");
+
+            FieldInfo[] fields = containerType.GetFields(BindingFlags.Public | BindingFlags.Static);
+            bool isFirstVariable = true;
+
+            foreach (FieldInfo field in fields)
+            {
+                EnvironmentVariableNameAttribute? attribute = field.GetCustomAttribute<EnvironmentVariableNameAttribute>();
+
+                if (attribute != null)
+                {
+                    VariableName? fieldValue = field.GetValue(null) as VariableName?;
+                    if (fieldValue != null)
+                    {
+                        if (!isFirstVariable)
+                        {
+                            content.AppendLine();
+                        }
+                        isFirstVariable = false;
+
+                        if (!string.IsNullOrEmpty(attribute.Description))
+                        {
+                            content.AppendLine($"# {attribute.Description}");
+                        }
+
+                        if (attribute.MinLength > 0)
+                        {
+                            content.AppendLine($"# Min length: {attribute.MinLength}");
+                        }
+
+                        string variableName = fieldValue.Value.Name;
+                        content.AppendLine($"{variableName}=<YOUR_{variableName}>");
+                    }
+                }
+
+                EnvironmentVariableNameRangeAttribute? rangeAttribute = field.GetCustomAttribute<EnvironmentVariableNameRangeAttribute>();
+
+                if (rangeAttribute != null)
+                {
+                    VariableNameRange? rangeValue = field.GetValue(null) as VariableNameRange?;
+                    if (rangeValue != null)
+                    {
+                        if (!isFirstVariable)
+                        {
+                            content.AppendLine();
+                        }
+                        isFirstVariable = false;
+
+                        if (!string.IsNullOrEmpty(rangeAttribute.Description))
+                        {
+                            content.AppendLine($"# {rangeAttribute.Description}");
+                        }
+
+                        if (rangeAttribute.MinCount > 0)
+                        {
+                            content.AppendLine($"# Min count: {rangeAttribute.MinCount}");
+                        }
+
+                        string prefix = rangeValue.Value.Prefix;
+                        int exampleCount = Math.Max(2, rangeAttribute.MinCount);
+
+                        for (int i = 1; i <= exampleCount; i++)
+                        {
+                            content.AppendLine($"{prefix}_{i}=<YOUR_{prefix}_{i}>");
+                        }
+                    }
+                }
+            }
+
+            return content.ToString();
+        }
+
+        /// <summary>
         /// Writes an example environment variable file with default examples.
         /// </summary>
         /// <param name="filePath">The path to the file to write.</param>
@@ -325,6 +412,19 @@ namespace EasyReasy.EnvironmentVariables
             string exampleValue2)
         {
             string content = GetExampleContent(exampleKey1, exampleValue1, exampleKey2, exampleValue2);
+            File.WriteAllText(filePath, content);
+        }
+
+        /// <summary>
+        /// Writes an example environment variable file based on a container type.
+        /// The container type should be marked with <see cref="EnvironmentVariableNameContainerAttribute"/>.
+        /// </summary>
+        /// <param name="filePath">The path to the file to write.</param>
+        /// <param name="containerType">The type of the environment variable container class.</param>
+        /// <exception cref="ArgumentException">Thrown when the type is not marked with EnvironmentVariableNameContainerAttribute.</exception>
+        public static void WriteExampleFile(string filePath, Type containerType)
+        {
+            string content = GetExampleContent(containerType);
             File.WriteAllText(filePath, content);
         }
 
@@ -379,6 +479,25 @@ namespace EasyReasy.EnvironmentVariables
                 throw new ArgumentNullException(nameof(stream));
 
             string content = GetExampleContent(exampleKey1, exampleValue1, exampleKey2, exampleValue2);
+            using StreamWriter writer = new StreamWriter(stream, leaveOpen: true);
+            writer.Write(content);
+            writer.Flush();
+        }
+
+        /// <summary>
+        /// Writes example environment variable content to a stream based on a container type.
+        /// The container type should be marked with <see cref="EnvironmentVariableNameContainerAttribute"/>.
+        /// </summary>
+        /// <param name="stream">The stream to write to.</param>
+        /// <param name="containerType">The type of the environment variable container class.</param>
+        /// <exception cref="ArgumentNullException">Thrown when the stream is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when the type is not marked with EnvironmentVariableNameContainerAttribute.</exception>
+        public static void WriteExampleToStream(Stream stream, Type containerType)
+        {
+            if (stream == null)
+                throw new ArgumentNullException(nameof(stream));
+
+            string content = GetExampleContent(containerType);
             using StreamWriter writer = new StreamWriter(stream, leaveOpen: true);
             writer.Write(content);
             writer.Flush();

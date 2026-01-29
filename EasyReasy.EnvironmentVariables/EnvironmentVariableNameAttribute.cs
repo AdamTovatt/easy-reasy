@@ -12,12 +12,20 @@
         public int MinLength { get; }
 
         /// <summary>
+        /// Gets the optional description for this environment variable.
+        /// Used when generating example content.
+        /// </summary>
+        public string? Description { get; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="EnvironmentVariableNameAttribute"/> class.
         /// </summary>
         /// <param name="minLength">The minimum length requirement for the environment variable value. Defaults to 0.</param>
-        public EnvironmentVariableNameAttribute(int minLength = 0)
+        /// <param name="description">Optional description for this environment variable. Used when generating example content.</param>
+        public EnvironmentVariableNameAttribute(int minLength = 0, string? description = null)
         {
             MinLength = minLength;
+            Description = description;
         }
     }
 }

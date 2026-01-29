@@ -12,12 +12,20 @@ namespace EasyReasy.EnvironmentVariables
         public int MinCount { get; }
 
         /// <summary>
+        /// Gets the optional description for this environment variable range.
+        /// Used when generating example content.
+        /// </summary>
+        public string? Description { get; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="EnvironmentVariableNameRangeAttribute"/> class.
         /// </summary>
         /// <param name="minCount">The minimum number of variables required in the range.</param>
-        public EnvironmentVariableNameRangeAttribute(int minCount = 0)
+        /// <param name="description">Optional description for this environment variable range. Used when generating example content.</param>
+        public EnvironmentVariableNameRangeAttribute(int minCount = 0, string? description = null)
         {
             MinCount = minCount;
+            Description = description;
         }
     }
 }

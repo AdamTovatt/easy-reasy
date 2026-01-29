@@ -29,16 +29,18 @@ Define your environment variables in configuration classes and validate them at 
 [EnvironmentVariableNameContainer]
 public static class EnvironmentVariable
 {
-    [EnvironmentVariableName(minLength: 10)]
+    [EnvironmentVariableName(minLength: 10, description: "PostgreSQL connection string")]
     public static readonly VariableName DatabaseUrl = new VariableName("DATABASE_URL");
-    
-    [EnvironmentVariableName(minLength: 20)]
+
+    [EnvironmentVariableName(minLength: 20, description: "API key for external service")]
     public static readonly VariableName ApiKey = new VariableName("API_KEY");
-    
+
     [EnvironmentVariableName]
     public static readonly VariableName DebugMode = new VariableName("DEBUG_MODE");
 }
 ```
+
+The optional `description` parameter is used when generating example content (see [Example File Generation](#example-file-generation)).
 
 ### Startup Validation
 
@@ -73,7 +75,7 @@ You can declare a range of environment variables that share a common prefix. Thi
 public static class EnvironmentVariable
 {
     // This declares a range of names (use with VariableNameRange)
-    [EnvironmentVariableNameRange(minCount: 2)]
+    [EnvironmentVariableNameRange(minCount: 2, description: "File storage paths")]
     public static readonly VariableNameRange FilePaths = new VariableNameRange("FILE_PATH");
 
     // "Normal" variable names can also exist in the same file
@@ -118,6 +120,8 @@ FILE_PATH2=/path/to/file2
 # Comments are supported
 ```
 
+### Example File Generation
+
 You can create example files programmatically:
 
 ```csharp
@@ -134,6 +138,52 @@ string exampleContent2 = EnvironmentVariableHelper.GetExampleContent("DATABASE_U
 // Write example content to a stream
 EnvironmentVariableHelper.WriteExampleToStream(stream, "DATABASE_URL", "postgres://localhost:5432/mydb");
 ```
+
+#### Container-Based Example Generation
+
+You can also generate example content directly from your environment variable container. This automatically includes descriptions and requirement comments based on your attribute definitions:
+
+```csharp
+// Generate example content from a container type
+string exampleContent = EnvironmentVariableHelper.GetExampleContent(typeof(EnvironmentVariable));
+
+// Write directly to a file
+EnvironmentVariableHelper.WriteExampleFile("config.example.env", typeof(EnvironmentVariable));
+
+// Write to a stream
+EnvironmentVariableHelper.WriteExampleToStream(stream, typeof(EnvironmentVariable));
+```
+
+Given this container definition:
+
+```csharp
+[EnvironmentVariableNameContainer]
+public static class EnvironmentVariable
+{
+    [EnvironmentVariableName(32, description: "Secret key for JWT token signing")]
+    public static readonly VariableName JwtSecret = new VariableName("JWT_SECRET");
+
+    [EnvironmentVariableNameRange(2, description: "File storage paths")]
+    public static readonly VariableNameRange FilePaths = new VariableNameRange("FILE_PATH");
+}
+```
+
+The generated example content would be:
+
+```
+# Use "#" to comment
+
+# Secret key for JWT token signing
+# Min length: 32
+JWT_SECRET=<YOUR_JWT_SECRET>
+
+# File storage paths
+# Min count: 2
+FILE_PATH_1=<YOUR_FILE_PATH_1>
+FILE_PATH_2=<YOUR_FILE_PATH_2>
+```
+
+For ranges, at least 2 example entries are always generated (or more if `minCount` is higher) to show that multiple entries are possible.
 
 > **Note:** This is particularly useful in unit tests where environment variables need to be configured for testing but can't be in the code, and there's no `launchSettings.json` file or built-in way like ASP.NET Core web API applications have.
 
