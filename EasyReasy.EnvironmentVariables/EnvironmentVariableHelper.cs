@@ -289,9 +289,10 @@ namespace EasyReasy.EnvironmentVariables
         /// The container type should be marked with <see cref="EnvironmentVariableNameContainerAttribute"/>.
         /// </summary>
         /// <param name="containerType">The type of the environment variable container class.</param>
+        /// <param name="respectMinLength">When true, ensures example values meet minimum length requirements by appending suffixes and padding.</param>
         /// <returns>Example environment variable content string with comments for descriptions and requirements.</returns>
         /// <exception cref="ArgumentException">Thrown when the type is not marked with EnvironmentVariableNameContainerAttribute.</exception>
-        public static string GetExampleContent(Type containerType)
+        public static string GetExampleContent(Type containerType, bool respectMinLength = true)
         {
             if (containerType.GetCustomAttribute<EnvironmentVariableNameContainerAttribute>() == null)
             {
@@ -330,7 +331,8 @@ namespace EasyReasy.EnvironmentVariables
                         }
 
                         string variableName = fieldValue.Value.Name;
-                        content.AppendLine($"{variableName}=<YOUR_{variableName}>");
+                        string exampleValue = BuildExampleValue(variableName, attribute.MinLength, respectMinLength);
+                        content.AppendLine($"{variableName}={exampleValue}");
                     }
                 }
 
@@ -421,10 +423,11 @@ namespace EasyReasy.EnvironmentVariables
         /// </summary>
         /// <param name="filePath">The path to the file to write.</param>
         /// <param name="containerType">The type of the environment variable container class.</param>
+        /// <param name="respectMinLength">When true, ensures example values meet minimum length requirements by appending suffixes and padding.</param>
         /// <exception cref="ArgumentException">Thrown when the type is not marked with EnvironmentVariableNameContainerAttribute.</exception>
-        public static void WriteExampleFile(string filePath, Type containerType)
+        public static void WriteExampleFile(string filePath, Type containerType, bool respectMinLength = true)
         {
-            string content = GetExampleContent(containerType);
+            string content = GetExampleContent(containerType, respectMinLength);
             File.WriteAllText(filePath, content);
         }
 
@@ -490,17 +493,46 @@ namespace EasyReasy.EnvironmentVariables
         /// </summary>
         /// <param name="stream">The stream to write to.</param>
         /// <param name="containerType">The type of the environment variable container class.</param>
+        /// <param name="respectMinLength">When true, ensures example values meet minimum length requirements by appending suffixes and padding.</param>
         /// <exception cref="ArgumentNullException">Thrown when the stream is null.</exception>
         /// <exception cref="ArgumentException">Thrown when the type is not marked with EnvironmentVariableNameContainerAttribute.</exception>
-        public static void WriteExampleToStream(Stream stream, Type containerType)
+        public static void WriteExampleToStream(Stream stream, Type containerType, bool respectMinLength = true)
         {
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
 
-            string content = GetExampleContent(containerType);
+            string content = GetExampleContent(containerType, respectMinLength);
             using StreamWriter writer = new StreamWriter(stream, leaveOpen: true);
             writer.Write(content);
             writer.Flush();
+        }
+
+        /// <summary>
+        /// Builds an example value string for an environment variable, optionally respecting minimum length requirements.
+        /// </summary>
+        /// <param name="variableName">The name of the environment variable.</param>
+        /// <param name="minLength">The minimum length requirement.</param>
+        /// <param name="respectMinLength">Whether to ensure the value meets the minimum length.</param>
+        /// <returns>An example value string.</returns>
+        private static string BuildExampleValue(string variableName, int minLength, bool respectMinLength)
+        {
+            string baseValue = $"<YOUR_{variableName}>";
+
+            if (!respectMinLength || minLength <= 0)
+            {
+                return baseValue;
+            }
+
+            // Add min length suffix
+            string valueWithSuffix = $"<YOUR_{variableName}_min_length_{minLength}>";
+
+            // If still too short, pad with underscores
+            if (valueWithSuffix.Length < minLength)
+            {
+                valueWithSuffix = valueWithSuffix.PadRight(minLength, '_');
+            }
+
+            return valueWithSuffix;
         }
     }
 }

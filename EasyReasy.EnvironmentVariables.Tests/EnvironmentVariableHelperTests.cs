@@ -1035,7 +1035,7 @@ EXAMPLE_KEY2=example_value2
         public void GetExampleContent_WithContainerTypeWithDescription_IncludesDescriptionComment()
         {
             // Act
-            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithDescription));
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithDescription), respectMinLength: false);
 
             // Assert
             Assert.IsTrue(result.Contains("# Database connection string"));
@@ -1097,7 +1097,7 @@ EXAMPLE_KEY2=example_value2
             try
             {
                 // Act
-                EnvironmentVariableHelper.WriteExampleFile(testFile, typeof(TestConfigurationWithDescription));
+                EnvironmentVariableHelper.WriteExampleFile(testFile, typeof(TestConfigurationWithDescription), respectMinLength: false);
 
                 // Assert
                 Assert.IsTrue(File.Exists(testFile));
@@ -1122,7 +1122,7 @@ EXAMPLE_KEY2=example_value2
             using MemoryStream stream = new MemoryStream();
 
             // Act
-            EnvironmentVariableHelper.WriteExampleToStream(stream, typeof(TestConfigurationWithDescription));
+            EnvironmentVariableHelper.WriteExampleToStream(stream, typeof(TestConfigurationWithDescription), respectMinLength: false);
 
             // Assert
             stream.Position = 0;
@@ -1166,6 +1166,52 @@ EXAMPLE_KEY2=example_value2
             Assert.IsTrue(result.Contains("FILE_PATH_1=<YOUR_FILE_PATH_1>"));
             Assert.IsTrue(result.Contains("FILE_PATH_2=<YOUR_FILE_PATH_2>"));
             Assert.IsTrue(result.Contains("FILE_PATH_3=<YOUR_FILE_PATH_3>"));
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithRespectMinLengthTrue_IncludesMinLengthSuffix()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithDescription), respectMinLength: true);
+
+            // Assert - JWT_SECRET has min length 32, so value should include suffix
+            Assert.IsTrue(result.Contains("JWT_SECRET=<YOUR_JWT_SECRET_min_length_32>"));
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithRespectMinLengthTrue_PadsValueToMeetMinLength()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithDescription), respectMinLength: true);
+
+            // Assert - Extract the JWT_SECRET value and verify it meets min length
+            string[] lines = result.Split('\n');
+            string? jwtLine = lines.FirstOrDefault(l => l.StartsWith("JWT_SECRET="));
+            Assert.IsNotNull(jwtLine);
+
+            string value = jwtLine.Substring("JWT_SECRET=".Length);
+            Assert.IsTrue(value.Length >= 32, $"Value '{value}' should be at least 32 characters but was {value.Length}");
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithRespectMinLengthDefault_RespectsMinLength()
+        {
+            // Act - default should be respectMinLength: true
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithDescription));
+
+            // Assert
+            Assert.IsTrue(result.Contains("_min_length_32"));
+        }
+
+        [TestMethod]
+        public void GetExampleContent_WithNoMinLength_DoesNotAddSuffix()
+        {
+            // Act
+            string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestConfigurationWithDescription), respectMinLength: true);
+
+            // Assert - DATABASE_URL has no min length, should not have suffix
+            Assert.IsTrue(result.Contains("DATABASE_URL=<YOUR_DATABASE_URL>"));
+            Assert.IsFalse(result.Contains("DATABASE_URL=<YOUR_DATABASE_URL_min_length"));
         }
     }
 
