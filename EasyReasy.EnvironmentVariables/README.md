@@ -42,6 +42,37 @@ public static class EnvironmentVariable
 
 The optional `description` parameter is used when generating example content (see [Example File Generation](#example-file-generation)).
 
+### Optional Variables
+
+> **Most variables should not be optional.** The core value of this library is catching missing configuration at startup rather than at runtime. Only mark a variable as optional when there is a genuine reason — for example, when the application has a built-in fallback or auto-discovery mechanism and the variable only serves as an explicit override.
+
+For the rare cases where a variable is truly optional, you can skip startup validation for it:
+
+```csharp
+[EnvironmentVariableNameContainer]
+public static class EnvironmentVariable
+{
+    [EnvironmentVariableName(minLength: 10)]
+    public static readonly VariableName DatabaseUrl = new VariableName("DATABASE_URL");
+
+    // Optional: the application can auto-discover the CLI, but this allows an explicit override
+    [EnvironmentVariableName(optional: true)]
+    public static readonly VariableName CliPath = new VariableName("CLI_PATH");
+}
+```
+
+Use `GetValueOrDefault()` to retrieve optional variables without throwing:
+
+```csharp
+string? cliPath = EnvironmentVariable.CliPath.GetValueOrDefault();
+if (cliPath != null)
+{
+    // Use the explicit override
+}
+```
+
+`GetValueOrDefault()` returns `null` if the variable is not set, empty, or whitespace.
+
 ### Startup Validation
 
 Validate all environment variables at application startup:

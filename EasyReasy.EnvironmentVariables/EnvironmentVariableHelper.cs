@@ -171,7 +171,7 @@ namespace EasyReasy.EnvironmentVariables
                 {
                     EnvironmentVariableNameAttribute? attribute = field.GetCustomAttribute<EnvironmentVariableNameAttribute>();
 
-                    if (attribute != null)
+                    if (attribute != null && !attribute.Optional)
                     {
                         VariableName? fieldValue = field.GetValue(null) as VariableName?;
                         if (fieldValue != null)

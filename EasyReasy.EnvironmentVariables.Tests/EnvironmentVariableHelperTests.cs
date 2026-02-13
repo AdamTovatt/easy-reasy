@@ -20,6 +20,9 @@ namespace EasyReasy.EnvironmentVariables.Tests
             Environment.SetEnvironmentVariable("API_KEY", null);
             Environment.SetEnvironmentVariable("DEBUG_MODE", null);
             Environment.SetEnvironmentVariable("EMPTY_VAR", null);
+            Environment.SetEnvironmentVariable("REQUIRED_VAR", null);
+            Environment.SetEnvironmentVariable("OPTIONAL_VAR", null);
+            Environment.SetEnvironmentVariable("OPTIONAL_MIN_VAR", null);
 
             // Clean up test files
             if (File.Exists(TestConfigFile))
@@ -1213,6 +1216,107 @@ EXAMPLE_KEY2=example_value2
             Assert.IsTrue(result.Contains("DATABASE_URL=<YOUR_DATABASE_URL>"));
             Assert.IsFalse(result.Contains("DATABASE_URL=<YOUR_DATABASE_URL_min_length"));
         }
+
+        [TestMethod]
+        public void ValidateVariableNamesIn_WithOptionalVariableMissing_DoesNotThrow()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("REQUIRED_VAR", "required-value");
+            // OPTIONAL_VAR is not set
+
+            // Act & Assert
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfigurationWithOptional));
+        }
+
+        [TestMethod]
+        public void ValidateVariableNamesIn_WithOptionalVariableSet_DoesNotThrow()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("REQUIRED_VAR", "required-value");
+            Environment.SetEnvironmentVariable("OPTIONAL_VAR", "optional-value");
+
+            // Act & Assert
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfigurationWithOptional));
+        }
+
+        [TestMethod]
+        public void ValidateVariableNamesIn_WithOptionalVariableSetButRequiredMissing_ThrowsForRequiredOnly()
+        {
+            // Arrange - required is not set, optional is set
+            Environment.SetEnvironmentVariable("OPTIONAL_VAR", "optional-value");
+
+            // Act & Assert
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(
+                () => EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfigurationWithOptional)));
+            Assert.IsTrue(exception.Message.Contains("REQUIRED_VAR"));
+            Assert.IsFalse(exception.Message.Contains("OPTIONAL_VAR"));
+        }
+
+        [TestMethod]
+        public void ValidateVariableNamesIn_WithOptionalMinLengthVariable_SkipsValidation()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("REQUIRED_VAR", "required-value");
+            // OPTIONAL_MIN_VAR is not set - should not cause validation failure
+
+            // Act & Assert
+            EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(TestConfigurationWithOptionalMinLength));
+        }
+
+        [TestMethod]
+        public void GetValueOrDefault_WithSetVariable_ReturnsValue()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("OPTIONAL_VAR", "some-value");
+            VariableName variable = new VariableName("OPTIONAL_VAR");
+
+            // Act
+            string? result = variable.GetValueOrDefault();
+
+            // Assert
+            Assert.AreEqual("some-value", result);
+        }
+
+        [TestMethod]
+        public void GetValueOrDefault_WithMissingVariable_ReturnsNull()
+        {
+            // Arrange
+            VariableName variable = new VariableName("NON_EXISTENT_OPTIONAL_VAR");
+
+            // Act
+            string? result = variable.GetValueOrDefault();
+
+            // Assert
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
+        public void GetValueOrDefault_WithEmptyVariable_ReturnsNull()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("OPTIONAL_VAR", "");
+            VariableName variable = new VariableName("OPTIONAL_VAR");
+
+            // Act
+            string? result = variable.GetValueOrDefault();
+
+            // Assert
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
+        public void GetValueOrDefault_WithWhitespaceVariable_ReturnsNull()
+        {
+            // Arrange
+            Environment.SetEnvironmentVariable("OPTIONAL_VAR", "   ");
+            VariableName variable = new VariableName("OPTIONAL_VAR");
+
+            // Act
+            string? result = variable.GetValueOrDefault();
+
+            // Assert
+            Assert.IsNull(result);
+        }
     }
 
     [EnvironmentVariableNameContainer]
@@ -1275,5 +1379,25 @@ EXAMPLE_KEY2=example_value2
     {
         [EnvironmentVariableNameRange(description: "API endpoints")]
         public static readonly VariableNameRange ApiEndpoints = new VariableNameRange("API_ENDPOINT");
+    }
+
+    [EnvironmentVariableNameContainer]
+    public static class TestConfigurationWithOptional
+    {
+        [EnvironmentVariableName]
+        public static readonly VariableName RequiredVar = new VariableName("REQUIRED_VAR");
+
+        [EnvironmentVariableName(optional: true)]
+        public static readonly VariableName OptionalVar = new VariableName("OPTIONAL_VAR");
+    }
+
+    [EnvironmentVariableNameContainer]
+    public static class TestConfigurationWithOptionalMinLength
+    {
+        [EnvironmentVariableName]
+        public static readonly VariableName RequiredVar = new VariableName("REQUIRED_VAR");
+
+        [EnvironmentVariableName(minLength: 10, optional: true)]
+        public static readonly VariableName OptionalMinVar = new VariableName("OPTIONAL_MIN_VAR");
     }
 }

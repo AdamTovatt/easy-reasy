@@ -16,5 +16,17 @@ namespace EasyReasy.EnvironmentVariables
         {
             return EnvironmentVariableHelper.GetVariableValue(variable, minLength);
         }
+
+        /// <summary>
+        /// Gets the value of the environment variable represented by this <see cref="VariableName"/>,
+        /// or returns null if the variable is not set or is empty.
+        /// </summary>
+        /// <param name="variable">The environment variable name.</param>
+        /// <returns>The environment variable value, or null if not set or empty.</returns>
+        public static string? GetValueOrDefault(this VariableName variable)
+        {
+            string? value = Environment.GetEnvironmentVariable(variable.Name);
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
     }
 }
