@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace EasyReasy.Auth.Client
 {
     /// <summary>
@@ -30,6 +32,9 @@ namespace EasyReasy.Auth.Client
         private bool _isAuthorized;
         private DateTime? _tokenExpiresAt;
         private readonly string _authEndpoint;
+        private string? _refreshToken;
+        private readonly string _refreshEndpoint;
+        private readonly SemaphoreSlim _authLock = new SemaphoreSlim(1, 1);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AuthorizedHttpClient"/> class with API key authentication.
@@ -37,7 +42,8 @@ namespace EasyReasy.Auth.Client
         /// <param name="httpClient">The HTTP client to use for requests.</param>
         /// <param name="apiKey">The API key for authentication.</param>
         /// <param name="authEndpoint">The authentication endpoint path. If not specified, defaults to "/api/auth/apikey".</param>
-        public AuthorizedHttpClient(HttpClient httpClient, string apiKey, string? authEndpoint = null)
+        /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
+        public AuthorizedHttpClient(HttpClient httpClient, string apiKey, string? authEndpoint = null, string? refreshEndpoint = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
 
@@ -46,6 +52,7 @@ namespace EasyReasy.Auth.Client
 
             _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
             _authEndpoint = authEndpoint ?? "api/auth/apikey";
+            _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _authType = AuthType.ApiKey;
         }
 
@@ -56,12 +63,14 @@ namespace EasyReasy.Auth.Client
         /// <param name="username">The username for authentication.</param>
         /// <param name="password">The password for authentication.</param>
         /// <param name="authEndpoint">The authentication endpoint path. If not specified, defaults to "/api/auth/login".</param>
-        public AuthorizedHttpClient(HttpClient httpClient, string username, string password, string? authEndpoint = null)
+        /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
+        public AuthorizedHttpClient(HttpClient httpClient, string username, string password, string? authEndpoint = null, string? refreshEndpoint = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _username = username ?? throw new ArgumentNullException(nameof(username));
             _password = password ?? throw new ArgumentNullException(nameof(password));
             _authEndpoint = authEndpoint ?? "api/auth/login";
+            _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _authType = AuthType.UsernamePassword;
         }
 
@@ -93,10 +102,24 @@ namespace EasyReasy.Auth.Client
         /// <param name="cancellationToken">The cancellation token.</param>
         public async Task EnsureAuthorizedAsync(CancellationToken cancellationToken = default)
         {
-            // Check if we need to authorize or re-authorize
-            if (!_isAuthorized || IsTokenExpired())
+            // Quick check before acquiring the lock
+            if (_isAuthorized && !IsTokenExpired())
             {
-                await AuthorizeAsync(cancellationToken);
+                return;
+            }
+
+            await _authLock.WaitAsync(cancellationToken);
+            try
+            {
+                // Double-check after acquiring the lock — another thread may have already authorized
+                if (!_isAuthorized || IsTokenExpired())
+                {
+                    await AuthorizeAsync(cancellationToken);
+                }
+            }
+            finally
+            {
+                _authLock.Release();
             }
         }
 
@@ -107,7 +130,15 @@ namespace EasyReasy.Auth.Client
         /// <param name="cancellationToken">The cancellation token.</param>
         public async Task ForceAuthorizeAsync(CancellationToken cancellationToken = default)
         {
-            await AuthorizeAsync(cancellationToken);
+            await _authLock.WaitAsync(cancellationToken);
+            try
+            {
+                await AuthorizeAsync(cancellationToken);
+            }
+            finally
+            {
+                _authLock.Release();
+            }
         }
 
         /// <summary>
@@ -117,10 +148,19 @@ namespace EasyReasy.Auth.Client
         /// <param name="cancellationToken">The cancellation token.</param>
         public async Task ForceReauthorizeAsync(CancellationToken cancellationToken = default)
         {
-            _isAuthorized = false;
-            _tokenExpiresAt = null;
-            _httpClient.DefaultRequestHeaders.Authorization = null;
-            await AuthorizeAsync(cancellationToken);
+            await _authLock.WaitAsync(cancellationToken);
+            try
+            {
+                _isAuthorized = false;
+                _tokenExpiresAt = null;
+                _refreshToken = null;
+                _httpClient.DefaultRequestHeaders.Authorization = null;
+                await AuthorizeAsync(cancellationToken);
+            }
+            finally
+            {
+                _authLock.Release();
+            }
         }
 
         /// <summary>
@@ -138,11 +178,22 @@ namespace EasyReasy.Auth.Client
 
         /// <summary>
         /// Authorizes the client using the configured authentication method and obtains a JWT token.
+        /// If a refresh token is available, attempts to refresh first before falling back to full re-authentication.
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <exception cref="UnauthorizedAccessException">Thrown when authentication fails.</exception>
         private async Task AuthorizeAsync(CancellationToken cancellationToken = default)
         {
+            // Try refresh token first if available
+            if (_refreshToken != null)
+            {
+                bool refreshed = await TryRefreshTokenAsync(cancellationToken);
+                if (refreshed)
+                {
+                    return;
+                }
+            }
+
             string json;
             string endpoint;
 
@@ -166,7 +217,6 @@ namespace EasyReasy.Auth.Client
 
             StringContent content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-            string postUrl = _httpClient.BaseAddress?.ToString() ?? string.Empty;
             HttpResponseMessage response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -184,10 +234,49 @@ namespace EasyReasy.Auth.Client
             string responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
             AuthResponse authResponse = AuthResponse.FromJson(responseJson);
 
-            // Set the authorization header
+            ApplyAuthResponse(authResponse);
+        }
+
+        /// <summary>
+        /// Attempts to refresh the access token using the stored refresh token.
+        /// </summary>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>True if the refresh was successful; false if it failed and full re-authentication is needed.</returns>
+        private async Task<bool> TryRefreshTokenAsync(CancellationToken cancellationToken = default)
+        {
+            RefreshRequest refreshRequest = new RefreshRequest(_refreshToken!);
+            StringContent content = new StringContent(refreshRequest.ToJson(), System.Text.Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response = await _httpClient.PostAsync(_refreshEndpoint, content, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                // Refresh failed — clear the refresh token and fall back to full re-auth
+                _refreshToken = null;
+                return false;
+            }
+
+            string responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            AuthResponse authResponse = AuthResponse.FromJson(responseJson);
+
+            ApplyAuthResponse(authResponse);
+            return true;
+        }
+
+        /// <summary>
+        /// Applies an authentication response by setting the authorization header, token expiration, and refresh token.
+        /// </summary>
+        /// <param name="authResponse">The authentication response to apply.</param>
+        private void ApplyAuthResponse(AuthResponse authResponse)
+        {
             _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authResponse.Token);
             _isAuthorized = true;
-            _tokenExpiresAt = DateTime.Parse(authResponse.ExpiresAt);
+            _tokenExpiresAt = DateTime.Parse(authResponse.ExpiresAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+
+            if (authResponse.RefreshToken != null)
+            {
+                _refreshToken = authResponse.RefreshToken;
+            }
         }
 
         /// <summary>
@@ -205,7 +294,7 @@ namespace EasyReasy.Auth.Client
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
                 // Token might be expired, try to re-authorize once
-                await AuthorizeAsync(cancellationToken);
+                await ForceAuthorizeAsync(cancellationToken);
                 response = await _httpClient.SendAsync(request, cancellationToken);
             }
 
@@ -227,7 +316,7 @@ namespace EasyReasy.Auth.Client
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
                 // Token might be expired, try to re-authorize once
-                await AuthorizeAsync(cancellationToken);
+                await ForceAuthorizeAsync(cancellationToken);
                 response = await _httpClient.GetAsync(requestUri, cancellationToken);
             }
 
@@ -250,7 +339,7 @@ namespace EasyReasy.Auth.Client
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
                 // Token might be expired, try to re-authorize once
-                await AuthorizeAsync(cancellationToken);
+                await ForceAuthorizeAsync(cancellationToken);
                 response = await _httpClient.PostAsync(requestUri, content, cancellationToken);
             }
 
@@ -264,6 +353,7 @@ namespace EasyReasy.Auth.Client
         {
             if (!_disposed)
             {
+                _authLock.Dispose();
                 // Don't dispose the HttpClient as it's managed externally
                 _disposed = true;
             }

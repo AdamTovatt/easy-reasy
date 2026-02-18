@@ -17,6 +17,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **Role access**: Retrieve all roles for the current user with a single call
 - **Claim access**: Retrieve any claim value by key or enum with a single call
 - **Progressive delay**: Built-in middleware to slow down brute-force attacks (enabled by default)
+- **Refresh token rotation**: Opt-in refresh tokens with automatic theft detection via token family tracking
 - **Flexible configuration**: Optional issuer validation, easy integration with ASP.NET Core
 - **Clear error messages**: Enforces minimum secret length for security
 
@@ -286,6 +287,69 @@ builder.Services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
 - Versioned hash format for future compatibility
 - Constant-time comparison to prevent timing attacks
 
+### 6. Refresh Tokens
+
+EasyReasy.Auth supports refresh token rotation with automatic theft detection via token family tracking. The library is database-agnostic — you implement `IRefreshTokenStore` to persist tokens however you like.
+
+#### Setup
+
+1. **Implement `IRefreshTokenStore`** to connect to your database:
+```csharp
+public class MyRefreshTokenStore : IRefreshTokenStore
+{
+    public Task StoreAsync(StoredRefreshToken refreshToken) { /* INSERT into DB */ }
+    public Task<StoredRefreshToken?> GetByTokenHashAsync(string tokenHash) { /* SELECT by hash */ }
+    public Task MarkAsConsumedAsync(string tokenHash, DateTime consumedAt) { /* UPDATE consumed_at */ }
+    public Task InvalidateFamilyAsync(string familyId) { /* UPDATE SET invalidated WHERE family_id = ... */ }
+}
+```
+
+2. **Register in `Program.cs`:**
+```csharp
+builder.Services.AddRefreshTokenService<MyRefreshTokenStore>(
+    refreshTokenLifetime: TimeSpan.FromDays(30),  // default
+    accessTokenLifetime: TimeSpan.FromHours(1));   // default
+
+// Enable the refresh endpoint alongside your auth endpoints
+app.AddAuthEndpoints(validationService, allowRefresh: true);
+// Or standalone: app.AddRefreshEndpoint();
+```
+This creates `POST /api/auth/refresh` which accepts `{ "refreshToken": "..." }` and returns a new access + refresh token pair.
+
+3. **Issue refresh tokens in your validation service** by injecting `IRefreshTokenService`:
+```csharp
+public class MyAuthService : IAuthRequestValidationService
+{
+    private readonly IRefreshTokenService _refreshTokenService;
+
+    public MyAuthService(IRefreshTokenService refreshTokenService)
+    {
+        _refreshTokenService = refreshTokenService;
+    }
+
+    public async Task<AuthResponse?> ValidateLoginRequestAsync(
+        LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
+    {
+        // ... validate credentials, create access token ...
+
+        string refreshToken = await _refreshTokenService.CreateRefreshTokenAsync(
+            subject: user.Id,
+            authType: "user",
+            serializedClaims: RefreshTokenService.SerializeClaims(claims),
+            serializedRoles: RefreshTokenService.SerializeRoles(roles));
+
+        return new AuthResponse(token, expiresAt.ToString("o"), refreshToken);
+    }
+}
+```
+
+#### How It Works
+
+- Refresh tokens are 32-byte cryptographic random strings, stored as SHA-256 hashes
+- Each token belongs to a **family** — when a token is used, a new one is issued in the same family (rotation)
+- If a token that was already used gets presented again, the library detects theft and **invalidates the entire family**
+- Everything is opt-in: you must register the service, enable the endpoint, and inject `IRefreshTokenService` in your validation service
+
 ## Advanced Configuration
 
 ### Service Registration Options
@@ -342,6 +406,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **JWT token service**: Issue tokens with custom claims, roles, and optional issuer
 - **Automatic auth endpoints**: Create API key and username/password authentication endpoints with minimal code
 - **Flexible validation**: Implement `IAuthRequestValidationService` to handle any authentication logic (database, external APIs, etc.)
+- **Refresh token rotation**: Opt-in refresh tokens with token family tracking and automatic theft detection
 - **Secure password hashing**: PBKDF2 with HMAC-SHA512, username-based salt, and constant-time comparison
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
