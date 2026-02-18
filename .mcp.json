@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "csharp": {
+      "command": "csharp-lsp-mcp"
+    }
+  }
+}

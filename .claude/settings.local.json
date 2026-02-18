@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet test:*)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "csharp"
+  ],
+  "enableAllProjectMcpServers": true
+}
