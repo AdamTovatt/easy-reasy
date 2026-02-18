@@ -63,18 +63,43 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
+        /// Adds a refresh token endpoint to the application.
+        /// Requires <see cref="IRefreshTokenService"/> and <see cref="IJwtTokenService"/> to be registered in DI.
+        /// </summary>
+        /// <param name="app">The web application.</param>
+        /// <returns>The web application for chaining.</returns>
+        public static WebApplication AddRefreshEndpoint(this WebApplication app)
+        {
+            app.MapPost("/api/auth/refresh", async (RefreshRequest request, IRefreshTokenService refreshTokenService, IJwtTokenService jwtTokenService) =>
+            {
+                RefreshResult result = await refreshTokenService.RefreshAsync(request.RefreshToken, jwtTokenService);
+
+                if (result.Success)
+                {
+                    return Results.Ok(result.AuthResponse);
+                }
+
+                return Results.Unauthorized();
+            });
+
+            return app;
+        }
+
+        /// <summary>
         /// Adds authentication endpoints to the application based on the specified options.
         /// </summary>
         /// <param name="app">The web application.</param>
         /// <param name="validationService">The validation service for authentication.</param>
         /// <param name="allowApiKeys">Whether to enable API key authentication. Default is true.</param>
         /// <param name="allowUsernamePassword">Whether to enable username/password authentication. Default is true.</param>
+        /// <param name="allowRefresh">Whether to enable the refresh token endpoint. Default is false.</param>
         /// <returns>The web application for chaining.</returns>
         public static WebApplication AddAuthEndpoints(
             this WebApplication app,
             IAuthRequestValidationService validationService,
             bool allowApiKeys = true,
-            bool allowUsernamePassword = true)
+            bool allowUsernamePassword = true,
+            bool allowRefresh = false)
         {
             if (allowApiKeys)
             {
@@ -84,6 +109,11 @@ namespace EasyReasy.Auth
             if (allowUsernamePassword)
             {
                 app.AddLoginAuthEndpoint(validationService);
+            }
+
+            if (allowRefresh)
+            {
+                app.AddRefreshEndpoint();
             }
 
             return app;

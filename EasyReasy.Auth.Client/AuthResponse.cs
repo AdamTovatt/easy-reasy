@@ -21,14 +21,22 @@ namespace EasyReasy.Auth.Client
         public string ExpiresAt { get; set; }
 
         /// <summary>
+        /// The refresh token for obtaining a new access token. Null if refresh tokens are not enabled.
+        /// </summary>
+        [JsonPropertyName("refreshToken")]
+        public string? RefreshToken { get; set; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="AuthResponse"/> class.
         /// </summary>
         /// <param name="token">The JWT token for authentication.</param>
         /// <param name="expiresAt">The expiration date/time of the token in ISO 8601 format (UTC).</param>
-        public AuthResponse(string token, string expiresAt)
+        /// <param name="refreshToken">The refresh token for obtaining a new access token, or null if refresh tokens are not enabled.</param>
+        public AuthResponse(string token, string expiresAt, string? refreshToken = null)
         {
             Token = token;
             ExpiresAt = expiresAt;
+            RefreshToken = refreshToken;
         }
 
         /// <summary>
