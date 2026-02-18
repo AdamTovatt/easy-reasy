@@ -29,6 +29,7 @@ As the system grew, **EasyReasy.ByteShelfProvider** was added to extend the same
 | [EasyReasy.ByteShelfProvider](EasyReasy.ByteShelfProvider/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.ByteShelfProvider-blue.svg)](https://www.nuget.org/packages/EasyReasy.ByteShelfProvider) | ByteShelf integration for remote file access |
 | [EasyReasy.Auth](EasyReasy.Auth/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.Auth-blue.svg)](https://www.nuget.org/packages/EasyReasy.Auth) | JWT authentication and claims handling |
 | [EasyReasy.Auth.Client](EasyReasy.Auth.Client/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.Auth.Client-blue.svg)](https://www.nuget.org/packages/EasyReasy.Auth.Client) | Lightweight client library for EasyReasy.Auth servers |
+| [EasyReasy.Auth.Google](EasyReasy.Auth.Google/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.Auth.Google-blue.svg)](https://www.nuget.org/packages/EasyReasy.Auth.Google) | Google Sign-In integration for EasyReasy.Auth |
 | [EasyReasy.VectorStorage](EasyReasy.VectorStorage/README.md) | [![NuGet](https://img.shields.io/badge/nuget-EasyReasy.VectorStorage-blue.svg)](https://www.nuget.org/packages/EasyReasy.VectorStorage) | High-performance vector similarity search with cosine similarity |
 
 

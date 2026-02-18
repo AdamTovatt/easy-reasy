@@ -10,6 +10,7 @@ namespace EasyReasy.Auth.Tests
     {
         public List<(HttpContext HttpContext, LoginResult Result)> LoginCalls { get; } = new List<(HttpContext, LoginResult)>();
         public List<(HttpContext HttpContext, ApiKeyAuthResult Result)> ApiKeyCalls { get; } = new List<(HttpContext, ApiKeyAuthResult)>();
+        public List<(HttpContext HttpContext, ExternalAuthResult Result)> ExternalAuthCalls { get; } = new List<(HttpContext, ExternalAuthResult)>();
         public List<(HttpContext? HttpContext, RefreshResult Result)> RefreshCalls { get; } = new List<(HttpContext?, RefreshResult)>();
         public List<(HttpContext? HttpContext, LogoutResult Result)> LogoutCalls { get; } = new List<(HttpContext?, LogoutResult)>();
         public List<SessionRevocationResult> SessionsInvalidatedCalls { get; } = new List<SessionRevocationResult>();
@@ -25,6 +26,12 @@ namespace EasyReasy.Auth.Tests
         public Task OnApiKeyAuthAsync(HttpContext httpContext, ApiKeyAuthResult result)
         {
             ApiKeyCalls.Add((httpContext, result));
+            return Task.CompletedTask;
+        }
+
+        public Task OnExternalAuthAsync(HttpContext httpContext, ExternalAuthResult result)
+        {
+            ExternalAuthCalls.Add((httpContext, result));
             return Task.CompletedTask;
         }
 

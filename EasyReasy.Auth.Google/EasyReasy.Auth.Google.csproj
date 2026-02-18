@@ -1,24 +1,25 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <Title>EasyReasy.Auth</Title>
+    <Title>EasyReasy.Auth.Google</Title>
     <Authors>Adam Tovatt</Authors>
-    <Description>A lightweight .NET library for internal JWT authentication and claims handling</Description>
+    <Description>Google Sign-In integration for EasyReasy.Auth JWT authentication</Description>
     <Copyright>MIT</Copyright>
     <PackageProjectUrl>https://github.com/AdamTovatt/easy-reasy</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/AdamTovatt/easy-reasy</RepositoryUrl>
-    <PackageTags>auth;jwt;claims;easyreasy</PackageTags>
+    <PackageTags>auth;jwt;google;signin;easyreasy</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>5.3.0</VersionPrefix>
+    <VersionPrefix>1.0.0</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
+    <PackageReleaseNotes></PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,13 +30,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="EasyReasy.Auth.Tests" />
+    <InternalsVisibleTo Include="EasyReasy.Auth.Google.Tests" />
   </ItemGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.7" />
-    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
+    <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EasyReasy.Auth\EasyReasy.Auth.csproj" />
   </ItemGroup>
 
   <ItemGroup>

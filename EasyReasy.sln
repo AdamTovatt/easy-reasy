@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.8.34408.163
@@ -26,6 +26,10 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Client", "EasyReasy.Auth.Client\EasyReasy.Auth.Client.csproj", "{A9D59EAC-53D7-4433-BE4D-30B9C9253E8F}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Client.Tests", "EasyReasy.Auth.Client.Tests\EasyReasy.Auth.Client.Tests.csproj", "{293AA1B4-E783-41A3-8FE5-86D8D3C03F59}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Google", "EasyReasy.Auth.Google\EasyReasy.Auth.Google.csproj", "{B36D9172-4196-4300-967A-294C3D8532DD}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Google.Tests", "EasyReasy.Auth.Google.Tests\EasyReasy.Auth.Google.Tests.csproj", "{10330461-3F68-4DED-BB54-294788B72254}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -81,6 +85,14 @@ Global
 		{293AA1B4-E783-41A3-8FE5-86D8D3C03F59}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{293AA1B4-E783-41A3-8FE5-86D8D3C03F59}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{293AA1B4-E783-41A3-8FE5-86D8D3C03F59}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B36D9172-4196-4300-967A-294C3D8532DD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B36D9172-4196-4300-967A-294C3D8532DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B36D9172-4196-4300-967A-294C3D8532DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B36D9172-4196-4300-967A-294C3D8532DD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{10330461-3F68-4DED-BB54-294788B72254}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{10330461-3F68-4DED-BB54-294788B72254}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{10330461-3F68-4DED-BB54-294788B72254}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{10330461-3F68-4DED-BB54-294788B72254}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
