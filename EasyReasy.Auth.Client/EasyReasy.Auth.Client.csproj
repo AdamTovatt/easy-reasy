@@ -15,7 +15,7 @@
     <RepositoryUrl>https://github.com/AdamTovatt/easy-reasy</RepositoryUrl>
     <PackageReleaseNotes></PackageReleaseNotes>
     <IncludeSymbols>True</IncludeSymbols>
-    <SymbolPackageFormat>symbols.nupkg</SymbolPackageFormat>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <VersionPrefix>1.2.0</VersionPrefix>
