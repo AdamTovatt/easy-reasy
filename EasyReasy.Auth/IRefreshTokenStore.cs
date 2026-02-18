@@ -21,11 +21,15 @@ namespace EasyReasy.Auth
         Task<StoredRefreshToken?> GetByTokenHashAsync(string tokenHash);
 
         /// <summary>
-        /// Marks a refresh token as consumed (used to obtain a new token pair).
+        /// Atomically marks a refresh token as consumed (used to obtain a new token pair).
+        /// The implementation must ensure that only the first caller succeeds when concurrent
+        /// requests attempt to consume the same token (e.g., using <c>UPDATE ... WHERE consumed_at IS NULL</c>
+        /// and checking affected rows in SQL, or equivalent atomic operations in other stores).
         /// </summary>
         /// <param name="tokenHash">The SHA-256 hash of the consumed refresh token.</param>
         /// <param name="consumedAt">The UTC time when the token was consumed.</param>
-        Task MarkAsConsumedAsync(string tokenHash, DateTime consumedAt);
+        /// <returns>True if the token was successfully marked as consumed; false if it was already consumed by another request.</returns>
+        Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt);
 
         /// <summary>
         /// Invalidates all refresh tokens in a token family.

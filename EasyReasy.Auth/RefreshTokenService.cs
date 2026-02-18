@@ -96,8 +96,13 @@ namespace EasyReasy.Auth
                 return RefreshResult.Failed(RefreshFailureReason.TokenExpired);
             }
 
-            // Step 5: Mark old token as consumed
-            await _store.MarkAsConsumedAsync(tokenHash, now);
+            // Step 5: Atomically mark old token as consumed — if another request already consumed it, treat as theft
+            bool consumed = await _store.MarkAsConsumedAsync(tokenHash, now);
+            if (!consumed)
+            {
+                await _store.InvalidateFamilyAsync(storedToken.FamilyId);
+                return RefreshResult.Failed(RefreshFailureReason.TheftDetected);
+            }
 
             // Step 6: Deserialize stored claims and roles, create new access token
             List<Claim> claims = DeserializeClaims(storedToken.SerializedClaims);

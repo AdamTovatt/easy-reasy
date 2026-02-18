@@ -19,13 +19,19 @@ namespace EasyReasy.Auth.Tests
             return Task.FromResult(token);
         }
 
-        public Task MarkAsConsumedAsync(string tokenHash, DateTime consumedAt)
+        public Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt)
         {
             if (_tokens.TryGetValue(tokenHash, out StoredRefreshToken? token))
             {
+                if (token.ConsumedAt != null)
+                {
+                    return Task.FromResult(false);
+                }
+
                 token.ConsumedAt = consumedAt;
+                return Task.FromResult(true);
             }
-            return Task.CompletedTask;
+            return Task.FromResult(false);
         }
 
         public Task InvalidateFamilyAsync(string familyId)
