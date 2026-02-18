@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EasyReasy.Auth
 {
@@ -27,14 +28,14 @@ namespace EasyReasy.Auth
         /// <summary>
         /// Adds an API key authentication endpoint to the application.
         /// </summary>
+        /// <remarks>
+        /// Requires <see cref="IAuthRequestValidationService"/> to be registered in DI.
+        /// </remarks>
         /// <param name="app">The web application.</param>
-        /// <param name="validationService">The validation service for API key authentication.</param>
         /// <returns>The web application for chaining.</returns>
-        public static WebApplication AddApiAuthEndpoint(
-            this WebApplication app,
-            IAuthRequestValidationService validationService)
+        public static WebApplication AddApiAuthEndpoint(this WebApplication app)
         {
-            app.MapPost("/api/auth/apikey", async (ApiKeyAuthRequest request, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
+            app.MapPost("/api/auth/apikey", async (ApiKeyAuthRequest request, IAuthRequestValidationService validationService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
                 AuthResponse? response = await validationService.ValidateApiKeyRequestAsync(request, jwtTokenService, httpContext);
                 return response != null ? Results.Ok(response) : Results.Unauthorized();
@@ -46,14 +47,14 @@ namespace EasyReasy.Auth
         /// <summary>
         /// Adds a username/password authentication endpoint to the application.
         /// </summary>
+        /// <remarks>
+        /// Requires <see cref="IAuthRequestValidationService"/> to be registered in DI.
+        /// </remarks>
         /// <param name="app">The web application.</param>
-        /// <param name="validationService">The validation service for username/password authentication.</param>
         /// <returns>The web application for chaining.</returns>
-        public static WebApplication AddLoginAuthEndpoint(
-            this WebApplication app,
-            IAuthRequestValidationService validationService)
+        public static WebApplication AddLoginAuthEndpoint(this WebApplication app)
         {
-            app.MapPost("/api/auth/login", async (LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
+            app.MapPost("/api/auth/login", async (LoginAuthRequest request, IAuthRequestValidationService validationService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
                 AuthResponse? response = await validationService.ValidateLoginRequestAsync(request, jwtTokenService, httpContext);
                 return response != null ? Results.Ok(response) : Results.Unauthorized();
@@ -88,27 +89,41 @@ namespace EasyReasy.Auth
         /// <summary>
         /// Adds authentication endpoints to the application based on the specified options.
         /// </summary>
+        /// <remarks>
+        /// Requires <see cref="IAuthRequestValidationService"/> to be registered in DI.
+        /// </remarks>
         /// <param name="app">The web application.</param>
-        /// <param name="validationService">The validation service for authentication.</param>
         /// <param name="allowApiKeys">Whether to enable API key authentication. Default is true.</param>
         /// <param name="allowUsernamePassword">Whether to enable username/password authentication. Default is true.</param>
         /// <param name="allowRefresh">Whether to enable the refresh token endpoint. Default is false.</param>
         /// <returns>The web application for chaining.</returns>
         public static WebApplication AddAuthEndpoints(
             this WebApplication app,
-            IAuthRequestValidationService validationService,
             bool allowApiKeys = true,
             bool allowUsernamePassword = true,
             bool allowRefresh = false)
         {
+            // Fail fast at startup if the required service is not registered
+            using (IServiceScope scope = app.Services.CreateScope())
+            {
+                IAuthRequestValidationService? validationService = scope.ServiceProvider.GetService<IAuthRequestValidationService>();
+                if (validationService == null)
+                {
+                    throw new InvalidOperationException(
+                        $"{nameof(IAuthRequestValidationService)} is not registered in the DI container. " +
+                        $"Register it before calling {nameof(AddAuthEndpoints)}, e.g.: " +
+                        $"builder.Services.AddScoped<{nameof(IAuthRequestValidationService)}, MyAuthService>();");
+                }
+            }
+
             if (allowApiKeys)
             {
-                app.AddApiAuthEndpoint(validationService);
+                app.AddApiAuthEndpoint();
             }
 
             if (allowUsernamePassword)
             {
-                app.AddLoginAuthEndpoint(validationService);
+                app.AddLoginAuthEndpoint();
             }
 
             if (allowRefresh)

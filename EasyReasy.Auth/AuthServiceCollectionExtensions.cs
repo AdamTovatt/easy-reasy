@@ -79,20 +79,6 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
-        /// Registers an authentication request validation service for dependency injection.
-        /// </summary>
-        /// <param name="services">The service collection to add the validation service to.</param>
-        /// <param name="validationService">The validation service instance.</param>
-        /// <returns>The service collection for chaining.</returns>
-        public static IServiceCollection AddAuthValidationService(
-            this IServiceCollection services,
-            IAuthRequestValidationService validationService)
-        {
-            services.AddSingleton(validationService);
-            return services;
-        }
-
-        /// <summary>
         /// Registers the refresh token service and its backing store for dependency injection.
         /// The consumer-provided <typeparamref name="TStore"/> is registered as scoped.
         /// </summary>

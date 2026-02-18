@@ -128,24 +128,7 @@ public class MyAuthService : IAuthRequestValidationService
 }
 ```
 
-Then register the service and add endpoints in `Program.cs`:
-
-**Option A: Direct Instance (Simple cases)**
-```csharp
-builder.Services.AddAuthValidationService(new MyAuthService());
-```
-
-**Option B: Standard DI (Recommended for services with dependencies)**
-```csharp
-// Register dependencies first
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
-
-// Register validation service using standard DI
-builder.Services.AddScoped<IAuthRequestValidationService, MyAuthService>();
-```
-
-**Complete Setup Example:**
+Then register the service and add endpoints in `Program.cs`. Here's a complete setup example:
 ```csharp
 string jwtSecret = Environment.GetEnvironmentVariable("JWT_SIGNING_SECRET")!;
 
@@ -164,16 +147,15 @@ var app = builder.Build();
 // 4. Configure middleware (UseEasyReasyAuth includes UseAuthentication/UseAuthorization)
 app.UseEasyReasyAuth();
 
-// 5. Add auth endpoints (after app.Build())
+// 5. Add auth endpoints (resolved from DI automatically per-request)
 app.AddAuthEndpoints(
-    app.Services.GetRequiredService<IAuthRequestValidationService>(),
     allowApiKeys: true,
     allowUsernamePassword: true);
 
 app.MapControllers();
 ```
 
-**Note:** `AddAuthValidationService` is a convenience method that registers as Singleton. For services with database dependencies, use `AddScoped` instead (as shown in Option B).
+**Note:** `IAuthRequestValidationService` is resolved from DI per-request when auth endpoints are called. Use `AddScoped` when your validation service has database dependencies.
 
 This will automatically create:
 - `POST /api/auth/apikey` - For API key authentication
@@ -185,7 +167,7 @@ Both endpoints return:
 
 ### 4. Accessing HTTP Context in Validation
 
-The `IAuthRequestValidationService` methods now receive an optional `HttpContext` parameter, allowing you to access request headers, query parameters, and other HTTP context information during authentication. This is particularly useful for multi-tenant applications.
+The `IAuthRequestValidationService` methods receive an optional `HttpContext` parameter, allowing you to access request headers, query parameters, and other HTTP context information during authentication. This is particularly useful for multi-tenant applications.
 
 **Example: Extracting Tenant ID from Headers**
 ```csharp
@@ -244,7 +226,7 @@ public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest requ
 }
 ```
 
-**Backward Compatibility**: The `HttpContext` parameter is optional and defaults to `null`, so existing implementations will continue to work without modification.
+**Note:** The `HttpContext` parameter is optional and defaults to `null`, so implementations that don't need HTTP context can simply omit it.
 
 ### 5. Access claims and roles in controllers
 
@@ -311,7 +293,7 @@ builder.Services.AddRefreshTokenService<MyRefreshTokenStore>(
     accessTokenLifetime: TimeSpan.FromHours(1));   // default
 
 // Enable the refresh endpoint alongside your auth endpoints
-app.AddAuthEndpoints(validationService, allowRefresh: true);
+app.AddAuthEndpoints(allowRefresh: true);
 // Or standalone: app.AddRefreshEndpoint();
 ```
 This creates `POST /api/auth/refresh` which accepts `{ "refreshToken": "..." }` and returns a new access + refresh token pair.
@@ -354,9 +336,8 @@ public class MyAuthService : IAuthRequestValidationService
 
 ### Service Registration Options
 
-**`AddAuthValidationService` vs Standard DI:**
-- `AddAuthValidationService` is a convenience method that registers as Singleton. Use it only for simple, stateless services.
-- For services with dependencies (especially database contexts), use standard DI with `AddScoped`:
+**Service Registration:**
+- Register `IAuthRequestValidationService` using standard DI. The library resolves it from DI per-request when auth endpoints are called.
   ```csharp
   builder.Services.AddScoped<IAuthRequestValidationService, MyAuthService>();
   ```
