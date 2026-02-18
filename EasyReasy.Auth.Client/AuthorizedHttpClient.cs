@@ -273,10 +273,7 @@ namespace EasyReasy.Auth.Client
             _isAuthorized = true;
             _tokenExpiresAt = DateTime.Parse(authResponse.ExpiresAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 
-            if (authResponse.RefreshToken != null)
-            {
-                _refreshToken = authResponse.RefreshToken;
-            }
+            _refreshToken = authResponse.RefreshToken;
         }
 
         /// <summary>
