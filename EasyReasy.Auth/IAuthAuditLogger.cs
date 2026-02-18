@@ -33,11 +33,12 @@ namespace EasyReasy.Auth
     /// <b>Hook placement</b>:
     /// <see cref="OnRefreshAsync"/>, <see cref="OnLogoutAsync"/>, and <see cref="OnSessionsInvalidatedAsync"/> are invoked
     /// from inside <see cref="RefreshTokenService"/>, so both HTTP-endpoint and programmatic callers trigger the hook.
-    /// <see cref="OnLoginAsync"/> and <see cref="OnApiKeyAuthAsync"/> are invoked from the HTTP endpoint layer only, because
-    /// the underlying <see cref="IAuthRequestValidationService"/> is consumer-implemented and cannot be guaranteed to call
-    /// the audit logger itself. Consumers who validate credentials outside the HTTP endpoint flow can resolve
-    /// <see cref="IAuthAuditLogger"/> from DI and invoke <see cref="OnLoginAsync"/> / <see cref="OnApiKeyAuthAsync"/>
-    /// themselves — the library's endpoint code uses the interface exactly the same way.
+    /// <see cref="OnLoginAsync"/>, <see cref="OnApiKeyAuthAsync"/>, and <see cref="OnExternalAuthAsync"/> are invoked from
+    /// the HTTP endpoint layer only (the last from a provider integration package such as <c>EasyReasy.Auth.Google</c>),
+    /// because the underlying credential validation is consumer-implemented and cannot be guaranteed to call the audit
+    /// logger itself. Consumers who authenticate outside the built-in HTTP endpoint flow can resolve
+    /// <see cref="IAuthAuditLogger"/> from DI and invoke these hooks themselves — the library's endpoint code uses the
+    /// interface exactly the same way.
     /// </para>
     /// <para>
     /// <b>Default-interface-method caveat</b>: the no-op defaults only resolve when a method is invoked through the
@@ -64,6 +65,22 @@ namespace EasyReasy.Auth
         /// <param name="httpContext">The HTTP context of the request that triggered the event.</param>
         /// <param name="result">The structured result of the API key validation.</param>
         Task OnApiKeyAuthAsync(HttpContext httpContext, ApiKeyAuthResult result) => Task.CompletedTask;
+
+        /// <summary>
+        /// Invoked after an external identity-provider authentication attempt (for example a Google sign-in).
+        /// <paramref name="result"/> carries success state, the <see cref="ExternalAuthResult.Provider"/> name,
+        /// the attempted subject, and (on failure) an <see cref="ExternalAuthFailureReason"/>.
+        /// </summary>
+        /// <remarks>
+        /// Like <see cref="OnLoginAsync"/> and <see cref="OnApiKeyAuthAsync"/>, this hook is invoked from the
+        /// HTTP endpoint layer — here, a provider integration package's endpoint (such as
+        /// <c>EasyReasy.Auth.Google</c>'s <c>AddGoogleAuthEndpoint</c>) — rather than from inside the core
+        /// services, because the identity decision is made by consumer-supplied code that the core cannot
+        /// guarantee will call the logger itself.
+        /// </remarks>
+        /// <param name="httpContext">The HTTP context of the request that triggered the event.</param>
+        /// <param name="result">The structured result of the external authentication attempt.</param>
+        Task OnExternalAuthAsync(HttpContext httpContext, ExternalAuthResult result) => Task.CompletedTask;
 
         /// <summary>
         /// Invoked after a refresh token operation. <paramref name="result"/> carries success state,

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-EasyReasy is a collection of independent .NET 8 NuGet packages sharing a common philosophy: type-safe, self-documenting APIs with startup-time validation. Each package is a class library published to NuGet. There is no runnable application here — only libraries and their tests.
+EasyReasy is a collection of independent .NET 10 NuGet packages sharing a common philosophy: type-safe, self-documenting APIs with startup-time validation. Each package is a class library published to NuGet. There is no runnable application here — only libraries and their tests.
 
 ## Build & Test Commands
 
@@ -17,7 +17,7 @@ dotnet test --filter "FullyQualifiedName~ClassName.MethodName" EasyReasy.Auth.Te
 
 ## Solution Structure
 
-Six independent library projects, each with a corresponding test project:
+Seven library projects, each with a corresponding test project:
 
 | Library | Purpose | Dependencies |
 |---------|---------|-------------|
@@ -26,9 +26,10 @@ Six independent library projects, each with a corresponding test project:
 | `EasyReasy.EnvironmentVariables` | Typed environment variable validation & retrieval | — |
 | `EasyReasy.Auth` | JWT auth, claims middleware, password hashing (ASP.NET Core) | — |
 | `EasyReasy.Auth.Client` | Lightweight HTTP client for Auth servers | — |
+| `EasyReasy.Auth.Google` | Google Sign-In integration for EasyReasy.Auth | `EasyReasy.Auth` |
 | `EasyReasy.VectorStorage` | In-memory cosine similarity vector search | — |
 
-Only `EasyReasy.ByteShelfProvider` depends on another library project (`EasyReasy`). All other libraries are fully independent of each other.
+`EasyReasy.ByteShelfProvider` depends on `EasyReasy` and `EasyReasy.Auth.Google` depends on `EasyReasy.Auth`. All other libraries are fully independent of each other.
 
 ## Architecture
 

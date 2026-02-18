@@ -609,12 +609,13 @@ await _refreshTokenService.RetireFamilyAsync(priorFamilyId, HttpContext.GetUserI
 
 ### 10. Security Audit Logging (ISO 27001 A.9 / A.12)
 
-Every authentication event the library surfaces — success or failure — is reported through a single optional DI service: `IAuthAuditLogger`. Register an implementation and the built-in endpoints (plus the programmatic triggers `RefreshTokenService.InvalidateAllSessionsAsync` and single-session enforcement on login) will invoke it with a structured result object.
+Every authentication event the library surfaces — success or failure — is reported through a single optional DI service: `IAuthAuditLogger`. Register an implementation and the built-in endpoints (plus the programmatic triggers `RefreshTokenService.InvalidateAllSessionsAsync` and single-session enforcement on login) will invoke it with a structured result object. Provider integration packages route through the same service: the `EasyReasy.Auth.Google` sign-in endpoint invokes `OnExternalAuthAsync`, so external sign-ins land in the same audit sink as everything else.
 
 | Event | Hook | Control | Typical data to log |
 |---|---|---|---|
 | Successful / failed username+password login | `OnLoginAsync(httpContext, LoginResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedSubject`, `FailureReason`, IP, User-Agent, time |
 | Successful / failed API key auth | `OnApiKeyAuthAsync(httpContext, ApiKeyAuthResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedClientId`, `FailureReason`, IP, User-Agent, time |
+| Successful / failed external identity-provider sign-in (e.g. Google) | `OnExternalAuthAsync(httpContext, ExternalAuthResult)` | ISO 27001 A.12.4.1 | outcome, `Provider`, `AttemptedSubject`, `FailureReason`, IP, User-Agent, time |
 | Refresh (incl. `TheftDetected`, `DeniedByResolver`, `ResolverError`) | `OnRefreshAsync(httpContext, RefreshResult)` | ISO 27001 A.12.4.1 | outcome, `Subject`, `FamilyId`, `FailureReason`, IP, time |
 | Logout | `OnLogoutAsync(httpContext, LogoutResult)` | ISO 27001 A.9.2.6 | `WasKnown`, `Subject`, `FamilyId`, IP, time |
 | Bulk session revocation | `OnSessionsInvalidatedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
@@ -623,7 +624,7 @@ Every authentication event the library surfaces — success or failure — is re
 
 All methods have default no-op implementations — implement only the events you care about. The result objects deliberately never carry a raw password or a raw API key, so failure records are safe to serialise to your log store.
 
-⚠️ **Do not serialise the whole result object on the success path.** `LoginResult` and `ApiKeyAuthResult` embed an `AuthResponse` that carries the issued JWT access token and (when refresh tokens are enabled) the raw refresh token — both are bearer credentials. Log **metadata** from the result (`Success`, `AttemptedSubject` / `AttemptedClientId`, `FailureReason`) — never log `result.AuthResponse` with a structured logger's destructuring syntax (e.g. Serilog `{@result}`) or `JsonSerializer.Serialize(result)`. The example below follows the right pattern.
+⚠️ **Do not serialise the whole result object on the success path.** `LoginResult`, `ApiKeyAuthResult`, and `ExternalAuthResult` embed an `AuthResponse` that carries the issued JWT access token and (when refresh tokens are enabled) the raw refresh token — both are bearer credentials. Log **metadata** from the result (`Success`, `AttemptedSubject` / `AttemptedClientId`, `FailureReason`) — never log `result.AuthResponse` with a structured logger's destructuring syntax (e.g. Serilog `{@result}`) or `JsonSerializer.Serialize(result)`. The example below follows the right pattern.
 
 ```csharp
 public class MyAuditLogger : IAuthAuditLogger
