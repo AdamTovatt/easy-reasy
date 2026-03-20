@@ -38,12 +38,14 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
-        /// Returns a JSON string representation of this <see cref="LoginAuthRequest"/> instance.
+        /// Returns a string representation of this <see cref="LoginAuthRequest"/> instance
+        /// with the password redacted to prevent accidental secret leakage in logs.
         /// </summary>
-        /// <returns>A JSON string representation of this <see cref="LoginAuthRequest"/> instance.</returns>
+        /// <returns>A string representation with the password replaced by "[REDACTED]".</returns>
         public override string ToString()
         {
-            return ToJson();
+            string escapedUsername = JsonSerializer.Serialize(Username);
+            return $"{{\"username\":{escapedUsername},\"password\":\"[REDACTED]\"}}";
         }
 
         /// <summary>
@@ -60,14 +62,14 @@ namespace EasyReasy.Auth
 
                 if (result == null)
                 {
-                    throw new ArgumentException($"Failed to deserialize {nameof(LoginAuthRequest)} from json: {json}");
+                    throw new ArgumentException($"Failed to deserialize {nameof(LoginAuthRequest)} from the provided JSON.");
                 }
 
                 return result;
             }
-            catch (JsonException jsonException)
+            catch (JsonException)
             {
-                throw new ArgumentException($"Failed to deserialize {nameof(LoginAuthRequest)} from json: {json}", jsonException);
+                throw new ArgumentException($"Failed to deserialize {nameof(LoginAuthRequest)} from the provided JSON.");
             }
         }
     }

@@ -26,20 +26,33 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void ToString_ShouldReturnJson()
+        public void ToString_ShouldRedactRefreshToken()
         {
             RefreshRequest request = new RefreshRequest("my-refresh-token");
 
             string result = request.ToString();
 
-            Assert.AreEqual(request.ToJson(), result);
+            Assert.IsTrue(result.Contains("[REDACTED]"));
+            Assert.IsFalse(result.Contains("my-refresh-token"));
         }
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentException))]
+        public void FromJson_WithInvalidJson_ShouldNotLeakInputInException()
+        {
+            string sensitiveJson = "{\"refreshToken\":\"secret-token-value\",invalid}";
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => RefreshRequest.FromJson(sensitiveJson));
+
+            Assert.IsFalse(exception.Message.Contains("secret-token-value"));
+            Assert.IsNull(exception.InnerException);
+        }
+
+        [TestMethod]
         public void FromJson_WithInvalidJson_ShouldThrowArgumentException()
         {
-            RefreshRequest.FromJson("not-valid-json");
+            Assert.ThrowsException<ArgumentException>(
+                () => RefreshRequest.FromJson("not-valid-json"));
         }
     }
 }

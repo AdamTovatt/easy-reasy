@@ -11,19 +11,32 @@ namespace EasyReasy.Auth
     public static class AuthServiceCollectionExtensions
     {
         /// <summary>
+        /// The default clock skew tolerance for JWT token validation.
+        /// This is intentionally lower than the <c>Microsoft.IdentityModel</c> default of 5 minutes
+        /// to reduce the window in which an expired token is still accepted.
+        /// </summary>
+        private static readonly TimeSpan DefaultClockSkew = TimeSpan.FromSeconds(30);
+
+        /// <summary>
         /// Adds JWT authentication and authorization policies for EasyReasy.
         /// Also registers the IJwtTokenService for dependency injection.
         /// </summary>
         /// <param name="services">The service collection to add authentication to.</param>
         /// <param name="jwtSecret">The secret key used to sign JWT tokens.</param>
         /// <param name="issuer">The expected issuer for JWT tokens. If null, issuer validation is disabled.</param>
+        /// <param name="clockSkew">
+        /// Optional clock skew tolerance for token lifetime validation. Defaults to 30 seconds.
+        /// The <c>Microsoft.IdentityModel</c> default is 5 minutes, which is often too generous.
+        /// Increase this if you see tokens rejected due to clock drift between servers.
+        /// </param>
         /// <returns>The service collection for chaining.</returns>
         public static IServiceCollection AddEasyReasyAuth(
             this IServiceCollection services,
             string jwtSecret,
-            string? issuer = null)
+            string? issuer = null,
+            TimeSpan? clockSkew = null)
         {
-            return AddEasyReasyAuth(services, jwtSecret, issuer, registerJwtTokenService: true);
+            return AddEasyReasyAuth(services, jwtSecret, issuer, registerJwtTokenService: true, clockSkew: clockSkew);
         }
 
         /// <summary>
@@ -34,14 +47,21 @@ namespace EasyReasy.Auth
         /// <param name="jwtSecret">The secret key used to sign JWT tokens.</param>
         /// <param name="issuer">The expected issuer for JWT tokens. If null, issuer validation is disabled.</param>
         /// <param name="registerJwtTokenService">Whether to automatically register IJwtTokenService. Default is true.</param>
+        /// <param name="clockSkew">
+        /// Optional clock skew tolerance for token lifetime validation. Defaults to 30 seconds.
+        /// The <c>Microsoft.IdentityModel</c> default is 5 minutes, which is often too generous.
+        /// Increase this if you see tokens rejected due to clock drift between servers.
+        /// </param>
         /// <returns>The service collection for chaining.</returns>
         public static IServiceCollection AddEasyReasyAuth(
             this IServiceCollection services,
             string jwtSecret,
             string? issuer = null,
-            bool registerJwtTokenService = true)
+            bool registerJwtTokenService = true,
+            TimeSpan? clockSkew = null)
         {
             byte[] key = Encoding.UTF8.GetBytes(jwtSecret);
+            TimeSpan effectiveClockSkew = clockSkew ?? DefaultClockSkew;
 
             services.AddAuthentication(options =>
             {
@@ -58,6 +78,7 @@ namespace EasyReasy.Auth
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = new SymmetricSecurityKey(key),
+                    ClockSkew = effectiveClockSkew,
                 };
             });
 

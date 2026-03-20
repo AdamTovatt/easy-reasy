@@ -31,12 +31,13 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
-        /// Returns a JSON string representation of this <see cref="ApiKeyAuthRequest"/> instance.
+        /// Returns a string representation of this <see cref="ApiKeyAuthRequest"/> instance
+        /// with the API key redacted to prevent accidental secret leakage in logs.
         /// </summary>
-        /// <returns>A JSON string representation of this <see cref="ApiKeyAuthRequest"/> instance.</returns>
+        /// <returns>A string representation with the API key replaced by "[REDACTED]".</returns>
         public override string ToString()
         {
-            return ToJson();
+            return $"{{\"apiKey\":\"[REDACTED]\"}}";
         }
 
         /// <summary>
@@ -53,14 +54,14 @@ namespace EasyReasy.Auth
 
                 if (result == null)
                 {
-                    throw new ArgumentException($"Failed to deserialize {nameof(ApiKeyAuthRequest)} from json: {json}");
+                    throw new ArgumentException($"Failed to deserialize {nameof(ApiKeyAuthRequest)} from the provided JSON.");
                 }
 
                 return result;
             }
-            catch (JsonException jsonException)
+            catch (JsonException)
             {
-                throw new ArgumentException($"Failed to deserialize {nameof(ApiKeyAuthRequest)} from json: {json}", jsonException);
+                throw new ArgumentException($"Failed to deserialize {nameof(ApiKeyAuthRequest)} from the provided JSON.");
             }
         }
     }

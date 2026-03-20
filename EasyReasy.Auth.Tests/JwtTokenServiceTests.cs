@@ -47,5 +47,49 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual("tenant-42", jwt.Claims.First(c => c.Type == "tenant_id").Value);
             CollectionAssert.IsSubsetOf(new[] { "admin", "user" }, jwt.Claims.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value).ToList());
         }
+
+        [TestMethod]
+        public void CreateToken_ShouldContainJtiClaim()
+        {
+            JwtSecurityToken jwt = CreateDefaultToken();
+            string? jti = jwt.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti)?.Value;
+
+            Assert.IsNotNull(jti);
+            Assert.IsTrue(Guid.TryParse(jti, out _));
+        }
+
+        [TestMethod]
+        public void CreateToken_ShouldContainUniqueJtiPerToken()
+        {
+            JwtSecurityToken jwt1 = CreateDefaultToken();
+            JwtSecurityToken jwt2 = CreateDefaultToken();
+
+            string jti1 = jwt1.Claims.First(c => c.Type == JwtRegisteredClaimNames.Jti).Value;
+            string jti2 = jwt2.Claims.First(c => c.Type == JwtRegisteredClaimNames.Jti).Value;
+
+            Assert.AreNotEqual(jti1, jti2);
+        }
+
+        [TestMethod]
+        public void CreateToken_ShouldContainNbfClaim()
+        {
+            DateTime beforeCreation = DateTime.UtcNow;
+
+            JwtSecurityToken jwt = CreateDefaultToken();
+            string? nbf = jwt.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Nbf)?.Value;
+
+            Assert.IsNotNull(nbf);
+            long nbfUnix = long.Parse(nbf);
+            DateTime nbfTime = DateTimeOffset.FromUnixTimeSeconds(nbfUnix).UtcDateTime;
+            Assert.IsTrue(nbfTime >= beforeCreation.AddSeconds(-1));
+            Assert.IsTrue(nbfTime <= DateTime.UtcNow.AddSeconds(1));
+        }
+
+        private static JwtSecurityToken CreateDefaultToken()
+        {
+            IJwtTokenService service = new JwtTokenService(Secret, Issuer);
+            string token = service.CreateToken("user-1", "user", Array.Empty<Claim>(), Array.Empty<string>(), DateTime.UtcNow.AddHours(1));
+            return new JwtSecurityTokenHandler().ReadJwtToken(token);
+        }
     }
 }

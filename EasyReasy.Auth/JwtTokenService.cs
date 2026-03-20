@@ -47,11 +47,14 @@ namespace EasyReasy.Auth
             IEnumerable<string> roles,
             DateTime expiresAt)
         {
+            DateTime now = DateTime.UtcNow;
+
             List<Claim> claims = new List<Claim>
             {
                 new Claim(JwtRegisteredClaimNames.Sub, subject),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new Claim("auth_type", authType),
-                new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+                new Claim(JwtRegisteredClaimNames.Iat, new DateTimeOffset(now).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             };
             if (additionalClaims != null)
                 claims.AddRange(additionalClaims);
@@ -69,10 +72,12 @@ namespace EasyReasy.Auth
                 ? new JwtSecurityToken(
                     issuer: _issuer,
                     claims: claims,
+                    notBefore: now,
                     expires: expiresAt,
                     signingCredentials: credentials)
                 : new JwtSecurityToken(
                     claims: claims,
+                    notBefore: now,
                     expires: expiresAt,
                     signingCredentials: credentials);
 

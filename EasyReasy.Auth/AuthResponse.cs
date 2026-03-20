@@ -49,12 +49,15 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
-        /// Returns a JSON string representation of this <see cref="AuthResponse"/> instance.
+        /// Returns a string representation of this <see cref="AuthResponse"/> instance
+        /// with the token and refresh token redacted to prevent accidental secret leakage in logs.
         /// </summary>
-        /// <returns>A JSON string representation of this <see cref="AuthResponse"/> instance.</returns>
+        /// <returns>A string representation with sensitive fields replaced by "[REDACTED]".</returns>
         public override string ToString()
         {
-            return ToJson();
+            string escapedExpiresAt = JsonSerializer.Serialize(ExpiresAt);
+            string refreshTokenPart = RefreshToken != null ? ",\"refreshToken\":\"[REDACTED]\"" : "";
+            return $"{{\"token\":\"[REDACTED]\",\"expiresAt\":{escapedExpiresAt}{refreshTokenPart}}}";
         }
 
         /// <summary>
@@ -71,14 +74,14 @@ namespace EasyReasy.Auth
 
                 if (result == null)
                 {
-                    throw new ArgumentException($"Failed to deserialize {nameof(AuthResponse)} from json: {json}");
+                    throw new ArgumentException($"Failed to deserialize {nameof(AuthResponse)} from the provided JSON.");
                 }
 
                 return result;
             }
-            catch (JsonException jsonException)
+            catch (JsonException)
             {
-                throw new ArgumentException($"Failed to deserialize {nameof(AuthResponse)} from json: {json}", jsonException);
+                throw new ArgumentException($"Failed to deserialize {nameof(AuthResponse)} from the provided JSON.");
             }
         }
     }
