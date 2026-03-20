@@ -79,6 +79,17 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
+        /// Registers the <see cref="IPasswordResetTokenHandler"/> for dependency injection as a singleton.
+        /// </summary>
+        /// <param name="services">The service collection to add the handler to.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public static IServiceCollection AddPasswordResetTokenHandler(this IServiceCollection services)
+        {
+            services.AddSingleton<IPasswordResetTokenHandler, SecurePasswordResetTokenHandler>();
+            return services;
+        }
+
+        /// <summary>
         /// Registers the refresh token service and its backing store for dependency injection.
         /// The consumer-provided <typeparamref name="TStore"/> is registered as scoped.
         /// </summary>

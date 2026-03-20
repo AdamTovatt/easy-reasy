@@ -103,8 +103,8 @@ public class MyAuthService : IAuthRequestValidationService
         var user = await _userRepository.GetByUsernameAsync(request.Username);
         if (user == null) return null;
 
-        // Validate password using username as additional salt
-        if (!_passwordHasher.ValidatePassword(request.Password, user.PasswordHash, request.Username))
+        // Validate password
+        if (!_passwordHasher.ValidatePassword(request.Password, user.PasswordHash))
             return null;
 
         // Extract tenant ID from header if available
@@ -249,11 +249,8 @@ The library includes a secure password hasher using PBKDF2 with HMAC-SHA512. The
 ```csharp
 public interface IPasswordHasher
 {
-    // Hash password with username as additional salt
-    string HashPassword(string password, string username);
-    
-    // Validate password with username as additional salt
-    bool ValidatePassword(string password, string passwordHash, string username);
+    string HashPassword(string password);
+    bool ValidatePassword(string password, string passwordHash);
 }
 ```
 
@@ -265,11 +262,61 @@ builder.Services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
 
 **Key Features:**
 - Uses PBKDF2 with HMAC-SHA512 and 100,000 iterations
-- Username as additional salt for extra security
-- Versioned hash format for future compatibility
+- 128-bit cryptographic random salt per hash
+- Maximum password length enforcement (1024 UTF-8 bytes) to prevent CPU DoS
+- Minimum iteration count enforcement during verification to reject tampered hashes
 - Constant-time comparison to prevent timing attacks
 
-### 6. Refresh Tokens
+### 6. Password Reset Tokens
+
+The library provides a secure password reset token handler for implementing password reset flows. The handler manages the cryptographic operations; you are responsible for storage, expiration enforcement, and delivery (e.g., email).
+
+```csharp
+public interface IPasswordResetTokenHandler
+{
+    PasswordResetToken GenerateResetToken();
+    bool ValidateResetToken(string token, string storedTokenHash);
+}
+
+public readonly struct PasswordResetToken
+{
+    public required string Token { get; init; }      // base64url, send to user via email
+    public required string TokenHash { get; init; }  // SHA-256 hash, store in database
+}
+```
+
+Register in `Program.cs`:
+```csharp
+builder.Services.AddPasswordResetTokenHandler();
+// Or manually: builder.Services.AddSingleton<IPasswordResetTokenHandler, SecurePasswordResetTokenHandler>();
+```
+
+**Usage example:**
+```csharp
+// User requests a password reset
+PasswordResetToken resetToken = _tokenHandler.GenerateResetToken();
+await _db.StoreResetRequest(user.Id, resetToken.TokenHash, DateTime.UtcNow);
+await _emailService.SendResetEmail(user.Email, resetToken.Token);
+
+// User returns with the token from the email
+ResetRequest request = await _db.GetResetRequest(userId);
+if (request.CreatedAt.AddHours(1) < DateTime.UtcNow)
+    return "expired"; // expiration is your responsibility
+
+if (!_tokenHandler.ValidateResetToken(incomingToken, request.TokenHash))
+    return "invalid";
+
+// Token is valid — set new password
+user.PasswordHash = _passwordHasher.HashPassword(newPassword);
+await _db.Save(user);
+```
+
+**Key Features:**
+- 256-bit cryptographically random tokens (base64url-encoded)
+- SHA-256 hashing for storage (never store plaintext tokens)
+- Stateless and thread-safe (registered as singleton)
+
+### 7. Refresh Tokens
 
 EasyReasy.Auth supports refresh token rotation with automatic theft detection via token family tracking. The library is database-agnostic — you implement `IRefreshTokenStore` to persist tokens however you like.
 
@@ -388,7 +435,8 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **Automatic auth endpoints**: Create API key and username/password authentication endpoints with minimal code
 - **Flexible validation**: Implement `IAuthRequestValidationService` to handle any authentication logic (database, external APIs, etc.)
 - **Refresh token rotation**: Opt-in refresh tokens with token family tracking and automatic theft detection
-- **Secure password hashing**: PBKDF2 with HMAC-SHA512, username-based salt, and constant-time comparison
+- **Secure password hashing**: PBKDF2 with HMAC-SHA512, max password length enforcement, and constant-time comparison
+- **Password reset tokens**: Cryptographically secure token generation with SHA-256 hashing for storage
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
 - **Claim access**: Retrieve any claim value by key or enum via `GetClaimValue()`
@@ -412,6 +460,14 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 2.x
+
+Version 3.0.0 introduces breaking changes to the password hashing API:
+
+- **`IPasswordHasher` signature changed**: The `username` parameter has been removed from both `HashPassword` and `ValidatePassword`. Password hashing now uses only the password with a cryptographic random salt.
+- **V2/V3 hashes are no longer verifiable**: The new V4 hash format is the only supported format. Existing password hashes cannot be verified with this version.
+- **Migration path**: Use the new `IPasswordResetTokenHandler` to implement a password reset flow. Existing users with old hashes will need to reset their passwords through this mechanism.
 
 ---
 
