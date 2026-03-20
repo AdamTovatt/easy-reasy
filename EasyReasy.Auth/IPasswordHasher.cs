@@ -1,7 +1,7 @@
 namespace EasyReasy.Auth
 {
     /// <summary>
-    /// Interface for password hashing operations using PBKDF2.
+    /// Interface for secure password hashing and validation operations.
     /// </summary>
     public interface IPasswordHasher
     {

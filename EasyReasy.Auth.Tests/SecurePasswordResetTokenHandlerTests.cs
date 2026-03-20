@@ -16,7 +16,7 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void GenerateResetToken_ShouldReturnNonEmptyToken()
+        public void GenerateResetToken_WhenCalled_ShouldReturnNonEmptyToken()
         {
             // Act
             PasswordResetToken result = _tokenHandler.GenerateResetToken();
@@ -26,7 +26,7 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void GenerateResetToken_ShouldReturnNonEmptyTokenHash()
+        public void GenerateResetToken_WhenCalled_ShouldReturnNonEmptyTokenHash()
         {
             // Act
             PasswordResetToken result = _tokenHandler.GenerateResetToken();
@@ -36,7 +36,7 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void GenerateResetToken_ShouldReturnBase64UrlEncodedToken()
+        public void GenerateResetToken_WhenCalled_ShouldReturnBase64UrlEncodedToken()
         {
             // Act
             PasswordResetToken result = _tokenHandler.GenerateResetToken();
@@ -48,7 +48,7 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void GenerateResetToken_ShouldReturnLowercaseHexHash()
+        public void GenerateResetToken_WhenCalled_ShouldReturnLowercaseHexHash()
         {
             // Act
             PasswordResetToken result = _tokenHandler.GenerateResetToken();
@@ -58,7 +58,7 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void GenerateResetToken_ShouldReturnUniqueTokens()
+        public void GenerateResetToken_WhenCalledTwice_ShouldReturnUniqueTokens()
         {
             // Act
             PasswordResetToken result1 = _tokenHandler.GenerateResetToken();
@@ -69,7 +69,7 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void GenerateResetToken_ShouldReturnUniqueHashes()
+        public void GenerateResetToken_WhenCalledTwice_ShouldReturnUniqueHashes()
         {
             // Act
             PasswordResetToken result1 = _tokenHandler.GenerateResetToken();
@@ -80,7 +80,7 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void GenerateResetToken_TokenHashShouldMatchSha256OfToken()
+        public void GenerateResetToken_WhenCalled_TokenHashShouldMatchSha256OfToken()
         {
             // Act
             PasswordResetToken result = _tokenHandler.GenerateResetToken();

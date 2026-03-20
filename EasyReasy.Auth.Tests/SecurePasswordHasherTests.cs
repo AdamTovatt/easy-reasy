@@ -149,8 +149,8 @@ namespace EasyReasy.Auth.Tests
             byte[] hashBytes1 = Convert.FromBase64String(hash1);
             byte[] hashBytes2 = Convert.FromBase64String(hash2);
 
-            int saltLength1 = (int)ReadNetworkByteOrder(hashBytes1, 9);
-            int saltLength2 = (int)ReadNetworkByteOrder(hashBytes2, 9);
+            int saltLength1 = (int)SecurePasswordHasher.ReadNetworkByteOrder(hashBytes1, 9);
+            int saltLength2 = (int)SecurePasswordHasher.ReadNetworkByteOrder(hashBytes2, 9);
 
             byte[] salt1 = new byte[saltLength1];
             byte[] salt2 = new byte[saltLength2];
@@ -352,18 +352,5 @@ namespace EasyReasy.Auth.Tests
             Assert.IsFalse(invalidResult);
         }
 
-        /// <summary>
-        /// Reads a 32-bit unsigned integer from the specified position in a byte array using network byte order.
-        /// </summary>
-        /// <param name="buffer">The byte array to read from.</param>
-        /// <param name="offset">The offset to read from.</param>
-        /// <returns>The 32-bit unsigned integer.</returns>
-        private static uint ReadNetworkByteOrder(byte[] buffer, int offset)
-        {
-            return ((uint)buffer[offset + 0] << 24)
-                | ((uint)buffer[offset + 1] << 16)
-                | ((uint)buffer[offset + 2] << 8)
-                | ((uint)buffer[offset + 3]);
-        }
     }
 }

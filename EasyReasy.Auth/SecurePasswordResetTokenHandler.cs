@@ -50,15 +50,30 @@ namespace EasyReasy.Auth
                 return false;
             }
 
+            byte[] computedHashBytes = HashTokenBytes(token);
+            byte[] storedHashBytes;
+
             try
             {
-                string computedHash = HashToken(token);
-                return string.Equals(computedHash, storedTokenHash, StringComparison.OrdinalIgnoreCase);
+                storedHashBytes = Convert.FromHexString(storedTokenHash);
             }
-            catch
+            catch (FormatException)
             {
                 return false;
             }
+
+            return CryptographicOperations.FixedTimeEquals(computedHashBytes, storedHashBytes);
+        }
+
+        /// <summary>
+        /// Computes the SHA-256 hash of a token string and returns the raw hash bytes.
+        /// </summary>
+        /// <param name="token">The token to hash.</param>
+        /// <returns>The SHA-256 hash bytes.</returns>
+        private static byte[] HashTokenBytes(string token)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(token);
+            return SHA256.HashData(bytes);
         }
 
         /// <summary>
@@ -68,9 +83,7 @@ namespace EasyReasy.Auth
         /// <returns>The lowercase hexadecimal SHA-256 hash.</returns>
         private static string HashToken(string token)
         {
-            byte[] bytes = Encoding.UTF8.GetBytes(token);
-            byte[] hash = SHA256.HashData(bytes);
-            return Convert.ToHexString(hash).ToLowerInvariant();
+            return Convert.ToHexString(HashTokenBytes(token)).ToLowerInvariant();
         }
     }
 }

@@ -16,6 +16,7 @@ namespace EasyReasy.Auth
         private const KeyDerivationPrf Prf = KeyDerivationPrf.HMACSHA512;
         private const int MaxPasswordByteLength = 1024;
         private const int MinimumIterationCount = 10000;
+        private const int HeaderSize = 13; // 1 byte marker + 3 × 4 byte uint fields (prf, iterations, salt length)
 
         /// <summary>
         /// Creates a secure hash of the provided password using PBKDF2 with HMAC-SHA512.
@@ -27,7 +28,7 @@ namespace EasyReasy.Auth
         /// </exception>
         public string HashPassword(string password)
         {
-            if (string.IsNullOrEmpty(password) || string.IsNullOrWhiteSpace(password))
+            if (string.IsNullOrWhiteSpace(password))
             {
                 throw new ArgumentException("Password cannot be null, empty, or whitespace.", nameof(password));
             }
@@ -96,13 +97,13 @@ namespace EasyReasy.Auth
 
             byte[] subkey = KeyDerivation.Pbkdf2(password, salt, Prf, Iterations, HashSize);
 
-            byte[] outputBytes = new byte[13 + salt.Length + subkey.Length];
+            byte[] outputBytes = new byte[HeaderSize + salt.Length + subkey.Length];
             outputBytes[0] = 0x02; // V4 format marker
             WriteNetworkByteOrder(outputBytes, 1, (uint)Prf);
             WriteNetworkByteOrder(outputBytes, 5, (uint)Iterations);
             WriteNetworkByteOrder(outputBytes, 9, (uint)salt.Length);
-            Buffer.BlockCopy(salt, 0, outputBytes, 13, salt.Length);
-            Buffer.BlockCopy(subkey, 0, outputBytes, 13 + salt.Length, subkey.Length);
+            Buffer.BlockCopy(salt, 0, outputBytes, HeaderSize, salt.Length);
+            Buffer.BlockCopy(subkey, 0, outputBytes, HeaderSize + salt.Length, subkey.Length);
 
             return outputBytes;
         }
@@ -132,16 +133,16 @@ namespace EasyReasy.Auth
                     return false;
                 }
 
-                byte[] salt = hashedPassword.AsSpan(13, saltLength).ToArray();
+                byte[] salt = hashedPassword.AsSpan(HeaderSize, saltLength).ToArray();
 
-                int subkeyLength = hashedPassword.Length - 13 - salt.Length;
+                int subkeyLength = hashedPassword.Length - HeaderSize - salt.Length;
                 if (subkeyLength < 128 / 8)
                 {
                     return false;
                 }
 
                 byte[] expectedSubkey = new byte[subkeyLength];
-                Buffer.BlockCopy(hashedPassword, 13 + salt.Length, expectedSubkey, 0, expectedSubkey.Length);
+                Buffer.BlockCopy(hashedPassword, HeaderSize + salt.Length, expectedSubkey, 0, expectedSubkey.Length);
 
                 byte[] actualSubkey = KeyDerivation.Pbkdf2(password, salt, prf, iterCount, subkeyLength);
 
@@ -159,7 +160,7 @@ namespace EasyReasy.Auth
         /// <param name="buffer">The byte array to read from.</param>
         /// <param name="offset">The offset to read from.</param>
         /// <returns>The 32-bit unsigned integer.</returns>
-        private static uint ReadNetworkByteOrder(byte[] buffer, int offset)
+        internal static uint ReadNetworkByteOrder(byte[] buffer, int offset)
         {
             return ((uint)buffer[offset + 0] << 24)
                 | ((uint)buffer[offset + 1] << 16)
