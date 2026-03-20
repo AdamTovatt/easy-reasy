@@ -14,14 +14,28 @@ namespace EasyReasy.Auth
         /// </summary>
         /// <param name="app">The application builder.</param>
         /// <param name="enableProgressiveDelay">If true, enables progressive delay for repeated unauthorized requests. Default is true.</param>
+        /// <param name="trustedProxyCount">
+        /// The number of trusted reverse proxies between the client and this application.
+        /// When set to 0 (default), the <c>X-Forwarded-For</c> header is ignored and the connection's
+        /// remote IP address is used directly — this is the safe default for apps not behind a reverse proxy.
+        /// When set to N, the middleware reads the Nth entry from the right of the <c>X-Forwarded-For</c>
+        /// header to determine the client IP. For example, if your app is behind two nginx proxies,
+        /// set this to 2.
+        /// </param>
         /// <returns>The application builder for chaining.</returns>
-        public static IApplicationBuilder UseEasyReasyAuth(this IApplicationBuilder app, bool enableProgressiveDelay = true)
+        public static IApplicationBuilder UseEasyReasyAuth(
+            this IApplicationBuilder app,
+            bool enableProgressiveDelay = true,
+            int trustedProxyCount = 0)
         {
             app.UseAuthentication();
             app.UseAuthorization();
             app.UseMiddleware<ClaimsInjectionMiddleware>();
             if (enableProgressiveDelay)
-                app.UseMiddleware<ProgressiveDelayMiddleware>();
+            {
+                app.UseMiddleware<ProgressiveDelayMiddleware>(trustedProxyCount);
+            }
+
             return app;
         }
 

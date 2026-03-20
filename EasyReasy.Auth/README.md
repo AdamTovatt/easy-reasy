@@ -414,7 +414,8 @@ The progressive delay middleware helps protect your API from brute-force attacks
 
 - **How it works:**
   - The first 10 failed (401 Unauthorized) requests from an IP have no delay.
-  - After that, each additional failed request adds a 500ms delay (e.g., 11th failure = 500ms, 12th = 1000ms, etc.).
+  - After that, each additional failed request adds a 500ms delay (e.g., 11th failure = 500ms, 12th = 1000ms, etc.), up to a maximum of 30 seconds.
+  - The delay is applied before the response is sent, so the attacker must wait.
   - The delay is reset after a successful (non-401) request.
 - **Enabled by default:**
   - The middleware is included automatically when you call `app.UseEasyReasyAuth()`.
@@ -423,10 +424,15 @@ The progressive delay middleware helps protect your API from brute-force attacks
     ```csharp
     app.UseEasyReasyAuth(enableProgressiveDelay: false);
     ```
-- **How to enable:**
-  - Omit the parameter or set it to `true` (default):
+- **Reverse proxy support:**
+  - By default, the middleware uses the direct connection IP (`RemoteIpAddress`) and ignores `X-Forwarded-For` — this prevents IP spoofing attacks.
+  - If your app is behind reverse proxies, set `trustedProxyCount` to the number of proxies in front of your app:
     ```csharp
-    app.UseEasyReasyAuth(); // or app.UseEasyReasyAuth(enableProgressiveDelay: true);
+    // Behind two nginx proxies
+    app.UseEasyReasyAuth(trustedProxyCount: 2);
+
+    // Behind one proxy
+    app.UseEasyReasyAuth(trustedProxyCount: 1);
     ```
 
 ## Core Features
@@ -440,7 +446,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
 - **Claim access**: Retrieve any claim value by key or enum via `GetClaimValue()`
-- **Progressive delay middleware**: Slows repeated unauthorized requests from the same IP (first 10 have no delay, then 500ms per failure)
+- **Progressive delay middleware**: Slows repeated unauthorized requests from the same IP (first 10 have no delay, then 500ms per failure, max 30s) with reverse proxy support
 - **Configurable issuer validation**: Pass `issuer: null` to disable
 - **Secret length enforcement**: Secret must be at least 32 bytes (256 bits) for HS256
 - **Async support**: All validation methods are async for database lookups and external API calls
