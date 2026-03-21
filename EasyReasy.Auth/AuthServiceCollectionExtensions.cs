@@ -11,89 +11,72 @@ namespace EasyReasy.Auth
     public static class AuthServiceCollectionExtensions
     {
         /// <summary>
-        /// The default clock skew tolerance for JWT token validation.
-        /// This is intentionally lower than the <c>Microsoft.IdentityModel</c> default of 5 minutes
-        /// to reduce the window in which an expired token is still accepted.
-        /// </summary>
-        private static readonly TimeSpan DefaultClockSkew = TimeSpan.FromSeconds(30);
-
-        /// <summary>
         /// Adds JWT authentication and authorization policies for EasyReasy.
-        /// Also registers the IJwtTokenService for dependency injection.
+        /// Uses default options: no issuer/audience validation, 30-second clock skew,
+        /// and automatic registration of <see cref="IJwtTokenService"/>.
         /// </summary>
         /// <param name="services">The service collection to add authentication to.</param>
         /// <param name="jwtSecret">The secret key used to sign JWT tokens.</param>
-        /// <param name="issuer">The expected issuer for JWT tokens. If null, issuer validation is disabled.</param>
-        /// <param name="clockSkew">
-        /// Optional clock skew tolerance for token lifetime validation. Defaults to 30 seconds.
-        /// The <c>Microsoft.IdentityModel</c> default is 5 minutes, which is often too generous.
-        /// Increase this if you see tokens rejected due to clock drift between servers.
-        /// </param>
         /// <returns>The service collection for chaining.</returns>
         public static IServiceCollection AddEasyReasyAuth(
             this IServiceCollection services,
-            string jwtSecret,
-            string? issuer = null,
-            TimeSpan? clockSkew = null)
+            string jwtSecret)
         {
-            return AddEasyReasyAuth(services, jwtSecret, issuer, registerJwtTokenService: true, clockSkew: clockSkew);
+            return AddEasyReasyAuth(services, jwtSecret, configure: null);
         }
 
         /// <summary>
-        /// Adds JWT authentication and authorization policies for EasyReasy.
-        /// Optionally registers the IJwtTokenService for dependency injection.
+        /// Adds JWT authentication and authorization policies for EasyReasy
+        /// with the specified configuration options.
         /// </summary>
         /// <param name="services">The service collection to add authentication to.</param>
         /// <param name="jwtSecret">The secret key used to sign JWT tokens.</param>
-        /// <param name="issuer">The expected issuer for JWT tokens. If null, issuer validation is disabled.</param>
-        /// <param name="registerJwtTokenService">Whether to automatically register IJwtTokenService. Default is true.</param>
-        /// <param name="clockSkew">
-        /// Optional clock skew tolerance for token lifetime validation. Defaults to 30 seconds.
-        /// The <c>Microsoft.IdentityModel</c> default is 5 minutes, which is often too generous.
-        /// Increase this if you see tokens rejected due to clock drift between servers.
-        /// </param>
+        /// <param name="configure">An optional action to configure <see cref="EasyReasyAuthOptions"/>.</param>
         /// <returns>The service collection for chaining.</returns>
         public static IServiceCollection AddEasyReasyAuth(
             this IServiceCollection services,
             string jwtSecret,
-            string? issuer = null,
-            bool registerJwtTokenService = true,
-            TimeSpan? clockSkew = null)
+            Action<EasyReasyAuthOptions>? configure)
         {
-            byte[] key = Encoding.UTF8.GetBytes(jwtSecret);
-            TimeSpan effectiveClockSkew = clockSkew ?? DefaultClockSkew;
+            EasyReasyAuthOptions options = new EasyReasyAuthOptions();
+            configure?.Invoke(options);
+            options.Validate();
 
-            services.AddAuthentication(options =>
+            byte[] key = Encoding.UTF8.GetBytes(jwtSecret);
+
+            services.AddAuthentication(authOptions =>
             {
-                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                authOptions.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                authOptions.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
             })
-            .AddJwtBearer(options =>
+            .AddJwtBearer(bearerOptions =>
             {
-                options.TokenValidationParameters = new TokenValidationParameters
+                bearerOptions.TokenValidationParameters = new TokenValidationParameters
                 {
-                    ValidateIssuer = issuer != null,
-                    ValidIssuer = issuer,
-                    ValidateAudience = false,
+                    ValidateIssuer = options.Issuer != null,
+                    ValidIssuer = options.Issuer,
+                    ValidateAudience = options.Audience != null,
+                    ValidAudience = options.Audience,
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = new SymmetricSecurityKey(key),
-                    ClockSkew = effectiveClockSkew,
+                    ClockSkew = options.ClockSkew,
                 };
             });
 
-            services.AddAuthorization(options =>
+            services.AddAuthorization(authzOptions =>
             {
-                options.AddPolicy("ApiKeyOnly", policy =>
+                authzOptions.AddPolicy("ApiKeyOnly", policy =>
                     policy.RequireClaim("auth_type", "apikey"));
-                options.AddPolicy("UserOnly", policy =>
+                authzOptions.AddPolicy("UserOnly", policy =>
                     policy.RequireClaim("auth_type", "user"));
             });
 
             // Register JWT token service for dependency injection if requested
-            if (registerJwtTokenService)
+            if (options.RegisterJwtTokenService)
             {
-                services.AddSingleton<IJwtTokenService>(provider => new JwtTokenService(jwtSecret, issuer));
+                services.AddSingleton<IJwtTokenService>(
+                    provider => new JwtTokenService(jwtSecret, options.Issuer, options.Audience));
             }
 
             return services;

@@ -6,229 +6,199 @@ namespace EasyReasy.Auth.Tests
     [TestClass]
     public class ProgressiveDelayMiddlewareTests
     {
+        private static ProgressiveDelayOptions CreateDefaultOptions()
+        {
+            return new ProgressiveDelayOptions();
+        }
+
         [TestMethod]
         public void CalculateDelay_WithFailuresBelowThreshold_ShouldReturnZero()
         {
-            // Act
-            int delay = ProgressiveDelayMiddleware.CalculateDelay(5);
+            ProgressiveDelayOptions options = CreateDefaultOptions();
 
-            // Assert
+            int delay = ProgressiveDelayMiddleware.CalculateDelay(5, options);
+
             Assert.AreEqual(0, delay);
         }
 
         [TestMethod]
         public void CalculateDelay_WithFailuresAtThreshold_ShouldReturnZero()
         {
-            // Act
-            int delay = ProgressiveDelayMiddleware.CalculateDelay(ProgressiveDelayMiddleware.NoDelayThreshold);
+            ProgressiveDelayOptions options = CreateDefaultOptions();
 
-            // Assert
+            int delay = ProgressiveDelayMiddleware.CalculateDelay(options.FreeFailures, options);
+
             Assert.AreEqual(0, delay);
         }
 
         [TestMethod]
         public void CalculateDelay_WithFailuresAboveThreshold_ShouldReturnIncrementalDelay()
         {
-            // Arrange
+            ProgressiveDelayOptions options = CreateDefaultOptions();
             int failuresAboveThreshold = 3;
-            int failureCount = ProgressiveDelayMiddleware.NoDelayThreshold + failuresAboveThreshold;
+            int failureCount = options.FreeFailures + failuresAboveThreshold;
 
-            // Act
-            int delay = ProgressiveDelayMiddleware.CalculateDelay(failureCount);
+            int delay = ProgressiveDelayMiddleware.CalculateDelay(failureCount, options);
 
-            // Assert
-            Assert.AreEqual(failuresAboveThreshold * ProgressiveDelayMiddleware.DelayIncrementMs, delay);
+            Assert.AreEqual(failuresAboveThreshold * (int)options.DelayIncrement.TotalMilliseconds, delay);
         }
 
         [TestMethod]
         public void CalculateDelay_WithManyFailures_ShouldNotExceedMaxDelay()
         {
-            // Arrange
-            int failureCount = 100000;
+            ProgressiveDelayOptions options = CreateDefaultOptions();
 
-            // Act
-            int delay = ProgressiveDelayMiddleware.CalculateDelay(failureCount);
+            int delay = ProgressiveDelayMiddleware.CalculateDelay(100000, options);
 
-            // Assert
-            Assert.AreEqual(ProgressiveDelayMiddleware.MaxDelayMs, delay);
+            Assert.AreEqual((int)options.MaxDelay.TotalMilliseconds, delay);
         }
 
         [TestMethod]
         public void CalculateDelay_WithExtremeFailureCount_ShouldNotOverflow()
         {
-            // Arrange — would overflow int if not clamped
-            int failureCount = int.MaxValue;
+            ProgressiveDelayOptions options = CreateDefaultOptions();
 
-            // Act
-            int delay = ProgressiveDelayMiddleware.CalculateDelay(failureCount);
+            int delay = ProgressiveDelayMiddleware.CalculateDelay(int.MaxValue, options);
 
-            // Assert
-            Assert.AreEqual(ProgressiveDelayMiddleware.MaxDelayMs, delay);
+            Assert.AreEqual((int)options.MaxDelay.TotalMilliseconds, delay);
         }
 
         [TestMethod]
         public void CalculateDelay_WithZeroFailures_ShouldReturnZero()
         {
-            // Act
-            int delay = ProgressiveDelayMiddleware.CalculateDelay(0);
+            ProgressiveDelayOptions options = CreateDefaultOptions();
 
-            // Assert
+            int delay = ProgressiveDelayMiddleware.CalculateDelay(0, options);
+
             Assert.AreEqual(0, delay);
+        }
+
+        [TestMethod]
+        public void CalculateDelay_WithCustomValues_ShouldCalculateCorrectly()
+        {
+            int delay = ProgressiveDelayMiddleware.CalculateDelay(
+                failureCount: 7, freeFailures: 5, delayIncrementMs: 1000, maxDelayMs: 10000);
+
+            Assert.AreEqual(2000, delay);
         }
 
         [TestMethod]
         public void GetClientIp_WithZeroTrustedProxies_ShouldIgnoreForwardedHeader()
         {
-            // Arrange
             DefaultHttpContext context = new DefaultHttpContext();
             context.Request.Headers["X-Forwarded-For"] = "1.2.3.4, 5.6.7.8";
             context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.1");
 
-            // Act
             string ip = ProgressiveDelayMiddleware.GetClientIp(context, trustedProxyCount: 0);
 
-            // Assert — should use RemoteIpAddress, not the header
             Assert.AreEqual("192.168.1.1", ip);
         }
 
         [TestMethod]
         public void GetClientIp_WithOneTrustedProxy_ShouldReturnCorrectClientIp()
         {
-            // Arrange — header: "fake-ip, real-ip" with 1 proxy → pick last entry
             DefaultHttpContext context = new DefaultHttpContext();
             context.Request.Headers["X-Forwarded-For"] = "fake-ip, 10.0.0.1";
             context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.1");
 
-            // Act
             string ip = ProgressiveDelayMiddleware.GetClientIp(context, trustedProxyCount: 1);
 
-            // Assert
             Assert.AreEqual("10.0.0.1", ip);
         }
 
         [TestMethod]
         public void GetClientIp_WithTwoTrustedProxies_ShouldReturnCorrectClientIp()
         {
-            // Arrange — header: "real-client, proxy1" with 2 proxies → pick index 0
             DefaultHttpContext context = new DefaultHttpContext();
             context.Request.Headers["X-Forwarded-For"] = "203.0.113.50, 192.168.68.103";
             context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.68.107");
 
-            // Act
             string ip = ProgressiveDelayMiddleware.GetClientIp(context, trustedProxyCount: 2);
 
-            // Assert
             Assert.AreEqual("203.0.113.50", ip);
         }
 
         [TestMethod]
         public void GetClientIp_WithTwoTrustedProxies_ShouldIgnoreAttackerSpoofedEntries()
         {
-            // Arrange — header: "fake1, fake2, real-client, proxy1" with 2 proxies → pick index 2
             DefaultHttpContext context = new DefaultHttpContext();
             context.Request.Headers["X-Forwarded-For"] = "fake1, fake2, 203.0.113.50, 192.168.68.103";
             context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.68.107");
 
-            // Act
             string ip = ProgressiveDelayMiddleware.GetClientIp(context, trustedProxyCount: 2);
 
-            // Assert
             Assert.AreEqual("203.0.113.50", ip);
         }
 
         [TestMethod]
         public void GetClientIp_WithTrustedProxiesButNoHeader_ShouldFallbackToRemoteIp()
         {
-            // Arrange
             DefaultHttpContext context = new DefaultHttpContext();
             context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.1");
 
-            // Act
             string ip = ProgressiveDelayMiddleware.GetClientIp(context, trustedProxyCount: 2);
 
-            // Assert
             Assert.AreEqual("192.168.1.1", ip);
         }
 
         [TestMethod]
         public void GetClientIp_WithFewerHeaderEntriesThanTrustedProxies_ShouldFallbackToRemoteIp()
         {
-            // Arrange — only 1 entry but trustedProxyCount=2, index would be negative
             DefaultHttpContext context = new DefaultHttpContext();
             context.Request.Headers["X-Forwarded-For"] = "10.0.0.1";
             context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.1");
 
-            // Act
             string ip = ProgressiveDelayMiddleware.GetClientIp(context, trustedProxyCount: 2);
 
-            // Assert
             Assert.AreEqual("192.168.1.1", ip);
         }
 
         [TestMethod]
         public void GetClientIp_WithNoRemoteIpAndNoHeader_ShouldReturnUnknown()
         {
-            // Arrange
             DefaultHttpContext context = new DefaultHttpContext();
 
-            // Act
             string ip = ProgressiveDelayMiddleware.GetClientIp(context, trustedProxyCount: 0);
 
-            // Assert
             Assert.AreEqual("unknown", ip);
         }
 
         [TestMethod]
         public void GetClientIp_WithWhitespaceInHeader_ShouldTrimEntries()
         {
-            // Arrange
             DefaultHttpContext context = new DefaultHttpContext();
             context.Request.Headers["X-Forwarded-For"] = "  10.0.0.1  ,  192.168.1.1  ";
             context.Connection.RemoteIpAddress = IPAddress.Parse("127.0.0.1");
 
-            // Act
             string ip = ProgressiveDelayMiddleware.GetClientIp(context, trustedProxyCount: 1);
 
-            // Assert
             Assert.AreEqual("192.168.1.1", ip);
-        }
-
-        [TestMethod]
-        public void Constructor_WithNegativeTrustedProxyCount_ShouldThrowArgumentOutOfRangeException()
-        {
-            // Act & Assert
-            Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
-                new ProgressiveDelayMiddleware(next: _ => Task.CompletedTask, trustedProxyCount: -1));
         }
 
         [TestMethod]
         public async Task InvokeAsync_WithUnauthorizedResponse_ShouldTrackFailure()
         {
-            // Arrange
             ProgressiveDelayMiddleware middleware = new ProgressiveDelayMiddleware(
                 next: context =>
                 {
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     return Task.CompletedTask;
                 },
-                trustedProxyCount: 0);
+                options: CreateDefaultOptions());
 
             DefaultHttpContext context = new DefaultHttpContext();
             context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1");
 
-            // Act — first request should have no delay
             DateTime before = DateTime.UtcNow;
             await middleware.InvokeAsync(context);
             TimeSpan elapsed = DateTime.UtcNow - before;
 
-            // Assert — should complete quickly (no delay for first failure)
             Assert.IsTrue(elapsed.TotalMilliseconds < 1000);
         }
 
         [TestMethod]
         public async Task InvokeAsync_WithSuccessResponse_ShouldResetFailures()
         {
-            // Arrange
             int callCount = 0;
             ProgressiveDelayMiddleware middleware = new ProgressiveDelayMiddleware(
                 next: context =>
@@ -249,11 +219,11 @@ namespace EasyReasy.Auth.Tests
 
                     return Task.CompletedTask;
                 },
-                trustedProxyCount: 0);
+                options: CreateDefaultOptions());
 
             IPAddress clientIp = IPAddress.Parse("10.0.0.1");
 
-            // Act — accumulate 15 failures
+            // Accumulate 15 failures
             for (int i = 0; i < 15; i++)
             {
                 DefaultHttpContext failContext = new DefaultHttpContext();
@@ -274,8 +244,69 @@ namespace EasyReasy.Auth.Tests
             await middleware.InvokeAsync(nextFailContext);
             TimeSpan elapsed = DateTime.UtcNow - before;
 
-            // Assert — should complete quickly (counter was reset, no delay)
             Assert.IsTrue(elapsed.TotalMilliseconds < 1000);
+        }
+
+        [TestMethod]
+        public async Task InvokeAsync_WithStaleEntry_ShouldIgnoreOldFailures()
+        {
+            FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+            ProgressiveDelayOptions options = new ProgressiveDelayOptions
+            {
+                FreeFailures = 2,
+                FailureEntryLifetime = TimeSpan.FromMinutes(10),
+            };
+            ProgressiveDelayMiddleware middleware = new ProgressiveDelayMiddleware(
+                next: context =>
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    return Task.CompletedTask;
+                },
+                options: options,
+                timeProvider: timeProvider);
+
+            IPAddress clientIp = IPAddress.Parse("10.0.0.1");
+
+            // Accumulate failures past the threshold
+            for (int i = 0; i < 5; i++)
+            {
+                DefaultHttpContext failContext = new DefaultHttpContext();
+                failContext.Connection.RemoteIpAddress = clientIp;
+                await middleware.InvokeAsync(failContext);
+            }
+
+            // Advance time past the entry lifetime
+            timeProvider.Advance(TimeSpan.FromMinutes(15));
+
+            // Next request should have no delay because the entry is stale
+            DefaultHttpContext nextContext = new DefaultHttpContext();
+            nextContext.Connection.RemoteIpAddress = clientIp;
+
+            DateTime before = DateTime.UtcNow;
+            await middleware.InvokeAsync(nextContext);
+            TimeSpan elapsed = DateTime.UtcNow - before;
+
+            Assert.IsTrue(elapsed.TotalMilliseconds < 1000);
+        }
+
+        /// <summary>
+        /// A fake <see cref="TimeProvider"/> that allows advancing time manually for testing.
+        /// </summary>
+        private sealed class FakeTimeProvider : TimeProvider
+        {
+            private DateTimeOffset _utcNow;
+
+            public FakeTimeProvider(DateTimeOffset startTime)
+            {
+                _utcNow = startTime;
+            }
+
+            public override DateTimeOffset GetUtcNow() => _utcNow;
+
+            public void Advance(TimeSpan duration)
+            {
+                _utcNow += duration;
+            }
         }
     }
 }

@@ -10,31 +10,39 @@ namespace EasyReasy.Auth
     public static class AuthApplicationBuilderExtensions
     {
         private const string NoCacheHeaderValue = "no-store";
+
         /// <summary>
-        /// Adds authentication, authorization, claims injection, and (optionally) progressive delay middleware to the application pipeline.
+        /// Adds authentication, authorization, claims injection, and progressive delay middleware
+        /// to the application pipeline using default options.
         /// </summary>
         /// <param name="app">The application builder.</param>
-        /// <param name="enableProgressiveDelay">If true, enables progressive delay for repeated unauthorized requests. Default is true.</param>
-        /// <param name="trustedProxyCount">
-        /// The number of trusted reverse proxies between the client and this application.
-        /// When set to 0 (default), the <c>X-Forwarded-For</c> header is ignored and the connection's
-        /// remote IP address is used directly — this is the safe default for apps not behind a reverse proxy.
-        /// When set to N, the middleware reads the Nth entry from the right of the <c>X-Forwarded-For</c>
-        /// header to determine the client IP. For example, if your app is behind two nginx proxies,
-        /// set this to 2.
-        /// </param>
+        /// <returns>The application builder for chaining.</returns>
+        public static IApplicationBuilder UseEasyReasyAuth(this IApplicationBuilder app)
+        {
+            return UseEasyReasyAuth(app, configure: null);
+        }
+
+        /// <summary>
+        /// Adds authentication, authorization, claims injection, and (optionally) progressive delay middleware
+        /// to the application pipeline with the specified configuration.
+        /// </summary>
+        /// <param name="app">The application builder.</param>
+        /// <param name="configure">An optional action to configure <see cref="ProgressiveDelayOptions"/>.</param>
         /// <returns>The application builder for chaining.</returns>
         public static IApplicationBuilder UseEasyReasyAuth(
             this IApplicationBuilder app,
-            bool enableProgressiveDelay = true,
-            int trustedProxyCount = 0)
+            Action<ProgressiveDelayOptions>? configure)
         {
+            ProgressiveDelayOptions options = new ProgressiveDelayOptions();
+            configure?.Invoke(options);
+
             app.UseAuthentication();
             app.UseAuthorization();
             app.UseMiddleware<ClaimsInjectionMiddleware>();
-            if (enableProgressiveDelay)
+
+            if (options.Enabled)
             {
-                app.UseMiddleware<ProgressiveDelayMiddleware>(trustedProxyCount);
+                app.UseMiddleware<ProgressiveDelayMiddleware>(options);
             }
 
             return app;
