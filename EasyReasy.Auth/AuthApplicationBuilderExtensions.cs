@@ -9,19 +9,42 @@ namespace EasyReasy.Auth
     /// </summary>
     public static class AuthApplicationBuilderExtensions
     {
+        private const string NoCacheHeaderValue = "no-store";
+
         /// <summary>
-        /// Adds authentication, authorization, claims injection, and (optionally) progressive delay middleware to the application pipeline.
+        /// Adds authentication, authorization, claims injection, and progressive delay middleware
+        /// to the application pipeline using default options.
         /// </summary>
         /// <param name="app">The application builder.</param>
-        /// <param name="enableProgressiveDelay">If true, enables progressive delay for repeated unauthorized requests. Default is true.</param>
         /// <returns>The application builder for chaining.</returns>
-        public static IApplicationBuilder UseEasyReasyAuth(this IApplicationBuilder app, bool enableProgressiveDelay = true)
+        public static IApplicationBuilder UseEasyReasyAuth(this IApplicationBuilder app)
         {
+            return UseEasyReasyAuth(app, configure: null);
+        }
+
+        /// <summary>
+        /// Adds authentication, authorization, claims injection, and (optionally) progressive delay middleware
+        /// to the application pipeline with the specified configuration.
+        /// </summary>
+        /// <param name="app">The application builder.</param>
+        /// <param name="configure">An optional action to configure <see cref="ProgressiveDelayOptions"/>.</param>
+        /// <returns>The application builder for chaining.</returns>
+        public static IApplicationBuilder UseEasyReasyAuth(
+            this IApplicationBuilder app,
+            Action<ProgressiveDelayOptions>? configure)
+        {
+            ProgressiveDelayOptions options = new ProgressiveDelayOptions();
+            configure?.Invoke(options);
+
             app.UseAuthentication();
             app.UseAuthorization();
             app.UseMiddleware<ClaimsInjectionMiddleware>();
-            if (enableProgressiveDelay)
-                app.UseMiddleware<ProgressiveDelayMiddleware>();
+
+            if (options.Enabled)
+            {
+                app.UseMiddleware<ProgressiveDelayMiddleware>(options);
+            }
+
             return app;
         }
 
@@ -37,6 +60,7 @@ namespace EasyReasy.Auth
         {
             app.MapPost("/api/auth/apikey", async (ApiKeyAuthRequest request, IAuthRequestValidationService validationService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
+                httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
                 AuthResponse? response = await validationService.ValidateApiKeyRequestAsync(request, jwtTokenService, httpContext);
                 return response != null ? Results.Ok(response) : Results.Unauthorized();
             });
@@ -56,6 +80,7 @@ namespace EasyReasy.Auth
         {
             app.MapPost("/api/auth/login", async (LoginAuthRequest request, IAuthRequestValidationService validationService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
+                httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
                 AuthResponse? response = await validationService.ValidateLoginRequestAsync(request, jwtTokenService, httpContext);
                 return response != null ? Results.Ok(response) : Results.Unauthorized();
             });
@@ -71,8 +96,9 @@ namespace EasyReasy.Auth
         /// <returns>The web application for chaining.</returns>
         public static WebApplication AddRefreshEndpoint(this WebApplication app)
         {
-            app.MapPost("/api/auth/refresh", async (RefreshRequest request, IRefreshTokenService refreshTokenService, IJwtTokenService jwtTokenService) =>
+            app.MapPost("/api/auth/refresh", async (RefreshRequest request, IRefreshTokenService refreshTokenService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
+                httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
                 RefreshResult result = await refreshTokenService.RefreshAsync(request.RefreshToken, jwtTokenService);
 
                 if (result.Success)

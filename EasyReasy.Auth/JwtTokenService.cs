@@ -12,13 +12,15 @@ namespace EasyReasy.Auth
     {
         private readonly byte[] _key;
         private readonly string? _issuer;
+        private readonly string? _audience;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="JwtTokenService"/> class.
         /// </summary>
         /// <param name="secret">The secret key used to sign JWT tokens.</param>
         /// <param name="issuer">The issuer to use in the JWT tokens. If null, no issuer is set.</param>
-        public JwtTokenService(string secret, string? issuer = null)
+        /// <param name="audience">The audience to include in the JWT tokens. If null, no audience is set.</param>
+        public JwtTokenService(string secret, string? issuer = null, string? audience = null)
         {
             if (string.IsNullOrEmpty(secret))
                 throw new ArgumentException("JWT secret cannot be null or empty", nameof(secret));
@@ -29,6 +31,7 @@ namespace EasyReasy.Auth
 
             _key = secretBytes;
             _issuer = issuer;
+            _audience = audience;
         }
 
         /// <summary>
@@ -47,11 +50,14 @@ namespace EasyReasy.Auth
             IEnumerable<string> roles,
             DateTime expiresAt)
         {
+            DateTime now = DateTime.UtcNow;
+
             List<Claim> claims = new List<Claim>
             {
                 new Claim(JwtRegisteredClaimNames.Sub, subject),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new Claim("auth_type", authType),
-                new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+                new Claim(JwtRegisteredClaimNames.Iat, new DateTimeOffset(now).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             };
             if (additionalClaims != null)
                 claims.AddRange(additionalClaims);
@@ -65,16 +71,13 @@ namespace EasyReasy.Auth
                 new SymmetricSecurityKey(_key),
                 SecurityAlgorithms.HmacSha256);
 
-            JwtSecurityToken token = _issuer != null
-                ? new JwtSecurityToken(
-                    issuer: _issuer,
-                    claims: claims,
-                    expires: expiresAt,
-                    signingCredentials: credentials)
-                : new JwtSecurityToken(
-                    claims: claims,
-                    expires: expiresAt,
-                    signingCredentials: credentials);
+            JwtSecurityToken token = new JwtSecurityToken(
+                issuer: _issuer,
+                audience: _audience,
+                claims: claims,
+                notBefore: now,
+                expires: expiresAt,
+                signingCredentials: credentials);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }

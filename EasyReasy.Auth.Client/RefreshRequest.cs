@@ -31,12 +31,13 @@ namespace EasyReasy.Auth.Client
         }
 
         /// <summary>
-        /// Returns a JSON string representation of this <see cref="RefreshRequest"/> instance.
+        /// Returns a string representation of this <see cref="RefreshRequest"/> instance
+        /// with the refresh token redacted to prevent accidental secret leakage in logs.
         /// </summary>
-        /// <returns>A JSON string representation of this <see cref="RefreshRequest"/> instance.</returns>
+        /// <returns>A string representation with the refresh token replaced by "[REDACTED]".</returns>
         public override string ToString()
         {
-            return ToJson();
+            return $"{{\"refreshToken\":\"[REDACTED]\"}}";
         }
 
         /// <summary>
@@ -53,14 +54,14 @@ namespace EasyReasy.Auth.Client
 
                 if (result == null)
                 {
-                    throw new ArgumentException($"Failed to deserialize {nameof(RefreshRequest)} from json: {json}");
+                    throw new ArgumentException($"Failed to deserialize {nameof(RefreshRequest)} from the provided JSON.");
                 }
 
                 return result;
             }
-            catch (JsonException jsonException)
+            catch (JsonException)
             {
-                throw new ArgumentException($"Failed to deserialize {nameof(RefreshRequest)} from json: {json}", jsonException);
+                throw new ArgumentException($"Failed to deserialize {nameof(RefreshRequest)} from the provided JSON.");
             }
         }
     }

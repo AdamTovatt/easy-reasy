@@ -47,5 +47,119 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual("tenant-42", jwt.Claims.First(c => c.Type == "tenant_id").Value);
             CollectionAssert.IsSubsetOf(new[] { "admin", "user" }, jwt.Claims.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value).ToList());
         }
+
+        [TestMethod]
+        public void CreateToken_ShouldContainJtiClaim()
+        {
+            JwtSecurityToken jwt = CreateDefaultToken();
+            string? jti = jwt.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti)?.Value;
+
+            Assert.IsNotNull(jti);
+            Assert.IsTrue(Guid.TryParse(jti, out _));
+        }
+
+        [TestMethod]
+        public void CreateToken_ShouldContainUniqueJtiPerToken()
+        {
+            JwtSecurityToken jwt1 = CreateDefaultToken();
+            JwtSecurityToken jwt2 = CreateDefaultToken();
+
+            string jti1 = jwt1.Claims.First(c => c.Type == JwtRegisteredClaimNames.Jti).Value;
+            string jti2 = jwt2.Claims.First(c => c.Type == JwtRegisteredClaimNames.Jti).Value;
+
+            Assert.AreNotEqual(jti1, jti2);
+        }
+
+        [TestMethod]
+        public void CreateToken_ShouldContainNbfClaim()
+        {
+            DateTime beforeCreation = DateTime.UtcNow;
+
+            JwtSecurityToken jwt = CreateDefaultToken();
+            string? nbf = jwt.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Nbf)?.Value;
+
+            Assert.IsNotNull(nbf);
+            long nbfUnix = long.Parse(nbf);
+            DateTime nbfTime = DateTimeOffset.FromUnixTimeSeconds(nbfUnix).UtcDateTime;
+            Assert.IsTrue(nbfTime >= beforeCreation.AddSeconds(-1));
+            Assert.IsTrue(nbfTime <= DateTime.UtcNow.AddSeconds(1));
+        }
+
+        [TestMethod]
+        public void CreateToken_WithAudience_ShouldContainAudClaim()
+        {
+            IJwtTokenService service = new JwtTokenService(Secret, Issuer, audience: "my-api");
+
+            string token = service.CreateToken("user-1", "user", Array.Empty<Claim>(), Array.Empty<string>(), DateTime.UtcNow.AddHours(1));
+
+            JwtSecurityToken jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+            string? aud = jwt.Audiences.FirstOrDefault();
+
+            Assert.IsNotNull(aud);
+            Assert.AreEqual("my-api", aud);
+        }
+
+        [TestMethod]
+        public void CreateToken_WithoutAudience_ShouldNotContainAudClaim()
+        {
+            JwtSecurityToken jwt = CreateDefaultToken();
+
+            Assert.IsFalse(jwt.Audiences.Any());
+        }
+
+        [TestMethod]
+        public void CreateToken_WithAudience_ShouldValidateWithMatchingAudience()
+        {
+            IJwtTokenService service = new JwtTokenService(Secret, Issuer, audience: "my-api");
+            string token = service.CreateToken("user-1", "user", Array.Empty<Claim>(), Array.Empty<string>(), DateTime.UtcNow.AddHours(1));
+
+            JwtSecurityTokenHandler handler = new JwtSecurityTokenHandler();
+            TokenValidationParameters validationParams = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = Issuer,
+                ValidateAudience = true,
+                ValidAudience = "my-api",
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Secret)),
+                ClockSkew = TimeSpan.Zero,
+            };
+
+            // Should not throw
+            handler.ValidateToken(token, validationParams, out SecurityToken validatedToken);
+            Assert.IsNotNull(validatedToken);
+        }
+
+        [TestMethod]
+        public void CreateToken_WithAudience_ShouldRejectMismatchedAudience()
+        {
+            IJwtTokenService service = new JwtTokenService(Secret, Issuer, audience: "service-a");
+            string token = service.CreateToken("user-1", "user", Array.Empty<Claim>(), Array.Empty<string>(), DateTime.UtcNow.AddHours(1));
+
+            JwtSecurityTokenHandler handler = new JwtSecurityTokenHandler();
+            TokenValidationParameters validationParams = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = Issuer,
+                ValidateAudience = true,
+                ValidAudience = "service-b",
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Secret)),
+                ClockSkew = TimeSpan.Zero,
+            };
+
+            Assert.ThrowsException<SecurityTokenInvalidAudienceException>(() =>
+                handler.ValidateToken(token, validationParams, out _));
+        }
+
+        private static JwtSecurityToken CreateDefaultToken()
+        {
+            IJwtTokenService service = new JwtTokenService(Secret, Issuer);
+            string token = service.CreateToken("user-1", "user", Array.Empty<Claim>(), Array.Empty<string>(), DateTime.UtcNow.AddHours(1));
+            return new JwtSecurityTokenHandler().ReadJwtToken(token);
+        }
     }
 }
+

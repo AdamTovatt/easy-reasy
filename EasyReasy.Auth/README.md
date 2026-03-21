@@ -18,7 +18,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **Claim access**: Retrieve any claim value by key or enum with a single call
 - **Progressive delay**: Built-in middleware to slow down brute-force attacks (enabled by default)
 - **Refresh token rotation**: Opt-in refresh tokens with automatic theft detection via token family tracking
-- **Flexible configuration**: Optional issuer validation, easy integration with ASP.NET Core
+- **Flexible configuration**: Options pattern for JWT settings (issuer, audience, clock skew) and progressive delay tuning
 - **Clear error messages**: Enforces minimum secret length for security
 
 ## Quick Start
@@ -37,7 +37,10 @@ dotnet add package Microsoft.IdentityModel.JsonWebTokens
 
 ```csharp
 string jwtSecret = Environment.GetEnvironmentVariable("JWT_SIGNING_SECRET")!;
-builder.Services.AddEasyReasyAuth(jwtSecret, issuer: "my-issuer");
+builder.Services.AddEasyReasyAuth(jwtSecret, options =>
+{
+    options.Issuer = "my-issuer";
+});
 
 var app = builder.Build();
 app.UseEasyReasyAuth(); // Progressive delay enabled by default
@@ -48,7 +51,7 @@ app.UseEasyReasyAuth(); // Progressive delay enabled by default
 #### Option A: Manual Token Creation **(Not recommended, see Option B for recommended way)**
 > You probably want to get an instance of IJWtTokenService via dependency injection in your controller class and create an endpoint in that is responsible for issuing tokens if they should be issued.
 ```csharp
-IJwtTokenService tokenService = new JwtTokenService(jwtSecret, issuer: "my-issuer");
+IJwtTokenService tokenService = new JwtTokenService(jwtSecret, issuer: "my-issuer", audience: "my-api");
 string token = tokenService.CreateToken(
     subject: "user-123",
     authType: "apikey",
@@ -103,8 +106,8 @@ public class MyAuthService : IAuthRequestValidationService
         var user = await _userRepository.GetByUsernameAsync(request.Username);
         if (user == null) return null;
 
-        // Validate password using username as additional salt
-        if (!_passwordHasher.ValidatePassword(request.Password, user.PasswordHash, request.Username))
+        // Validate password
+        if (!_passwordHasher.ValidatePassword(request.Password, user.PasswordHash))
             return null;
 
         // Extract tenant ID from header if available
@@ -133,7 +136,10 @@ Then register the service and add endpoints in `Program.cs`. Here's a complete s
 string jwtSecret = Environment.GetEnvironmentVariable("JWT_SIGNING_SECRET")!;
 
 // 1. Register authentication
-builder.Services.AddEasyReasyAuth(jwtSecret, issuer: "my-issuer");
+builder.Services.AddEasyReasyAuth(jwtSecret, options =>
+{
+    options.Issuer = "my-issuer";
+});
 
 // 2. Register dependencies
 builder.Services.AddScoped<IUserRepository, UserRepository>();
@@ -162,7 +168,7 @@ This will automatically create:
 - `POST /api/auth/login` - For username/password authentication
 
 Both endpoints return:
-- `200 OK` with `AuthResponse` (token + expiration) on success
+- `200 OK` with `AuthResponse` (token, expiration, and optional refresh token) on success
 - `401 Unauthorized` on invalid credentials
 
 ### 4. Accessing HTTP Context in Validation
@@ -242,18 +248,15 @@ string? tenantId2 = HttpContext.GetClaimValue(EasyReasyClaim.TenantId);
 string? issuer = HttpContext.GetClaimValue(EasyReasyClaim.Issuer);
 ```
 
-### 5. Password Hashing
+### 6. Password Hashing
 
 The library includes a secure password hasher using PBKDF2 with HMAC-SHA512. The `IPasswordHasher` interface provides these methods:
 
 ```csharp
 public interface IPasswordHasher
 {
-    // Hash password with username as additional salt
-    string HashPassword(string password, string username);
-    
-    // Validate password with username as additional salt
-    bool ValidatePassword(string password, string passwordHash, string username);
+    string HashPassword(string password);
+    bool ValidatePassword(string password, string passwordHash);
 }
 ```
 
@@ -265,11 +268,61 @@ builder.Services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
 
 **Key Features:**
 - Uses PBKDF2 with HMAC-SHA512 and 100,000 iterations
-- Username as additional salt for extra security
-- Versioned hash format for future compatibility
+- 128-bit cryptographic random salt per hash
+- Maximum password length enforcement (1024 UTF-8 bytes) to prevent CPU DoS
+- Minimum iteration count enforcement during verification to reject tampered hashes
 - Constant-time comparison to prevent timing attacks
 
-### 6. Refresh Tokens
+### 7. Password Reset Tokens
+
+The library provides a secure password reset token handler for implementing password reset flows. The handler manages the cryptographic operations; you are responsible for storage, expiration enforcement, and delivery (e.g., email).
+
+```csharp
+public interface IPasswordResetTokenHandler
+{
+    PasswordResetToken GenerateResetToken();
+    bool ValidateResetToken(string token, string storedTokenHash);
+}
+
+public readonly struct PasswordResetToken
+{
+    public required string Token { get; init; }      // base64url, send to user via email
+    public required string TokenHash { get; init; }  // SHA-256 hash, store in database
+}
+```
+
+Register in `Program.cs`:
+```csharp
+builder.Services.AddPasswordResetTokenHandler();
+// Or manually: builder.Services.AddSingleton<IPasswordResetTokenHandler, SecurePasswordResetTokenHandler>();
+```
+
+**Usage example:**
+```csharp
+// User requests a password reset
+PasswordResetToken resetToken = _tokenHandler.GenerateResetToken();
+await _db.StoreResetRequest(user.Id, resetToken.TokenHash, DateTime.UtcNow);
+await _emailService.SendResetEmail(user.Email, resetToken.Token);
+
+// User returns with the token from the email
+ResetRequest request = await _db.GetResetRequest(userId);
+if (request.CreatedAt.AddHours(1) < DateTime.UtcNow)
+    return "expired"; // expiration is your responsibility
+
+if (!_tokenHandler.ValidateResetToken(incomingToken, request.TokenHash))
+    return "invalid";
+
+// Token is valid — set new password
+user.PasswordHash = _passwordHasher.HashPassword(newPassword);
+await _db.Save(user);
+```
+
+**Key Features:**
+- 256-bit cryptographically random tokens (base64url-encoded)
+- SHA-256 hashing for storage (never store plaintext tokens)
+- Stateless and thread-safe (registered as singleton)
+
+### 8. Refresh Tokens
 
 EasyReasy.Auth supports refresh token rotation with automatic theft detection via token family tracking. The library is database-agnostic — you implement `IRefreshTokenStore` to persist tokens however you like.
 
@@ -281,7 +334,7 @@ public class MyRefreshTokenStore : IRefreshTokenStore
 {
     public Task StoreAsync(StoredRefreshToken refreshToken) { /* INSERT into DB */ }
     public Task<StoredRefreshToken?> GetByTokenHashAsync(string tokenHash) { /* SELECT by hash */ }
-    public Task MarkAsConsumedAsync(string tokenHash, DateTime consumedAt) { /* UPDATE consumed_at */ }
+    public Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt) { /* see note below */ }
     public Task InvalidateFamilyAsync(string familyId) { /* UPDATE SET invalidated WHERE family_id = ... */ }
 }
 ```
@@ -332,6 +385,24 @@ public class MyAuthService : IAuthRequestValidationService
 - If a token that was already used gets presented again, the library detects theft and **invalidates the entire family**
 - Everything is opt-in: you must register the service, enable the endpoint, and inject `IRefreshTokenService` in your validation service
 
+#### Important: `MarkAsConsumedAsync` Must Be Atomic
+
+`MarkAsConsumedAsync` returns `bool` — it must return `true` only for the **first** caller and `false` for any concurrent requests that try to consume the same token. This prevents a race condition where two simultaneous requests both redeem the same refresh token before either marks it consumed.
+
+In SQL, use a conditional update and check affected rows:
+```csharp
+public async Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt)
+{
+    // Only updates if consumed_at is still NULL — returns true if 1 row was affected
+    int affected = await db.ExecuteAsync(
+        "UPDATE refresh_tokens SET consumed_at = @consumedAt WHERE token_hash = @tokenHash AND consumed_at IS NULL",
+        new { tokenHash, consumedAt });
+    return affected == 1;
+}
+```
+
+For other stores (Redis, MongoDB, etc.), use the equivalent atomic compare-and-set operation. If your store cannot guarantee atomicity, concurrent refresh requests could both succeed, issuing duplicate token pairs.
+
 ## Advanced Configuration
 
 ### Service Registration Options
@@ -343,13 +414,40 @@ public class MyAuthService : IAuthRequestValidationService
   ```
 - **Service Lifetime**: Use `AddScoped` when your validation service has database dependencies (e.g., Entity Framework DbContext). Use `AddSingleton` only if the service is stateless and thread-safe.
 
+### Full Configuration Example
+
+Both `AddEasyReasyAuth` and `UseEasyReasyAuth` accept an optional configuration action. All options have sensible defaults, so you only set what you need:
+
+```csharp
+builder.Services.AddEasyReasyAuth(jwtSecret, options =>
+{
+    options.Issuer = "my-issuer";                        // null = issuer validation disabled (default)
+    options.Audience = "my-api";                         // null = audience validation disabled (default)
+    options.ClockSkew = TimeSpan.FromSeconds(30);        // default; Microsoft default is 5 minutes
+    options.RegisterJwtTokenService = true;              // default; set false to register your own
+});
+
+app.UseEasyReasyAuth(options =>
+{
+    options.Enabled = true;                              // default; set false to disable progressive delay
+    options.TrustedProxyCount = 2;                       // 0 = ignore X-Forwarded-For (default)
+    options.FreeFailures = 10;                           // failures before delays start (default)
+    options.DelayIncrement = TimeSpan.FromMilliseconds(500); // delay per failure above threshold (default)
+    options.MaxDelay = TimeSpan.FromSeconds(30);         // maximum delay cap (default)
+    options.FailureEntryLifetime = TimeSpan.FromHours(1); // stale entry eviction (default)
+});
+```
+
 ### Opting Out of Automatic Service Registration
 
 If you need more control over the `IJwtTokenService` registration (e.g., for testing, custom implementations, or multiple configurations), you can opt out of automatic registration:
 
 ```csharp
-// Register authentication without automatic IJwtTokenService registration
-builder.Services.AddEasyReasyAuth(jwtSecret, issuer: "my-issuer", registerJwtTokenService: false);
+builder.Services.AddEasyReasyAuth(jwtSecret, options =>
+{
+    options.Issuer = "my-issuer";
+    options.RegisterJwtTokenService = false;
+});
 
 // Manually register your own implementation
 builder.Services.AddSingleton<IJwtTokenService>(new MyCustomJwtTokenService(jwtSecret, issuer));
@@ -366,52 +464,86 @@ This is useful for:
 The progressive delay middleware helps protect your API from brute-force attacks by introducing a delay for repeated unauthorized requests from the same IP address.
 
 - **How it works:**
-  - The first 10 failed (401 Unauthorized) requests from an IP have no delay.
-  - After that, each additional failed request adds a 500ms delay (e.g., 11th failure = 500ms, 12th = 1000ms, etc.).
+  - The first N failed (401 Unauthorized) requests from an IP have no delay (default: 10, configurable via `FreeFailures`).
+  - After that, each additional failed request adds an incremental delay (default: 500ms, configurable via `DelayIncrement`), up to a configurable maximum (default: 30 seconds, configurable via `MaxDelay`).
+  - The delay is applied before the response is sent, so the attacker must wait.
   - The delay is reset after a successful (non-401) request.
+  - Stale failure entries are automatically evicted after `FailureEntryLifetime` (default: 1 hour).
 - **Enabled by default:**
   - The middleware is included automatically when you call `app.UseEasyReasyAuth()`.
 - **How to disable:**
-  - Pass `enableProgressiveDelay: false` to `UseEasyReasyAuth`:
+  ```csharp
+  app.UseEasyReasyAuth(options =>
+  {
+      options.Enabled = false;
+  });
+  ```
+- **Reverse proxy support:**
+  - By default, the middleware uses the direct connection IP (`RemoteIpAddress`) and ignores `X-Forwarded-For` — this prevents IP spoofing attacks.
+  - If your app is behind reverse proxies, set `TrustedProxyCount` to the number of proxies in front of your app:
     ```csharp
-    app.UseEasyReasyAuth(enableProgressiveDelay: false);
-    ```
-- **How to enable:**
-  - Omit the parameter or set it to `true` (default):
-    ```csharp
-    app.UseEasyReasyAuth(); // or app.UseEasyReasyAuth(enableProgressiveDelay: true);
+    app.UseEasyReasyAuth(options =>
+    {
+        options.TrustedProxyCount = 2; // Behind two nginx proxies
+    });
     ```
 
 ## Core Features
 
-- **JWT token service**: Issue tokens with custom claims, roles, and optional issuer
+- **JWT token service**: Issue tokens with custom claims, roles, optional issuer, and optional audience (`aud` claim)
+- **Token security**: Each token includes `jti` (unique ID for revocation support) and `nbf` (not-before) claims, with a configurable clock skew (default 30 seconds)
+- **Audience validation**: Opt-in `aud` claim prevents tokens issued for one service from being accepted by another
 - **Automatic auth endpoints**: Create API key and username/password authentication endpoints with minimal code
+- **Cache-Control headers**: Auth endpoints automatically set `Cache-Control: no-store` to prevent token caching
 - **Flexible validation**: Implement `IAuthRequestValidationService` to handle any authentication logic (database, external APIs, etc.)
 - **Refresh token rotation**: Opt-in refresh tokens with token family tracking and automatic theft detection
-- **Secure password hashing**: PBKDF2 with HMAC-SHA512, username-based salt, and constant-time comparison
+- **Secure password hashing**: PBKDF2 with HMAC-SHA512, max password length enforcement, and constant-time comparison
+- **Password reset tokens**: Cryptographically secure token generation with SHA-256 hashing for storage
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
 - **Claim access**: Retrieve any claim value by key or enum via `GetClaimValue()`
-- **Progressive delay middleware**: Slows repeated unauthorized requests from the same IP (first 10 have no delay, then 500ms per failure)
-- **Configurable issuer validation**: Pass `issuer: null` to disable
+- **Progressive delay middleware**: Configurable brute-force protection with reverse proxy support and automatic stale entry eviction
+- **Options pattern configuration**: `Action<T>` lambdas for both `AddEasyReasyAuth` and `UseEasyReasyAuth` — simple defaults, opt-in customization
+- **Secret redaction**: `ToString()` on request/response models redacts secrets; `FromJson` exceptions never leak raw input
 - **Secret length enforcement**: Secret must be at least 32 bytes (256 bits) for HS256
 - **Async support**: All validation methods are async for database lookups and external API calls
 
 ## Error Handling
 
 - If the JWT secret is too short, `JwtTokenService` throws an `ArgumentException` with a clear message.
-- Progressive delay is enabled by default; opt out with `app.UseEasyReasyAuth(enableProgressiveDelay: false);`
+- Invalid options (negative clock skew, negative delay values, etc.) throw `ArgumentOutOfRangeException` at startup.
+- `FromJson` methods on request/response models throw sanitized exceptions that never include the raw JSON input.
+- Progressive delay is enabled by default; disable it via the options pattern if needed.
 
 ## Best Practices
 
 1. **Use a strong, unique secret**: At least 32 bytes (256 bits)
-2. **Set issuer for extra validation**: Use the same value when issuing and validating tokens
+2. **Set issuer and audience**: Prevents cross-service token misuse
 3. **Enable progressive delay**: Protects against brute-force attacks by default
-4. **Access claims and roles via extension methods**: Use `GetUserId()`, `GetTenantId()`, `GetRoles()`, and `GetClaimValue()` for convenience
+4. **Set `TrustedProxyCount`**: If behind reverse proxies, so the middleware sees real client IPs
+5. **Access claims and roles via extension methods**: Use `GetUserId()`, `GetTenantId()`, `GetRoles()`, and `GetClaimValue()` for convenience
+6. **Implement atomic `MarkAsConsumedAsync`**: If using refresh tokens, ensure your store prevents concurrent redemption
 
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 2.x
+
+Version 3.0.0 introduces breaking changes:
+
+### Password Hashing
+- **`IPasswordHasher` signature changed**: The `username` parameter has been removed from both `HashPassword` and `ValidatePassword`. Password hashing now uses only the password with a cryptographic random salt.
+- **V2/V3 hashes are no longer verifiable**: The new V4 hash format is the only supported format. Existing password hashes cannot be verified with this version.
+- **Migration path**: Use the new `IPasswordResetTokenHandler` to implement a password reset flow. Existing users with old hashes will need to reset their passwords through this mechanism.
+
+### Configuration API
+- **`AddEasyReasyAuth` signature changed**: The `issuer`, `registerJwtTokenService`, and `clockSkew` parameters have been replaced by an `Action<EasyReasyAuthOptions>` lambda. Update calls like `AddEasyReasyAuth(secret, issuer: "x")` to `AddEasyReasyAuth(secret, o => { o.Issuer = "x"; })`.
+- **`UseEasyReasyAuth` signature changed**: The `enableProgressiveDelay` and `trustedProxyCount` parameters have been replaced by an `Action<ProgressiveDelayOptions>` lambda. Update calls like `UseEasyReasyAuth(trustedProxyCount: 2)` to `UseEasyReasyAuth(o => { o.TrustedProxyCount = 2; })`.
+
+### Behavioral Changes
+- **Clock skew reduced**: Default clock skew is now 30 seconds (was 5 minutes). Tokens that expired within the last 5 minutes may now be rejected. Increase `ClockSkew` in options if this causes issues.
+- **`MarkAsConsumedAsync` return type**: Changed from `Task` to `Task<bool>` to support atomic consumption. Update your `IRefreshTokenStore` implementations accordingly.
 
 ---
 
