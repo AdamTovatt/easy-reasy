@@ -29,4 +29,4 @@ Tracked improvements identified during review. Items are checked off as they are
 - [x] **#15 — No nbf (not-before) claim** — Added `notBefore: DateTime.UtcNow` to all issued tokens
 
 ### Refresh Tokens
-- [ ] **#10 — TOCTOU race in refresh rotation** — Concurrent requests with the same refresh token could both succeed before either marks it consumed. Partially mitigated by `MarkAsConsumedAsync` returning bool, but depends on store implementation being truly atomic.
+- [x] **#10 — TOCTOU race in refresh rotation** — `MarkAsConsumedAsync` returns `bool` so only the first caller succeeds. Atomicity depends on the consumer's store implementation. Added explicit guidance in the README with a SQL example (`UPDATE ... WHERE consumed_at IS NULL`) and notes for other stores.
