@@ -40,6 +40,16 @@ namespace EasyReasy.Auth
             {
                 throw new ArgumentOutOfRangeException(nameof(ClockSkew), "Must be non-negative.");
             }
+
+            if (Issuer is not null && string.IsNullOrWhiteSpace(Issuer))
+            {
+                throw new ArgumentException("Issuer must be null or a non-empty, non-whitespace string.", nameof(Issuer));
+            }
+
+            if (Audience is not null && string.IsNullOrWhiteSpace(Audience))
+            {
+                throw new ArgumentException("Audience must be null or a non-empty, non-whitespace string.", nameof(Audience));
+            }
         }
     }
 }

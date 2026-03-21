@@ -29,5 +29,75 @@ namespace EasyReasy.Auth.Tests
                     options.ClockSkew = TimeSpan.FromSeconds(-1);
                 }));
         }
+
+        [TestMethod]
+        public void AddEasyReasyAuth_WithEmptyIssuer_ShouldThrow()
+        {
+            ServiceCollection services = new ServiceCollection();
+
+            Assert.ThrowsException<ArgumentException>(() =>
+                services.AddEasyReasyAuth(ValidSecret, options =>
+                {
+                    options.Issuer = "";
+                }));
+        }
+
+        [TestMethod]
+        public void AddEasyReasyAuth_WithWhitespaceIssuer_ShouldThrow()
+        {
+            ServiceCollection services = new ServiceCollection();
+
+            Assert.ThrowsException<ArgumentException>(() =>
+                services.AddEasyReasyAuth(ValidSecret, options =>
+                {
+                    options.Issuer = "   ";
+                }));
+        }
+
+        [TestMethod]
+        public void AddEasyReasyAuth_WithEmptyAudience_ShouldThrow()
+        {
+            ServiceCollection services = new ServiceCollection();
+
+            Assert.ThrowsException<ArgumentException>(() =>
+                services.AddEasyReasyAuth(ValidSecret, options =>
+                {
+                    options.Audience = "";
+                }));
+        }
+
+        [TestMethod]
+        public void AddEasyReasyAuth_WithWhitespaceAudience_ShouldThrow()
+        {
+            ServiceCollection services = new ServiceCollection();
+
+            Assert.ThrowsException<ArgumentException>(() =>
+                services.AddEasyReasyAuth(ValidSecret, options =>
+                {
+                    options.Audience = "   ";
+                }));
+        }
+
+        [TestMethod]
+        public void AddEasyReasyAuth_WithNullIssuer_ShouldNotThrow()
+        {
+            ServiceCollection services = new ServiceCollection();
+
+            services.AddEasyReasyAuth(ValidSecret, options =>
+            {
+                options.Issuer = null;
+            });
+        }
+
+        [TestMethod]
+        public void AddEasyReasyAuth_WithNullAudience_ShouldNotThrow()
+        {
+            ServiceCollection services = new ServiceCollection();
+
+            services.AddEasyReasyAuth(ValidSecret, options =>
+            {
+                options.Audience = null;
+            });
+        }
     }
 }

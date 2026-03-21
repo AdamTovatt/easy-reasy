@@ -179,18 +179,18 @@ namespace EasyReasy.Auth.Tests
         public async Task InvokeAsync_WithUnauthorizedResponse_ShouldTrackFailure()
         {
             ProgressiveDelayMiddleware middleware = new ProgressiveDelayMiddleware(
-                next: context =>
+                next: ctx =>
                 {
-                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     return Task.CompletedTask;
                 },
                 options: CreateDefaultOptions());
 
-            DefaultHttpContext context = new DefaultHttpContext();
-            context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1");
+            DefaultHttpContext requestContext = new DefaultHttpContext();
+            requestContext.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1");
 
             DateTime before = DateTime.UtcNow;
-            await middleware.InvokeAsync(context);
+            await middleware.InvokeAsync(requestContext);
             TimeSpan elapsed = DateTime.UtcNow - before;
 
             Assert.IsTrue(elapsed.TotalMilliseconds < 1000);
@@ -201,20 +201,20 @@ namespace EasyReasy.Auth.Tests
         {
             int callCount = 0;
             ProgressiveDelayMiddleware middleware = new ProgressiveDelayMiddleware(
-                next: context =>
+                next: ctx =>
                 {
                     callCount++;
                     if (callCount <= 15)
                     {
-                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     }
                     else if (callCount == 16)
                     {
-                        context.Response.StatusCode = StatusCodes.Status200OK;
+                        ctx.Response.StatusCode = StatusCodes.Status200OK;
                     }
                     else
                     {
-                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     }
 
                     return Task.CompletedTask;
@@ -257,9 +257,9 @@ namespace EasyReasy.Auth.Tests
                 FailureEntryLifetime = TimeSpan.FromMinutes(10),
             };
             ProgressiveDelayMiddleware middleware = new ProgressiveDelayMiddleware(
-                next: context =>
+                next: ctx =>
                 {
-                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     return Task.CompletedTask;
                 },
                 options: options,
