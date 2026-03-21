@@ -123,6 +123,11 @@ namespace EasyReasy.Auth
                 int iterCount = (int)ReadNetworkByteOrder(hashedPassword, 5);
                 int saltLength = (int)ReadNetworkByteOrder(hashedPassword, 9);
 
+                if (prf != KeyDerivationPrf.HMACSHA512)
+                {
+                    return false;
+                }
+
                 if (iterCount < MinimumIterationCount)
                 {
                     return false;

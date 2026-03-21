@@ -60,7 +60,9 @@ namespace EasyReasy.Auth
             {
                 if (IsStale(entry, now))
                 {
-                    _failures.TryRemove(ip, out _);
+                    // Don't TryRemove here — another thread may have already replaced
+                    // the stale entry with a fresh one via AddOrUpdate. Let the periodic
+                    // sweep handle cleanup instead. We simply skip the delay.
                 }
                 else if (entry.Count >= _options.FreeFailures)
                 {

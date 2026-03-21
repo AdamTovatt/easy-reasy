@@ -290,6 +290,50 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public void ValidatePassword_WithTamperedPrf_ShouldReturnFalse()
+        {
+            // Arrange - create a valid hash and tamper the PRF field to HMACSHA1 (value 0)
+            string password = "testpassword";
+            string hash = _passwordHasher.HashPassword(password);
+            byte[] hashBytes = Convert.FromBase64String(hash);
+
+            // Overwrite PRF field (bytes 1-4) with HMACSHA1 (0x00000000)
+            hashBytes[1] = 0x00;
+            hashBytes[2] = 0x00;
+            hashBytes[3] = 0x00;
+            hashBytes[4] = 0x00;
+            string tamperedHash = Convert.ToBase64String(hashBytes);
+
+            // Act
+            bool isValid = _passwordHasher.ValidatePassword(password, tamperedHash);
+
+            // Assert - should reject non-HMACSHA512 PRF
+            Assert.IsFalse(isValid);
+        }
+
+        [TestMethod]
+        public void ValidatePassword_WithTamperedPrfToSha256_ShouldReturnFalse()
+        {
+            // Arrange - create a valid hash and tamper the PRF field to HMACSHA256 (value 1)
+            string password = "testpassword";
+            string hash = _passwordHasher.HashPassword(password);
+            byte[] hashBytes = Convert.FromBase64String(hash);
+
+            // Overwrite PRF field (bytes 1-4) with HMACSHA256 (0x00000001)
+            hashBytes[1] = 0x00;
+            hashBytes[2] = 0x00;
+            hashBytes[3] = 0x00;
+            hashBytes[4] = 0x01;
+            string tamperedHash = Convert.ToBase64String(hashBytes);
+
+            // Act
+            bool isValid = _passwordHasher.ValidatePassword(password, tamperedHash);
+
+            // Assert - should reject non-HMACSHA512 PRF
+            Assert.IsFalse(isValid);
+        }
+
+        [TestMethod]
         public void ValidatePassword_WithTruncatedHash_ShouldReturnFalse()
         {
             // Arrange - only a few bytes, too short for V4 header
