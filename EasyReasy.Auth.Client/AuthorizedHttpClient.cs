@@ -20,7 +20,12 @@ namespace EasyReasy.Auth.Client
             /// <summary>
             /// Username/password authentication.
             /// </summary>
-            UsernamePassword
+            UsernamePassword,
+
+            /// <summary>
+            /// Pre-authorized with an existing token and optional refresh token.
+            /// </summary>
+            PreAuthorized
         }
 
         private readonly HttpClient _httpClient;
@@ -72,6 +77,28 @@ namespace EasyReasy.Auth.Client
             _authEndpoint = authEndpoint ?? "api/auth/login";
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _authType = AuthType.UsernamePassword;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AuthorizedHttpClient"/> class with an existing token.
+        /// This is useful when the token and refresh token have been persisted from a previous session.
+        /// </summary>
+        /// <param name="httpClient">The HTTP client to use for requests.</param>
+        /// <param name="authResponse">The authentication response containing the token, expiration, and optional refresh token.</param>
+        /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
+        public AuthorizedHttpClient(HttpClient httpClient, AuthResponse authResponse, string? refreshEndpoint = null)
+        {
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+
+            if (_httpClient.BaseAddress?.ToString().LastOrDefault() is char lastCharacter && lastCharacter != '/')
+                _httpClient.BaseAddress = new Uri(_httpClient.BaseAddress.ToString() + "/");
+
+            ArgumentNullException.ThrowIfNull(authResponse);
+            _authEndpoint = string.Empty;
+            _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
+            _authType = AuthType.PreAuthorized;
+
+            ApplyAuthResponse(authResponse);
         }
 
         /// <summary>
@@ -210,6 +237,12 @@ namespace EasyReasy.Auth.Client
                     json = loginRequest.ToJson();
                     endpoint = _authEndpoint;
                     break;
+
+                case AuthType.PreAuthorized:
+                    throw new InvalidOperationException(
+                        "Cannot re-authenticate a pre-authorized client. " +
+                        "The token has expired and no refresh token is available. " +
+                        "Create a new client with valid credentials.");
 
                 default:
                     throw new InvalidOperationException($"Unsupported authentication type: {_authType}");
