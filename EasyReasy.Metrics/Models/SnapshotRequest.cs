@@ -6,7 +6,7 @@ namespace EasyReasy.Metrics.Models
     public class SnapshotRequest
     {
         /// <summary>
-        /// Gets or sets the metric key to query.
+        /// Gets the metric key to query.
         /// </summary>
         public required MetricKey MetricKey { get; init; }
     }

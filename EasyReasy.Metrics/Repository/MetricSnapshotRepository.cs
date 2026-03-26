@@ -149,6 +149,33 @@ namespace EasyReasy.Metrics.Repository
         }
 
         /// <inheritdoc />
+        public async Task<long?> InsertIfNotRecentAsync(MetricKey key, DateTime collectedAt, decimal value, TimeSpan minimumInterval, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string metricKey = key.Key;
+                DateTime threshold = collectedAt - minimumInterval;
+
+                string query = $@"
+                    INSERT INTO metric_snapshot (metric_key, collected_at, value)
+                    SELECT @{nameof(metricKey)}, @{nameof(collectedAt)}, @{nameof(value)}
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM metric_snapshot
+                        WHERE metric_key = @{nameof(metricKey)}
+                        AND collected_at > @{nameof(threshold)}
+                    )
+                    RETURNING id";
+
+                long? id = await dbSession.Connection.QueryFirstOrDefaultAsync<long?>(
+                    query,
+                    new { metricKey, collectedAt, value, threshold },
+                    transaction: dbSession.Transaction);
+
+                return id;
+            }, session);
+        }
+
+        /// <inheritdoc />
         public async Task<DateTime?> GetLastCollectionTimeAsync(MetricKey key, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
@@ -195,8 +222,6 @@ namespace EasyReasy.Metrics.Repository
                 await dbSession.Connection.ExecuteAsync(
                     createIndex,
                     transaction: dbSession.Transaction);
-
-                return true;
             }, session);
         }
     }

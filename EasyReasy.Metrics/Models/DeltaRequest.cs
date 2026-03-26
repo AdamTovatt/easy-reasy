@@ -6,17 +6,17 @@ namespace EasyReasy.Metrics.Models
     public class DeltaRequest
     {
         /// <summary>
-        /// Gets or sets the metric key to query.
+        /// Gets the metric key to query.
         /// </summary>
         public required MetricKey MetricKey { get; init; }
 
         /// <summary>
-        /// Gets or sets the target date for the current (more recent) snapshot.
+        /// Gets the target date for the current (more recent) snapshot.
         /// </summary>
         public required DateTime CurrentDate { get; init; }
 
         /// <summary>
-        /// Gets or sets the target date for the previous (older) snapshot.
+        /// Gets the target date for the previous (older) snapshot.
         /// </summary>
         public required DateTime PreviousDate { get; init; }
     }

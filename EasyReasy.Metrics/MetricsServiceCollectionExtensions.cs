@@ -4,7 +4,7 @@ using EasyReasy.Metrics.Query;
 using EasyReasy.Metrics.Repository;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
+
 
 namespace EasyReasy.Metrics
 {
@@ -35,14 +35,7 @@ namespace EasyReasy.Metrics
 
             services
                 .AddOptions<EasyReasyMetricsOptions>()
-                .Configure(configureOptions ?? (_ => { }))
-                .Validate(static validatedOptions =>
-                    validatedOptions.CollectionInterval > TimeSpan.Zero
-                    && validatedOptions.MinimumTimeBetweenCollections > TimeSpan.Zero
-                    && validatedOptions.InitialDelay >= TimeSpan.Zero,
-                    "CollectionInterval and MinimumTimeBetweenCollections must be positive, " +
-                    "and InitialDelay must be non-negative.")
-                .ValidateOnStart();
+                .Configure(configureOptions ?? (_ => { }));
 
             services.AddScoped<IMetricSnapshotRepository, MetricSnapshotRepository>();
             services.AddScoped<IMetricCollectionService, MetricCollectionService>();

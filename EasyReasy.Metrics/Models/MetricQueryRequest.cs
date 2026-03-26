@@ -7,18 +7,18 @@ namespace EasyReasy.Metrics.Models
     public class MetricQueryRequest
     {
         /// <summary>
-        /// Gets or sets the list of snapshot requests (latest value for each key).
+        /// Gets the list of snapshot requests (latest value for each key).
         /// </summary>
-        public List<SnapshotRequest> SnapshotRequests { get; set; } = new();
+        public List<SnapshotRequest> SnapshotRequests { get; init; } = new();
 
         /// <summary>
-        /// Gets or sets the list of range requests (sampled data points within a time range).
+        /// Gets the list of range requests (sampled data points within a time range).
         /// </summary>
-        public List<RangeRequest> RangeRequests { get; set; } = new();
+        public List<RangeRequest> RangeRequests { get; init; } = new();
 
         /// <summary>
-        /// Gets or sets the list of delta requests (change between two points in time).
+        /// Gets the list of delta requests (change between two points in time).
         /// </summary>
-        public List<DeltaRequest> DeltaRequests { get; set; } = new();
+        public List<DeltaRequest> DeltaRequests { get; init; } = new();
     }
 }

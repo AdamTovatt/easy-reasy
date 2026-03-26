@@ -35,7 +35,7 @@ namespace EasyReasy.Metrics.Tests.Collection
                 .ReturnsAsync((DateTime?)null);
 
             _repositoryMock
-                .Setup(r => r.InsertAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), null))
+                .Setup(r => r.InsertIfNotRecentAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), It.IsAny<TimeSpan>(), null))
                 .ReturnsAsync(1L);
 
             List<IMetricCollector> collectors = new List<IMetricCollector> { collectorA, collectorB };
@@ -46,10 +46,10 @@ namespace EasyReasy.Metrics.Tests.Collection
 
             // Assert
             _repositoryMock.Verify(
-                r => r.InsertAsync(keyA, It.IsAny<DateTime>(), 42.5m, null),
+                r => r.InsertIfNotRecentAsync(keyA, It.IsAny<DateTime>(), 42.5m, It.IsAny<TimeSpan>(), null),
                 Times.Once);
             _repositoryMock.Verify(
-                r => r.InsertAsync(keyB, It.IsAny<DateTime>(), 100.0m, null),
+                r => r.InsertIfNotRecentAsync(keyB, It.IsAny<DateTime>(), 100.0m, It.IsAny<TimeSpan>(), null),
                 Times.Once);
         }
 
@@ -68,7 +68,7 @@ namespace EasyReasy.Metrics.Tests.Collection
                 .ReturnsAsync((DateTime?)null);
 
             _repositoryMock
-                .Setup(r => r.InsertAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), null))
+                .Setup(r => r.InsertIfNotRecentAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), It.IsAny<TimeSpan>(), null))
                 .ReturnsAsync(1L);
 
             List<IMetricCollector> collectors = new List<IMetricCollector> { failingCollector, goodCollector };
@@ -79,10 +79,10 @@ namespace EasyReasy.Metrics.Tests.Collection
 
             // Assert
             _repositoryMock.Verify(
-                r => r.InsertAsync(keyB, It.IsAny<DateTime>(), 99.0m, null),
+                r => r.InsertIfNotRecentAsync(keyB, It.IsAny<DateTime>(), 99.0m, It.IsAny<TimeSpan>(), null),
                 Times.Once);
             _repositoryMock.Verify(
-                r => r.InsertAsync(keyA, It.IsAny<DateTime>(), It.IsAny<decimal>(), null),
+                r => r.InsertIfNotRecentAsync(keyA, It.IsAny<DateTime>(), It.IsAny<decimal>(), It.IsAny<TimeSpan>(), null),
                 Times.Never);
         }
 
@@ -106,7 +106,7 @@ namespace EasyReasy.Metrics.Tests.Collection
 
             // Assert
             _repositoryMock.Verify(
-                r => r.InsertAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), null),
+                r => r.InsertIfNotRecentAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), It.IsAny<TimeSpan>(), null),
                 Times.Never);
         }
 
@@ -123,7 +123,7 @@ namespace EasyReasy.Metrics.Tests.Collection
                 .ReturnsAsync(oldTime);
 
             _repositoryMock
-                .Setup(r => r.InsertAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), null))
+                .Setup(r => r.InsertIfNotRecentAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), It.IsAny<TimeSpan>(), null))
                 .ReturnsAsync(1L);
 
             List<IMetricCollector> collectors = new List<IMetricCollector> { collector };
@@ -134,7 +134,7 @@ namespace EasyReasy.Metrics.Tests.Collection
 
             // Assert
             _repositoryMock.Verify(
-                r => r.InsertAsync(key, It.IsAny<DateTime>(), 42.5m, null),
+                r => r.InsertIfNotRecentAsync(key, It.IsAny<DateTime>(), 42.5m, It.IsAny<TimeSpan>(), null),
                 Times.Once);
         }
 
@@ -150,7 +150,7 @@ namespace EasyReasy.Metrics.Tests.Collection
                 .ReturnsAsync((DateTime?)null);
 
             _repositoryMock
-                .Setup(r => r.InsertAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), null))
+                .Setup(r => r.InsertIfNotRecentAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), It.IsAny<TimeSpan>(), null))
                 .ReturnsAsync(1L);
 
             List<IMetricCollector> collectors = new List<IMetricCollector> { collector };
@@ -161,7 +161,7 @@ namespace EasyReasy.Metrics.Tests.Collection
 
             // Assert
             _repositoryMock.Verify(
-                r => r.InsertAsync(key, It.IsAny<DateTime>(), 42.5m, null),
+                r => r.InsertIfNotRecentAsync(key, It.IsAny<DateTime>(), 42.5m, It.IsAny<TimeSpan>(), null),
                 Times.Once);
         }
 
@@ -177,7 +177,7 @@ namespace EasyReasy.Metrics.Tests.Collection
 
             // Assert
             _repositoryMock.Verify(
-                r => r.InsertAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), null),
+                r => r.InsertIfNotRecentAsync(It.IsAny<MetricKey>(), It.IsAny<DateTime>(), It.IsAny<decimal>(), It.IsAny<TimeSpan>(), null),
                 Times.Never);
         }
 
@@ -194,7 +194,7 @@ namespace EasyReasy.Metrics.Tests.Collection
             CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
             cancellationTokenSource.Cancel();
 
-            CancellingCollector collector = new CancellingCollector(key, cancellationTokenSource.Token);
+            CancellingCollector collector = new CancellingCollector(key);
 
             List<IMetricCollector> collectors = new List<IMetricCollector> { collector };
             MetricCollectionService service = new MetricCollectionService(collectors, _repositoryMock.Object, _logger, _options);
@@ -219,11 +219,11 @@ namespace EasyReasy.Metrics.Tests.Collection
                 .ReturnsAsync((DateTime?)null);
 
             _repositoryMock
-                .Setup(r => r.InsertAsync(keyA, It.IsAny<DateTime>(), It.IsAny<decimal>(), null))
+                .Setup(r => r.InsertIfNotRecentAsync(keyA, It.IsAny<DateTime>(), It.IsAny<decimal>(), It.IsAny<TimeSpan>(), null))
                 .ThrowsAsync(new InvalidOperationException("Database write failed"));
 
             _repositoryMock
-                .Setup(r => r.InsertAsync(keyB, It.IsAny<DateTime>(), It.IsAny<decimal>(), null))
+                .Setup(r => r.InsertIfNotRecentAsync(keyB, It.IsAny<DateTime>(), It.IsAny<decimal>(), It.IsAny<TimeSpan>(), null))
                 .ReturnsAsync(2L);
 
             List<IMetricCollector> collectors = new List<IMetricCollector> { collectorA, collectorB };
@@ -234,7 +234,7 @@ namespace EasyReasy.Metrics.Tests.Collection
 
             // Assert — second collector still runs despite first insert failing
             _repositoryMock.Verify(
-                r => r.InsertAsync(keyB, It.IsAny<DateTime>(), 99.0m, null),
+                r => r.InsertIfNotRecentAsync(keyB, It.IsAny<DateTime>(), 99.0m, It.IsAny<TimeSpan>(), null),
                 Times.Once);
         }
 
@@ -258,14 +258,11 @@ namespace EasyReasy.Metrics.Tests.Collection
 
         private class CancellingCollector : IMetricCollector
         {
-            private readonly CancellationToken _cancellationToken;
-
             public MetricKey MetricKey { get; }
 
-            public CancellingCollector(MetricKey metricKey, CancellationToken cancellationToken)
+            public CancellingCollector(MetricKey metricKey)
             {
                 MetricKey = metricKey;
-                _cancellationToken = cancellationToken;
             }
 
             public Task<decimal> CollectAsync(CancellationToken cancellationToken)

@@ -64,13 +64,23 @@ namespace EasyReasy.Metrics.Collection
                     decimal value = await collector.CollectAsync(cancellationToken);
                     DateTime collectedAt = DateTime.UtcNow;
 
-                    await _repository.InsertAsync(collector.MetricKey, collectedAt, value);
+                    long? id = await _repository.InsertIfNotRecentAsync(
+                        collector.MetricKey, collectedAt, value, _options.MinimumTimeBetweenCollections);
 
-                    _logger.LogInformation(
-                        "Collected metric '{MetricKey}' with value {Value} at {CollectedAt}",
-                        collector.MetricKey,
-                        value,
-                        collectedAt);
+                    if (id.HasValue)
+                    {
+                        _logger.LogInformation(
+                            "Collected metric '{MetricKey}' with value {Value} at {CollectedAt}",
+                            collector.MetricKey,
+                            value,
+                            collectedAt);
+                    }
+                    else
+                    {
+                        _logger.LogDebug(
+                            "Skipping duplicate insert for metric '{MetricKey}' — another process collected it recently",
+                            collector.MetricKey);
+                    }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

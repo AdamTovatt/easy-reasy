@@ -50,6 +50,19 @@ namespace EasyReasy.Metrics.Repository
         Task<IReadOnlyList<MetricDataPoint>> GetSampledRangeAsync(MetricKey key, DateTime start, DateTime end, int maxSamples, IDbSession? session = null);
 
         /// <summary>
+        /// Atomically inserts a new metric snapshot only if no snapshot for the same metric key
+        /// was collected within the specified minimum interval. Prevents duplicate collections
+        /// when multiple processes race to collect the same metric.
+        /// </summary>
+        /// <param name="key">The metric key identifying which metric this snapshot belongs to.</param>
+        /// <param name="collectedAt">The UTC timestamp when the metric value was collected.</param>
+        /// <param name="value">The numeric value of the metric.</param>
+        /// <param name="minimumInterval">The minimum time that must have elapsed since the last collection.</param>
+        /// <param name="session">Optional database session for transactional operations.</param>
+        /// <returns>The database-generated identifier of the inserted snapshot, or <c>null</c> if the insert was skipped due to a recent collection.</returns>
+        Task<long?> InsertIfNotRecentAsync(MetricKey key, DateTime collectedAt, decimal value, TimeSpan minimumInterval, IDbSession? session = null);
+
+        /// <summary>
         /// Gets the most recent collection timestamp for the specified metric key.
         /// Used for deduplication to avoid collecting the same metric too frequently.
         /// </summary>

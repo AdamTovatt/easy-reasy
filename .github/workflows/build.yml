@@ -22,10 +22,10 @@ jobs:
       run: chmod +x setup_test_db.sh && ./setup_test_db.sh
     - name: Wait for Postgres
       run: |
-        until docker exec postgres-test pg_isready -U postgres; do
+        timeout 60 bash -c 'until docker exec postgres-test pg_isready -U postgres; do
           echo "Waiting for postgres..."
           sleep 2
-        done
+        done'
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
