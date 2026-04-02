@@ -33,13 +33,14 @@ namespace EasyReasy.Auth.Client
         private readonly string? _username;
         private readonly string? _password;
         private readonly AuthType _authType;
-        private bool _disposed;
-        private bool _isAuthorized;
-        private DateTime? _tokenExpiresAt;
         private readonly string _authEndpoint;
-        private string? _refreshToken;
         private readonly string _refreshEndpoint;
+        private readonly Action<AuthResponse>? _onAuthResponseChanged;
         private readonly SemaphoreSlim _authLock = new SemaphoreSlim(1, 1);
+        private string? _refreshToken;
+        private DateTime? _tokenExpiresAt;
+        private bool _isAuthorized;
+        private bool _disposed;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AuthorizedHttpClient"/> class with API key authentication.
@@ -48,7 +49,13 @@ namespace EasyReasy.Auth.Client
         /// <param name="apiKey">The API key for authentication.</param>
         /// <param name="authEndpoint">The authentication endpoint path. If not specified, defaults to "/api/auth/apikey".</param>
         /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
-        public AuthorizedHttpClient(HttpClient httpClient, string apiKey, string? authEndpoint = null, string? refreshEndpoint = null)
+        /// <param name="onAuthResponseChanged">An optional callback invoked whenever the auth state changes (initial auth, token refresh, or re-auth).</param>
+        public AuthorizedHttpClient(
+            HttpClient httpClient,
+            string apiKey,
+            string? authEndpoint = null,
+            string? refreshEndpoint = null,
+            Action<AuthResponse>? onAuthResponseChanged = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
 
@@ -59,6 +66,7 @@ namespace EasyReasy.Auth.Client
             _authEndpoint = authEndpoint ?? "api/auth/apikey";
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _authType = AuthType.ApiKey;
+            _onAuthResponseChanged = onAuthResponseChanged;
         }
 
         /// <summary>
@@ -69,7 +77,14 @@ namespace EasyReasy.Auth.Client
         /// <param name="password">The password for authentication.</param>
         /// <param name="authEndpoint">The authentication endpoint path. If not specified, defaults to "/api/auth/login".</param>
         /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
-        public AuthorizedHttpClient(HttpClient httpClient, string username, string password, string? authEndpoint = null, string? refreshEndpoint = null)
+        /// <param name="onAuthResponseChanged">An optional callback invoked whenever the auth state changes (initial auth, token refresh, or re-auth).</param>
+        public AuthorizedHttpClient(
+            HttpClient httpClient,
+            string username,
+            string password,
+            string? authEndpoint = null,
+            string? refreshEndpoint = null,
+            Action<AuthResponse>? onAuthResponseChanged = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _username = username ?? throw new ArgumentNullException(nameof(username));
@@ -77,6 +92,7 @@ namespace EasyReasy.Auth.Client
             _authEndpoint = authEndpoint ?? "api/auth/login";
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _authType = AuthType.UsernamePassword;
+            _onAuthResponseChanged = onAuthResponseChanged;
         }
 
         /// <summary>
@@ -86,7 +102,12 @@ namespace EasyReasy.Auth.Client
         /// <param name="httpClient">The HTTP client to use for requests.</param>
         /// <param name="authResponse">The authentication response containing the token, expiration, and optional refresh token.</param>
         /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
-        public AuthorizedHttpClient(HttpClient httpClient, AuthResponse authResponse, string? refreshEndpoint = null)
+        /// <param name="onAuthResponseChanged">An optional callback invoked whenever the auth state changes (initial auth, token refresh, or re-auth).</param>
+        public AuthorizedHttpClient(
+            HttpClient httpClient,
+            AuthResponse authResponse,
+            string? refreshEndpoint = null,
+            Action<AuthResponse>? onAuthResponseChanged = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
 
@@ -97,6 +118,7 @@ namespace EasyReasy.Auth.Client
             _authEndpoint = string.Empty;
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _authType = AuthType.PreAuthorized;
+            _onAuthResponseChanged = onAuthResponseChanged;
 
             ApplyAuthResponse(authResponse);
         }
@@ -313,6 +335,15 @@ namespace EasyReasy.Auth.Client
             _tokenExpiresAt = DateTime.Parse(authResponse.ExpiresAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 
             _refreshToken = authResponse.RefreshToken;
+
+            try
+            {
+                _onAuthResponseChanged?.Invoke(authResponse);
+            }
+            catch
+            {
+                // Swallow exceptions from the callback to prevent breaking the auth flow.
+            }
         }
 
         /// <summary>

@@ -359,6 +359,131 @@ namespace EasyReasy.Auth.Client.Tests
 
         #endregion
 
+        #region OnAuthResponseChanged Callback
+
+        [TestMethod]
+        public void Constructor_PreAuthorized_WithCallback_InvokesCallbackImmediately()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com") };
+            AuthResponse authResponse = CreateValidAuthResponse(token: "initial-token");
+            AuthResponse? receivedResponse = null;
+
+            // Act
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(
+                httpClient, authResponse, onAuthResponseChanged: response => receivedResponse = response);
+
+            // Assert
+            Assert.IsNotNull(receivedResponse);
+            Assert.AreEqual("initial-token", receivedResponse.Token);
+        }
+
+        [TestMethod]
+        public async Task GetAsync_ApiKey_WithCallback_InvokesCallbackOnInitialAuth()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "auth-token"));
+            handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            AuthResponse? receivedResponse = null;
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(
+                httpClient, apiKey: "my-api-key", onAuthResponseChanged: response => receivedResponse = response);
+
+            // Act
+            await client.GetAsync("api/test");
+
+            // Assert
+            Assert.IsNotNull(receivedResponse);
+            Assert.AreEqual("auth-token", receivedResponse.Token);
+        }
+
+        [TestMethod]
+        public async Task GetAsync_UsernamePassword_WithCallback_InvokesCallbackOnInitialAuth()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "login-token"));
+            handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            AuthResponse? receivedResponse = null;
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(
+                httpClient, username: "user", password: "pass",
+                onAuthResponseChanged: response => receivedResponse = response);
+
+            // Act
+            await client.GetAsync("api/test");
+
+            // Assert
+            Assert.IsNotNull(receivedResponse);
+            Assert.AreEqual("login-token", receivedResponse.Token);
+        }
+
+        [TestMethod]
+        public async Task GetAsync_PreAuthorized_WithCallback_InvokesCallbackOnTokenRefresh()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "refreshed-token", refreshToken: "new-refresh"));
+            handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            AuthResponse authResponse = CreateValidAuthResponse(token: "expired-token", expiresInMinutes: -1, refreshToken: "old-refresh");
+            List<AuthResponse> receivedResponses = new List<AuthResponse>();
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(
+                httpClient, authResponse, onAuthResponseChanged: response => receivedResponses.Add(response));
+
+            // Act
+            await client.GetAsync("api/test");
+
+            // Assert — callback should fire twice: once from constructor, once from refresh
+            Assert.AreEqual(2, receivedResponses.Count);
+            Assert.AreEqual("expired-token", receivedResponses[0].Token);
+            Assert.AreEqual("refreshed-token", receivedResponses[1].Token);
+        }
+
+        [TestMethod]
+        public void Constructor_PreAuthorized_WithoutCallback_DoesNotThrow()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com") };
+            AuthResponse authResponse = CreateValidAuthResponse();
+
+            // Act & Assert — no callback, no exception
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
+        }
+
+        [TestMethod]
+        public async Task GetAsync_ApiKey_WithThrowingCallback_DoesNotBreakAuthFlow()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "auth-token"));
+            handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(
+                httpClient,
+                apiKey: "my-api-key",
+                onAuthResponseChanged: _ => throw new IOException("disk full"));
+
+            // Act
+            HttpResponseMessage response = await client.GetAsync("api/test");
+
+            // Assert — request should succeed despite callback throwing
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        #endregion
+
         #region EnsureAuthorizedAsync
 
         [TestMethod]

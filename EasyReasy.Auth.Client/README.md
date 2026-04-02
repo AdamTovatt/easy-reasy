@@ -163,6 +163,44 @@ await client.ForceAuthorizeAsync();
 await client.ForceReauthorizeAsync();
 ```
 
+### Persisting Auth State with Callbacks
+
+All constructors accept an optional `onAuthResponseChanged` callback that fires whenever the auth state changes — on initial authentication, token refresh, or re-auth. This is useful for CLI tools and long-running processes that want to persist the token to disk:
+
+```csharp
+using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://api.example.com/"))
+{
+    // First launch: authenticate with API key and persist the token
+    AuthorizedHttpClient client = new AuthorizedHttpClient(
+        httpClient,
+        "your-api-key",
+        onAuthResponseChanged: authResponse =>
+        {
+            File.WriteAllText("auth-state.json", authResponse.ToJson());
+        });
+
+    await client.GetAsync("api/data");
+}
+
+// Subsequent launches: reuse the persisted token
+string savedJson = File.ReadAllText("auth-state.json");
+AuthResponse savedAuth = AuthResponse.FromJson(savedJson);
+
+using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://api.example.com/"))
+{
+    AuthorizedHttpClient client = new AuthorizedHttpClient(
+        httpClient,
+        savedAuth,
+        onAuthResponseChanged: authResponse =>
+        {
+            // Keeps the persisted state up to date on transparent token refreshes
+            File.WriteAllText("auth-state.json", authResponse.ToJson());
+        });
+
+    await client.GetAsync("api/data");
+}
+```
+
 ### Token Expiration
 The client automatically handles token expiration:
 1. Detects when token expires within 5 minutes
