@@ -107,6 +107,116 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public void ApiKeyAuthRequest_ToString_WithClientId_ShouldShowClientIdAndRedactApiKey()
+        {
+            // Arrange
+            ApiKeyAuthRequest request = new ApiKeyAuthRequest("super-secret-api-key", "my-client");
+
+            // Act
+            string result = request.ToString();
+
+            // Assert
+            Assert.IsTrue(result.Contains("my-client"));
+            Assert.IsTrue(result.Contains("[REDACTED]"));
+            Assert.IsFalse(result.Contains("super-secret-api-key"));
+        }
+
+        [TestMethod]
+        public void ApiKeyAuthRequest_ToString_WithoutClientId_ShouldOmitClientId()
+        {
+            // Arrange
+            ApiKeyAuthRequest request = new ApiKeyAuthRequest("super-secret-api-key");
+
+            // Act
+            string result = request.ToString();
+
+            // Assert
+            Assert.IsFalse(result.Contains("clientId"));
+        }
+
+        [TestMethod]
+        public void ApiKeyAuthRequest_ToString_ShouldEscapeClientId()
+        {
+            // Arrange — clientId containing JSON-breaking characters
+            ApiKeyAuthRequest request = new ApiKeyAuthRequest("key", "client\"with\\quotes");
+
+            // Act
+            string result = request.ToString();
+
+            // Assert — the result should be valid JSON
+            Assert.IsTrue(result.Contains("[REDACTED]"));
+
+            using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(result);
+            string? parsedClientId = document.RootElement.GetProperty("clientId").GetString();
+            Assert.AreEqual("client\"with\\quotes", parsedClientId);
+        }
+
+        [TestMethod]
+        public void ApiKeyAuthRequest_ToJson_WithClientId_ShouldContainClientId()
+        {
+            // Arrange
+            ApiKeyAuthRequest request = new ApiKeyAuthRequest("super-secret-api-key", "my-client");
+
+            // Act
+            string json = request.ToJson();
+
+            // Assert
+            Assert.IsTrue(json.Contains("my-client"));
+            Assert.IsTrue(json.Contains("clientId"));
+        }
+
+        [TestMethod]
+        public void ApiKeyAuthRequest_ToJson_WithoutClientId_ShouldOmitClientId()
+        {
+            // Arrange
+            ApiKeyAuthRequest request = new ApiKeyAuthRequest("super-secret-api-key");
+
+            // Act
+            string json = request.ToJson();
+
+            // Assert
+            Assert.IsFalse(json.Contains("clientId"));
+        }
+
+        [TestMethod]
+        public void ApiKeyAuthRequest_FromJson_ShouldDeserializeClientId()
+        {
+            // Arrange
+            string json = "{\"apiKey\":\"test-key\",\"clientId\":\"my-client\"}";
+
+            // Act
+            ApiKeyAuthRequest request = ApiKeyAuthRequest.FromJson(json);
+
+            // Assert
+            Assert.AreEqual("test-key", request.ApiKey);
+            Assert.AreEqual("my-client", request.ClientId);
+        }
+
+        [TestMethod]
+        public void ApiKeyAuthRequest_FromJson_ShouldDefaultClientIdToNull()
+        {
+            // Arrange
+            string json = "{\"apiKey\":\"test-key\"}";
+
+            // Act
+            ApiKeyAuthRequest request = ApiKeyAuthRequest.FromJson(json);
+
+            // Assert
+            Assert.AreEqual("test-key", request.ApiKey);
+            Assert.IsNull(request.ClientId);
+        }
+
+        [TestMethod]
+        public void ApiKeyAuthRequest_Constructor_ShouldDefaultClientIdToNull()
+        {
+            // Arrange & Act
+            ApiKeyAuthRequest request = new ApiKeyAuthRequest("test-key");
+
+            // Assert
+            Assert.IsNull(request.ClientId);
+        }
+
+        [TestMethod]
         public void AuthResponse_FromJson_ShouldNotLeakInputInException()
         {
             // Arrange

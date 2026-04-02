@@ -316,6 +316,47 @@ namespace EasyReasy.Auth.Client.Tests
             Assert.IsTrue(handler.SentRequests[0].RequestUri?.ToString().Contains("api/auth/apikey"));
         }
 
+        [TestMethod]
+        public async Task GetAsync_ApiKey_WithClientId_SendsClientIdInAuthPayload()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "apikey-token"));
+            handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "my-api-key") { ClientId = "my-client" };
+
+            // Act
+            await client.GetAsync("api/test");
+
+            // Assert — the auth request body should contain the clientId
+            string? authBody = await handler.SentRequests[0].Content!.ReadAsStringAsync();
+            Assert.IsTrue(authBody.Contains("my-client"));
+            Assert.IsTrue(authBody.Contains("clientId"));
+        }
+
+        [TestMethod]
+        public async Task GetAsync_ApiKey_WithoutClientId_DoesNotSendClientIdInAuthPayload()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "apikey-token"));
+            handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "my-api-key");
+
+            // Act
+            await client.GetAsync("api/test");
+
+            // Assert — the auth request body should not contain clientId
+            string? authBody = await handler.SentRequests[0].Content!.ReadAsStringAsync();
+            Assert.IsFalse(authBody.Contains("clientId"));
+        }
+
         #endregion
 
         #region EnsureAuthorizedAsync

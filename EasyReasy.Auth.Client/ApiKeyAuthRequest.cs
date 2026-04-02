@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace EasyReasy.Auth.Client
 {
@@ -13,12 +14,20 @@ namespace EasyReasy.Auth.Client
         public string ApiKey { get; }
 
         /// <summary>
+        /// Gets the optional client identifier associated with this API key.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ClientId { get; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="ApiKeyAuthRequest"/> class.
         /// </summary>
         /// <param name="apiKey">The API key for authentication.</param>
-        public ApiKeyAuthRequest(string apiKey)
+        /// <param name="clientId">The optional client identifier associated with this API key.</param>
+        public ApiKeyAuthRequest(string apiKey, string? clientId = null)
         {
             ApiKey = apiKey;
+            ClientId = clientId;
         }
 
         /// <summary>
@@ -37,7 +46,8 @@ namespace EasyReasy.Auth.Client
         /// <returns>A string representation with the API key replaced by "[REDACTED]".</returns>
         public override string ToString()
         {
-            return $"{{\"apiKey\":\"[REDACTED]\"}}";
+            string clientIdPart = ClientId != null ? $",\"clientId\":{JsonSerializer.Serialize(ClientId)}" : "";
+            return $"{{\"apiKey\":\"[REDACTED]\"{clientIdPart}}}";
         }
 
         /// <summary>

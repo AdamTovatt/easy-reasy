@@ -112,6 +112,12 @@ namespace EasyReasy.Auth.Client
         public AuthType AuthenticationType => _authType;
 
         /// <summary>
+        /// Gets or sets the optional client identifier associated with the API key.
+        /// Only used when <see cref="AuthenticationType"/> is <see cref="AuthType.ApiKey"/>.
+        /// </summary>
+        public string? ClientId { get; set; }
+
+        /// <summary>
         /// Creates a new HttpClient with the specified base address.
         /// </summary>
         /// <param name="baseAddress">The base address for the HTTP client.</param>
@@ -227,7 +233,7 @@ namespace EasyReasy.Auth.Client
             switch (_authType)
             {
                 case AuthType.ApiKey:
-                    ApiKeyAuthRequest apiKeyRequest = new ApiKeyAuthRequest(_apiKey!);
+                    ApiKeyAuthRequest apiKeyRequest = new ApiKeyAuthRequest(_apiKey!, ClientId);
                     json = apiKeyRequest.ToJson();
                     endpoint = _authEndpoint;
                     break;
