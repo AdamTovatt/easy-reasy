@@ -504,5 +504,190 @@ namespace EasyReasy.Auth.Client.Tests
         }
 
         #endregion
+
+        #region LogoutAsync
+
+        [TestMethod]
+        public async Task LogoutAsync_WithRefreshToken_PostsToLogoutEndpoint()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.NoContent));
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            AuthResponse authResponse = CreateValidAuthResponse(refreshToken: "the-refresh-token");
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
+
+            // Act
+            await client.LogoutAsync();
+
+            // Assert
+            Assert.AreEqual(1, handler.SentRequests.Count);
+            Assert.AreEqual("https://example.com/api/auth/logout", handler.SentRequests[0].RequestUri?.ToString());
+            string body = await handler.SentRequests[0].Content!.ReadAsStringAsync();
+            Assert.IsTrue(body.Contains("the-refresh-token"));
+            Assert.IsTrue(body.Contains("refreshToken"));
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_OnSuccess_ClearsLocalAuthState()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.NoContent));
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            AuthResponse authResponse = CreateValidAuthResponse(token: "live-token", refreshToken: "live-refresh");
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
+
+            // Sanity check — header is set before logout
+            Assert.AreEqual("live-token", httpClient.DefaultRequestHeaders.Authorization?.Parameter);
+
+            // Act
+            await client.LogoutAsync();
+
+            // Assert
+            Assert.IsNull(httpClient.DefaultRequestHeaders.Authorization);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithNoRefreshToken_DoesNotMakeHttpCall()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            AuthResponse authResponse = CreateValidAuthResponse(refreshToken: null);
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
+
+            // Act
+            await client.LogoutAsync();
+
+            // Assert — no HTTP calls, but local state still cleared
+            Assert.AreEqual(0, handler.SentRequests.Count);
+            Assert.IsNull(httpClient.DefaultRequestHeaders.Authorization);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_ServerReturnsError_DoesNotThrowAndClearsState()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            AuthResponse authResponse = CreateValidAuthResponse(refreshToken: "some-refresh");
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
+
+            // Act
+            await client.LogoutAsync();
+
+            // Assert
+            Assert.IsNull(httpClient.DefaultRequestHeaders.Authorization);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_AfterLogout_ApiKeyClientTriggersReauth()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+
+            // 1. Initial auth
+            handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "first-token", refreshToken: "first-refresh"));
+            // 2. Some API call
+            handler.EnqueueJsonResponse("{\"data\":\"hello\"}");
+            // 3. Logout (204)
+            handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.NoContent));
+            // 4. Re-auth after logout
+            handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "second-token", refreshToken: "second-refresh"));
+            // 5. Next API call
+            handler.EnqueueJsonResponse("{\"data\":\"world\"}");
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "my-api-key");
+
+            // Act
+            await client.GetAsync("api/test");
+            await client.LogoutAsync();
+            await client.GetAsync("api/test");
+
+            // Assert — expect 5 requests total: auth, get, logout, auth, get
+            Assert.AreEqual(5, handler.SentRequests.Count);
+            Assert.IsTrue(handler.SentRequests[2].RequestUri?.ToString().Contains("api/auth/logout"));
+            Assert.IsTrue(handler.SentRequests[3].RequestUri?.ToString().Contains("api/auth/apikey"));
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_CancelledMidFlight_ClearsLocalStateAndPropagatesCancellation()
+        {
+            // Arrange — handler signals when it enters SendAsync, and blocks there until cancelled.
+            TaskCompletionSource handlerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            BlockingHttpHandler handler = new BlockingHttpHandler(handlerEntered);
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            AuthResponse authResponse = CreateValidAuthResponse(token: "live-token", refreshToken: "live-refresh");
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
+
+            CancellationTokenSource cts = new CancellationTokenSource();
+
+            // Act — start logout, wait until the handler has been entered (lock acquired, HTTP in flight),
+            // then cancel. This guarantees cancellation fires after the logout sequence has begun.
+            Task logoutTask = client.LogoutAsync(cts.Token);
+            await handlerEntered.Task;
+            cts.Cancel();
+
+            // Assert — cancellation should propagate. HttpClient.PostAsync throws
+            // TaskCanceledException specifically (a subtype of OperationCanceledException),
+            // and MSTest's ThrowsException does exact-type matching.
+            await Assert.ThrowsExceptionAsync<TaskCanceledException>(() => logoutTask);
+
+            // And local state must be cleared regardless
+            Assert.IsNull(httpClient.DefaultRequestHeaders.Authorization);
+        }
+
+        private sealed class BlockingHttpHandler : HttpMessageHandler
+        {
+            private readonly TaskCompletionSource _entered;
+
+            public BlockingHttpHandler(TaskCompletionSource entered)
+            {
+                _entered = entered;
+            }
+
+            protected override async Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                _entered.TrySetResult();
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+                throw new InvalidOperationException("Unreachable");
+            }
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithCustomLogoutEndpoint_UsesCustomPath()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.NoContent));
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            AuthResponse authResponse = CreateValidAuthResponse(refreshToken: "some-refresh");
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(
+                httpClient, authResponse, logoutEndpoint: "custom/logout");
+
+            // Act
+            await client.LogoutAsync();
+
+            // Assert
+            Assert.AreEqual("https://example.com/custom/logout", handler.SentRequests[0].RequestUri?.ToString());
+        }
+
+        #endregion
     }
 }

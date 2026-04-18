@@ -40,7 +40,8 @@ namespace EasyReasy.Auth
             string subject,
             string authType,
             string? serializedClaims,
-            string? serializedRoles)
+            string? serializedRoles,
+            CancellationToken cancellationToken = default)
         {
             string rawToken = GenerateToken();
             string tokenHash = HashToken(rawToken);
@@ -59,17 +60,17 @@ namespace EasyReasy.Auth
                 SerializedRoles = serializedRoles
             };
 
-            await _store.StoreAsync(storedToken);
+            await _store.StoreAsync(storedToken, cancellationToken);
 
             return rawToken;
         }
 
         /// <inheritdoc />
-        public async Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService)
+        public async Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, CancellationToken cancellationToken = default)
         {
             DateTime now = DateTime.UtcNow;
             string tokenHash = HashToken(refreshToken);
-            StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(tokenHash);
+            StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(tokenHash, cancellationToken);
 
             // Step 1: Token not found
             if (storedToken == null)
@@ -86,7 +87,7 @@ namespace EasyReasy.Auth
             // Step 3: Token already consumed — theft detected
             if (storedToken.ConsumedAt != null)
             {
-                await _store.InvalidateFamilyAsync(storedToken.FamilyId);
+                await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
                 return RefreshResult.Failed(RefreshFailureReason.TheftDetected);
             }
 
@@ -97,10 +98,10 @@ namespace EasyReasy.Auth
             }
 
             // Step 5: Atomically mark old token as consumed — if another request already consumed it, treat as theft
-            bool consumed = await _store.MarkAsConsumedAsync(tokenHash, now);
+            bool consumed = await _store.MarkAsConsumedAsync(tokenHash, now, cancellationToken);
             if (!consumed)
             {
-                await _store.InvalidateFamilyAsync(storedToken.FamilyId);
+                await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
                 return RefreshResult.Failed(RefreshFailureReason.TheftDetected);
             }
 
@@ -132,7 +133,7 @@ namespace EasyReasy.Auth
                 SerializedRoles = storedToken.SerializedRoles
             };
 
-            await _store.StoreAsync(newStoredToken);
+            await _store.StoreAsync(newStoredToken, cancellationToken);
 
             // Step 8: Return success with new token pair
             AuthResponse authResponse = new AuthResponse(
@@ -141,6 +142,34 @@ namespace EasyReasy.Auth
                 newRawToken);
 
             return RefreshResult.Succeeded(authResponse, newRawToken);
+        }
+
+        /// <inheritdoc />
+        public async Task LogoutAsync(string refreshToken, CancellationToken cancellationToken = default)
+        {
+            // A null or empty token can't map to any family — treat as a no-op so that
+            // callers (including the unauthenticated HTTP endpoint) still see idempotent
+            // 204 behaviour instead of a 500 from a hashing exception.
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                return;
+            }
+
+            string tokenHash = HashToken(refreshToken);
+            StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(tokenHash, cancellationToken);
+
+            if (storedToken == null)
+            {
+                return;
+            }
+
+            await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task InvalidateAllSessionsAsync(string subject, CancellationToken cancellationToken = default)
+        {
+            return _store.InvalidateAllFamiliesForUserAsync(subject, cancellationToken);
         }
 
         /// <summary>

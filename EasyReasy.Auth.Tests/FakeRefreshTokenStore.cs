@@ -7,19 +7,19 @@ namespace EasyReasy.Auth.Tests
     {
         private readonly Dictionary<string, StoredRefreshToken> _tokens = new Dictionary<string, StoredRefreshToken>();
 
-        public Task StoreAsync(StoredRefreshToken refreshToken)
+        public Task StoreAsync(StoredRefreshToken refreshToken, CancellationToken cancellationToken = default)
         {
             _tokens[refreshToken.TokenHash] = refreshToken;
             return Task.CompletedTask;
         }
 
-        public Task<StoredRefreshToken?> GetByTokenHashAsync(string tokenHash)
+        public Task<StoredRefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default)
         {
             _tokens.TryGetValue(tokenHash, out StoredRefreshToken? token);
             return Task.FromResult(token);
         }
 
-        public Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt)
+        public Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt, CancellationToken cancellationToken = default)
         {
             if (_tokens.TryGetValue(tokenHash, out StoredRefreshToken? token))
             {
@@ -34,11 +34,23 @@ namespace EasyReasy.Auth.Tests
             return Task.FromResult(false);
         }
 
-        public Task InvalidateFamilyAsync(string familyId)
+        public Task InvalidateFamilyAsync(string familyId, CancellationToken cancellationToken = default)
         {
             foreach (StoredRefreshToken token in _tokens.Values)
             {
                 if (token.FamilyId == familyId)
+                {
+                    token.IsInvalidated = true;
+                }
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken = default)
+        {
+            foreach (StoredRefreshToken token in _tokens.Values)
+            {
+                if (token.Subject == subject && !token.IsInvalidated)
                 {
                     token.IsInvalidated = true;
                 }

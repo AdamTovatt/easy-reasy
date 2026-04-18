@@ -332,10 +332,11 @@ EasyReasy.Auth supports refresh token rotation with automatic theft detection vi
 ```csharp
 public class MyRefreshTokenStore : IRefreshTokenStore
 {
-    public Task StoreAsync(StoredRefreshToken refreshToken) { /* INSERT into DB */ }
-    public Task<StoredRefreshToken?> GetByTokenHashAsync(string tokenHash) { /* SELECT by hash */ }
-    public Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt) { /* see note below */ }
-    public Task InvalidateFamilyAsync(string familyId) { /* UPDATE SET invalidated WHERE family_id = ... */ }
+    public Task StoreAsync(StoredRefreshToken refreshToken, CancellationToken cancellationToken = default) { /* INSERT into DB */ }
+    public Task<StoredRefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default) { /* SELECT by hash */ }
+    public Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt, CancellationToken cancellationToken = default) { /* see note below */ }
+    public Task InvalidateFamilyAsync(string familyId, CancellationToken cancellationToken = default) { /* UPDATE SET invalidated WHERE family_id = ... */ }
+    public Task InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken = default) { /* UPDATE SET invalidated WHERE subject = ... AND invalidated = false */ }
 }
 ```
 
@@ -350,6 +351,8 @@ app.AddAuthEndpoints(allowRefresh: true);
 // Or standalone: app.AddRefreshEndpoint();
 ```
 This creates `POST /api/auth/refresh` which accepts `{ "refreshToken": "..." }` and returns a new access + refresh token pair.
+
+The logout endpoint (`POST /api/auth/logout`) is enabled by default when you call `AddAuthEndpoints` — see the Logout section below.
 
 3. **Issue refresh tokens in your validation service** by injecting `IRefreshTokenService`:
 ```csharp
@@ -391,7 +394,7 @@ public class MyAuthService : IAuthRequestValidationService
 
 In SQL, use a conditional update and check affected rows:
 ```csharp
-public async Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt)
+public async Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt, CancellationToken cancellationToken = default)
 {
     // Only updates if consumed_at is still NULL — returns true if 1 row was affected
     int affected = await db.ExecuteAsync(
@@ -402,6 +405,46 @@ public async Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedA
 ```
 
 For other stores (Redis, MongoDB, etc.), use the equivalent atomic compare-and-set operation. If your store cannot guarantee atomicity, concurrent refresh requests could both succeed, issuing duplicate token pairs.
+
+### 9. Logout and Bulk Session Revocation
+
+**Logout endpoint (`POST /api/auth/logout`)** — revokes the refresh token family for a supplied token so that even a captured refresh token can no longer mint new access tokens.
+
+- Enabled by default when you call `AddAuthEndpoints`. Disable with `allowLogout: false`.
+- Accepts `{ "refreshToken": "..." }` (same shape as `/refresh`).
+- Anonymous — no access token required. This makes logout-on-expired-access-token still work.
+- Always returns `204 No Content`, even for unknown, null, or already-invalidated tokens — the response body does not reveal whether the token was known to the server. A theoretical timing side channel exists (a hit performs one extra write) but with 256-bit random tokens it is not a practical attack surface.
+- Stateless JWT access tokens remain valid until their `exp`. If you need immediate access-token invalidation, shorten the access token lifetime (e.g. 15 minutes) — that is the accepted industry trade-off and keeps the library design clean. Adding a JWT revocation list is explicitly out of scope.
+- **Anonymous logout trade-off**: because the endpoint requires only a refresh token, anyone who obtains any refresh token from a given family (including an expired or already-consumed one, e.g. from logs) can force-log-out that session. This is a deliberate choice — requiring an access token would block logout when the access token has expired, which is a common case. Callers who need stronger assurance should keep refresh tokens out of logs and treat them as secrets at least as sensitive as access tokens.
+
+```csharp
+// The logout endpoint is on by default; allowRefresh must be opted in explicitly.
+app.AddAuthEndpoints(allowRefresh: true);
+// Or standalone: app.AddLogoutEndpoint();
+```
+
+**Bulk session revocation (`IRefreshTokenService.InvalidateAllSessionsAsync`)** — invalidates every refresh token family for a subject at once. Intended for flows where all existing sessions must be kicked:
+
+- Password change
+- Role demotion
+- Admin-forced logout
+
+```csharp
+public class AccountService
+{
+    private readonly IRefreshTokenService _refreshTokenService;
+
+    public async Task ChangePasswordAsync(string userId, string newPassword)
+    {
+        // ... hash and persist new password ...
+
+        // Kick every existing session for this user.
+        await _refreshTokenService.InvalidateAllSessionsAsync(userId);
+    }
+}
+```
+
+The library does not expose an HTTP endpoint for admins to revoke other users' sessions — build your own around `InvalidateAllSessionsAsync` if you need one.
 
 ## Advanced Configuration
 
@@ -527,6 +570,22 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 3.x
+
+Version 4.0.0 introduces breaking changes:
+
+### Refresh Token Store
+- **`IRefreshTokenStore` has a new required method**: `Task InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken)`. Existing implementations must add it — typically an `UPDATE refresh_tokens SET invalidated = true WHERE subject = @subject AND invalidated = false` (or the equivalent in your store).
+- **All `IRefreshTokenStore` methods now take `CancellationToken cancellationToken = default`**: `StoreAsync`, `GetByTokenHashAsync`, `MarkAsConsumedAsync`, `InvalidateFamilyAsync`. Existing implementations must add the parameter to each signature. Callers relying on the default value require no changes.
+
+### Refresh Token Service
+- **The existing `IRefreshTokenService` methods now take `CancellationToken cancellationToken = default`**: `CreateRefreshTokenAsync`, `RefreshAsync`. Because the token is appended with a default value, existing callers require no changes — but custom `IRefreshTokenService` implementations must add the parameter to each override.
+- **Two new methods on `IRefreshTokenService`, both also with `CancellationToken cancellationToken = default`**: `LogoutAsync(string refreshToken, …)` and `InvalidateAllSessionsAsync(string subject, …)`. Available on the library-provided `RefreshTokenService` implementation — no consumer action needed unless you implement the service yourself.
+
+### Auth Endpoints
+- **`AddAuthEndpoints` signature extended**: new `bool allowLogout = true` parameter controls the `POST /api/auth/logout` endpoint. Existing callers are unaffected because the default enables it; disable with `allowLogout: false` if undesired.
+- **Refresh and logout endpoints now honour `HttpContext.RequestAborted`**: a client disconnect will cancel the in-flight token operation instead of running it to completion. Custom store implementations should respect the supplied `CancellationToken` if they want the same behaviour.
 
 ## Migration from 2.x
 

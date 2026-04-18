@@ -271,5 +271,161 @@ namespace EasyReasy.Auth.Tests
             string? serialized = RefreshTokenService.SerializeRoles(new List<string>());
             Assert.IsNull(serialized);
         }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithValidToken_ShouldInvalidateFamily()
+        {
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string hash = RefreshTokenService.HashToken(rawToken);
+            string familyId = _store.Tokens[hash].FamilyId;
+
+            await _service.LogoutAsync(rawToken);
+
+            Assert.IsTrue(_store.Tokens[hash].IsInvalidated);
+            Assert.AreEqual(familyId, _store.Tokens[hash].FamilyId);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithNullToken_ShouldCompleteSilently()
+        {
+            await _service.LogoutAsync(null!);
+
+            Assert.AreEqual(0, _store.Tokens.Count);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithEmptyToken_ShouldCompleteSilently()
+        {
+            await _service.LogoutAsync(string.Empty);
+
+            Assert.AreEqual(0, _store.Tokens.Count);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithNonexistentToken_ShouldCompleteSilently()
+        {
+            await _service.LogoutAsync("nonexistent-token");
+
+            Assert.AreEqual(0, _store.Tokens.Count);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_CalledTwice_ShouldCompleteSilently()
+        {
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            await _service.LogoutAsync(rawToken);
+            await _service.LogoutAsync(rawToken);
+
+            string hash = RefreshTokenService.HashToken(rawToken);
+            Assert.IsTrue(_store.Tokens[hash].IsInvalidated);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_AfterRotations_ShouldInvalidateEntireFamily()
+        {
+            string currentToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string originalHash = RefreshTokenService.HashToken(currentToken);
+            string familyId = _store.Tokens[originalHash].FamilyId;
+
+            // Rotate a couple of times
+            for (int i = 0; i < 3; i++)
+            {
+                RefreshResult result = await _service.RefreshAsync(currentToken, _jwtTokenService);
+                Assert.IsTrue(result.Success);
+                currentToken = result.NewRefreshToken!;
+            }
+
+            await _service.LogoutAsync(currentToken);
+
+            // Every token in the family should now be invalidated
+            foreach (StoredRefreshToken token in _store.Tokens.Values)
+            {
+                if (token.FamilyId == familyId)
+                {
+                    Assert.IsTrue(token.IsInvalidated);
+                }
+            }
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithConsumedButNotInvalidatedToken_ShouldInvalidateFamily()
+        {
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string originalHash = RefreshTokenService.HashToken(rawToken);
+            string familyId = _store.Tokens[originalHash].FamilyId;
+
+            // Rotate once — the original token is now consumed but the family is not invalidated
+            RefreshResult refreshResult = await _service.RefreshAsync(rawToken, _jwtTokenService);
+            Assert.IsTrue(refreshResult.Success);
+            Assert.IsNotNull(_store.Tokens[originalHash].ConsumedAt);
+            Assert.IsFalse(_store.Tokens[originalHash].IsInvalidated);
+
+            // Logging out with the consumed (but not invalidated) token must invalidate the family
+            await _service.LogoutAsync(rawToken);
+
+            foreach (StoredRefreshToken token in _store.Tokens.Values)
+            {
+                if (token.FamilyId == familyId)
+                {
+                    Assert.IsTrue(token.IsInvalidated);
+                }
+            }
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_OnlyAffectsTargetedFamily()
+        {
+            string userOneToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string userTwoToken = await _service.CreateRefreshTokenAsync("user-2", "user", null, null);
+
+            await _service.LogoutAsync(userOneToken);
+
+            string userTwoHash = RefreshTokenService.HashToken(userTwoToken);
+            Assert.IsFalse(_store.Tokens[userTwoHash].IsInvalidated);
+        }
+
+        [TestMethod]
+        public async Task InvalidateAllSessionsAsync_WithMultipleFamiliesForUser_ShouldInvalidateAll()
+        {
+            string userOneTokenA = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string userOneTokenB = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string userOneTokenC = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string userTwoToken = await _service.CreateRefreshTokenAsync("user-2", "user", null, null);
+
+            await _service.InvalidateAllSessionsAsync("user-1");
+
+            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(userOneTokenA)].IsInvalidated);
+            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(userOneTokenB)].IsInvalidated);
+            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(userOneTokenC)].IsInvalidated);
+            Assert.IsFalse(_store.Tokens[RefreshTokenService.HashToken(userTwoToken)].IsInvalidated);
+        }
+
+        [TestMethod]
+        public async Task InvalidateAllSessionsAsync_WithNoSessions_ShouldCompleteSilently()
+        {
+            await _service.InvalidateAllSessionsAsync("user-with-no-tokens");
+
+            Assert.AreEqual(0, _store.Tokens.Count);
+        }
+
+        [TestMethod]
+        public async Task InvalidateAllSessionsAsync_AfterRotations_ShouldInvalidateAllFamilyMembers()
+        {
+            string currentToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            for (int i = 0; i < 3; i++)
+            {
+                RefreshResult result = await _service.RefreshAsync(currentToken, _jwtTokenService);
+                currentToken = result.NewRefreshToken!;
+            }
+
+            await _service.InvalidateAllSessionsAsync("user-1");
+
+            foreach (StoredRefreshToken token in _store.Tokens.Values)
+            {
+                Assert.IsTrue(token.IsInvalidated);
+            }
+        }
     }
 }

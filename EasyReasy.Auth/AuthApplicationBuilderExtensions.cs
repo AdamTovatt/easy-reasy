@@ -63,7 +63,7 @@ namespace EasyReasy.Auth
                 httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
                 AuthResponse? response = await validationService.ValidateApiKeyRequestAsync(request, jwtTokenService, httpContext);
                 return response != null ? Results.Ok(response) : Results.Unauthorized();
-            });
+            }).AllowAnonymous();
 
             return app;
         }
@@ -83,7 +83,7 @@ namespace EasyReasy.Auth
                 httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
                 AuthResponse? response = await validationService.ValidateLoginRequestAsync(request, jwtTokenService, httpContext);
                 return response != null ? Results.Ok(response) : Results.Unauthorized();
-            });
+            }).AllowAnonymous();
 
             return app;
         }
@@ -99,7 +99,7 @@ namespace EasyReasy.Auth
             app.MapPost("/api/auth/refresh", async (RefreshRequest request, IRefreshTokenService refreshTokenService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
                 httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
-                RefreshResult result = await refreshTokenService.RefreshAsync(request.RefreshToken, jwtTokenService);
+                RefreshResult result = await refreshTokenService.RefreshAsync(request.RefreshToken, jwtTokenService, httpContext.RequestAborted);
 
                 if (result.Success)
                 {
@@ -107,7 +107,30 @@ namespace EasyReasy.Auth
                 }
 
                 return Results.Unauthorized();
-            });
+            }).AllowAnonymous();
+
+            return app;
+        }
+
+        /// <summary>
+        /// Adds a logout endpoint that revokes the refresh token family for the supplied token.
+        /// Requires <see cref="IRefreshTokenService"/> to be registered in DI.
+        /// </summary>
+        /// <remarks>
+        /// The endpoint is anonymous (no access token required), accepts a <see cref="LogoutRequest"/> body,
+        /// and always returns 204 No Content — even when the token is unknown, null, or already invalidated —
+        /// so that the response body does not reveal whether the supplied token was known.
+        /// </remarks>
+        /// <param name="app">The web application.</param>
+        /// <returns>The web application for chaining.</returns>
+        public static WebApplication AddLogoutEndpoint(this WebApplication app)
+        {
+            app.MapPost("/api/auth/logout", async (LogoutRequest request, IRefreshTokenService refreshTokenService, HttpContext httpContext) =>
+            {
+                httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
+                await refreshTokenService.LogoutAsync(request.RefreshToken, httpContext.RequestAborted);
+                return Results.NoContent();
+            }).AllowAnonymous();
 
             return app;
         }
@@ -121,15 +144,17 @@ namespace EasyReasy.Auth
         /// <param name="app">The web application.</param>
         /// <param name="allowApiKeys">Whether to enable API key authentication. Default is true.</param>
         /// <param name="allowUsernamePassword">Whether to enable username/password authentication. Default is true.</param>
-        /// <param name="allowRefresh">Whether to enable the refresh token endpoint. Default is false.</param>
+        /// <param name="allowRefresh">Whether to enable the refresh token endpoint. Default is false (opt-in because refresh changes how access tokens are issued).</param>
+        /// <param name="allowLogout">Whether to enable the logout endpoint. Default is true (safe to expose because logout is a no-op for unknown tokens and gives consumers the full logout story out of the box).</param>
         /// <returns>The web application for chaining.</returns>
         public static WebApplication AddAuthEndpoints(
             this WebApplication app,
             bool allowApiKeys = true,
             bool allowUsernamePassword = true,
-            bool allowRefresh = false)
+            bool allowRefresh = false,
+            bool allowLogout = true)
         {
-            // Fail fast at startup if the required service is not registered
+            // Fail fast at startup if the required services are not registered
             using (IServiceScope scope = app.Services.CreateScope())
             {
                 IAuthRequestValidationService? validationService = scope.ServiceProvider.GetService<IAuthRequestValidationService>();
@@ -139,6 +164,20 @@ namespace EasyReasy.Auth
                         $"{nameof(IAuthRequestValidationService)} is not registered in the DI container. " +
                         $"Register it before calling {nameof(AddAuthEndpoints)}, e.g.: " +
                         $"builder.Services.AddScoped<{nameof(IAuthRequestValidationService)}, MyAuthService>();");
+                }
+
+                if (allowRefresh || allowLogout)
+                {
+                    IRefreshTokenService? refreshTokenService = scope.ServiceProvider.GetService<IRefreshTokenService>();
+                    if (refreshTokenService == null)
+                    {
+                        throw new InvalidOperationException(
+                            $"{nameof(IRefreshTokenService)} is not registered in the DI container, " +
+                            $"but the refresh or logout endpoint is enabled. " +
+                            $"Register it before calling {nameof(AddAuthEndpoints)}, e.g.: " +
+                            $"builder.Services.AddRefreshTokenService<MyRefreshTokenStore>(); " +
+                            $"or disable the endpoints with allowRefresh: false and allowLogout: false.");
+                    }
                 }
             }
 
@@ -155,6 +194,11 @@ namespace EasyReasy.Auth
             if (allowRefresh)
             {
                 app.AddRefreshEndpoint();
+            }
+
+            if (allowLogout)
+            {
+                app.AddLogoutEndpoint();
             }
 
             return app;
