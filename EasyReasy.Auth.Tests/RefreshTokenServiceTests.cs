@@ -427,5 +427,78 @@ namespace EasyReasy.Auth.Tests
                 Assert.IsTrue(token.IsInvalidated);
             }
         }
+
+        [TestMethod]
+        public async Task RefreshAsync_WithValidToken_ShouldPopulateSubjectAndFamilyIdOnResult()
+        {
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string hash = RefreshTokenService.HashToken(rawToken);
+            string expectedFamilyId = _store.Tokens[hash].FamilyId;
+
+            RefreshResult result = await _service.RefreshAsync(rawToken, _jwtTokenService);
+
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("user-1", result.Subject);
+            Assert.AreEqual(expectedFamilyId, result.FamilyId);
+        }
+
+        [TestMethod]
+        public async Task RefreshAsync_WithNonexistentToken_ShouldReturnNullSubjectAndFamilyId()
+        {
+            RefreshResult result = await _service.RefreshAsync("nonexistent-token", _jwtTokenService);
+
+            Assert.AreEqual(RefreshFailureReason.TokenNotFound, result.FailureReason);
+            Assert.IsNull(result.Subject);
+            Assert.IsNull(result.FamilyId);
+        }
+
+        [TestMethod]
+        public async Task RefreshAsync_WithInvalidatedToken_ShouldPopulateSubjectAndFamilyIdOnResult()
+        {
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string hash = RefreshTokenService.HashToken(rawToken);
+            string expectedFamilyId = _store.Tokens[hash].FamilyId;
+
+            await _store.InvalidateFamilyAsync(expectedFamilyId);
+
+            RefreshResult result = await _service.RefreshAsync(rawToken, _jwtTokenService);
+
+            Assert.AreEqual(RefreshFailureReason.TokenInvalidated, result.FailureReason);
+            Assert.AreEqual("user-1", result.Subject);
+            Assert.AreEqual(expectedFamilyId, result.FamilyId);
+        }
+
+        [TestMethod]
+        public async Task RefreshAsync_WithExpiredToken_ShouldPopulateSubjectAndFamilyIdOnResult()
+        {
+            RefreshTokenService shortLivedService = new RefreshTokenService(_store, refreshTokenLifetime: TimeSpan.FromMilliseconds(1));
+            string rawToken = await shortLivedService.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string hash = RefreshTokenService.HashToken(rawToken);
+            string expectedFamilyId = _store.Tokens[hash].FamilyId;
+
+            await Task.Delay(50);
+
+            RefreshResult result = await shortLivedService.RefreshAsync(rawToken, _jwtTokenService);
+
+            Assert.AreEqual(RefreshFailureReason.TokenExpired, result.FailureReason);
+            Assert.AreEqual("user-1", result.Subject);
+            Assert.AreEqual(expectedFamilyId, result.FamilyId);
+        }
+
+        [TestMethod]
+        public async Task RefreshAsync_WithConsumedToken_ShouldPopulateSubjectAndFamilyIdOnTheftResult()
+        {
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string hash = RefreshTokenService.HashToken(rawToken);
+            string expectedFamilyId = _store.Tokens[hash].FamilyId;
+
+            await _service.RefreshAsync(rawToken, _jwtTokenService);
+
+            RefreshResult replayResult = await _service.RefreshAsync(rawToken, _jwtTokenService);
+
+            Assert.AreEqual(RefreshFailureReason.TheftDetected, replayResult.FailureReason);
+            Assert.AreEqual("user-1", replayResult.Subject);
+            Assert.AreEqual(expectedFamilyId, replayResult.FamilyId);
+        }
     }
 }

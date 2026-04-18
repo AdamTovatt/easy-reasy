@@ -81,20 +81,20 @@ namespace EasyReasy.Auth
             // Step 2: Token invalidated
             if (storedToken.IsInvalidated)
             {
-                return RefreshResult.Failed(RefreshFailureReason.TokenInvalidated);
+                return RefreshResult.Failed(RefreshFailureReason.TokenInvalidated, storedToken.Subject, storedToken.FamilyId);
             }
 
             // Step 3: Token already consumed — theft detected
             if (storedToken.ConsumedAt != null)
             {
                 await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
-                return RefreshResult.Failed(RefreshFailureReason.TheftDetected);
+                return RefreshResult.Failed(RefreshFailureReason.TheftDetected, storedToken.Subject, storedToken.FamilyId);
             }
 
             // Step 4: Token expired
             if (storedToken.ExpiresAt <= now)
             {
-                return RefreshResult.Failed(RefreshFailureReason.TokenExpired);
+                return RefreshResult.Failed(RefreshFailureReason.TokenExpired, storedToken.Subject, storedToken.FamilyId);
             }
 
             // Step 5: Atomically mark old token as consumed — if another request already consumed it, treat as theft
@@ -102,7 +102,7 @@ namespace EasyReasy.Auth
             if (!consumed)
             {
                 await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
-                return RefreshResult.Failed(RefreshFailureReason.TheftDetected);
+                return RefreshResult.Failed(RefreshFailureReason.TheftDetected, storedToken.Subject, storedToken.FamilyId);
             }
 
             // Step 6: Deserialize stored claims and roles, create new access token
@@ -141,7 +141,7 @@ namespace EasyReasy.Auth
                 accessTokenExpiresAt.ToString("O"),
                 newRawToken);
 
-            return RefreshResult.Succeeded(authResponse, newRawToken);
+            return RefreshResult.Succeeded(authResponse, newRawToken, storedToken.Subject, storedToken.FamilyId);
         }
 
         /// <inheritdoc />
