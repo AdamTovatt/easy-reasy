@@ -17,6 +17,32 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public void Succeeded_WithoutSubjectOrFamilyId_ShouldDefaultToNull()
+        {
+            AuthResponse authResponse = new AuthResponse("jwt-token", "2025-01-01T00:00:00Z", "new-refresh-token");
+
+            RefreshResult result = RefreshResult.Succeeded(authResponse, "new-refresh-token");
+
+            Assert.IsNull(result.Subject);
+            Assert.IsNull(result.FamilyId);
+        }
+
+        [TestMethod]
+        public void Succeeded_WithSubjectAndFamilyId_ShouldPopulateBoth()
+        {
+            AuthResponse authResponse = new AuthResponse("jwt-token", "2025-01-01T00:00:00Z", "new-refresh-token");
+
+            RefreshResult result = RefreshResult.Succeeded(
+                authResponse,
+                "new-refresh-token",
+                subject: "user-42",
+                familyId: "family-abc");
+
+            Assert.AreEqual("user-42", result.Subject);
+            Assert.AreEqual("family-abc", result.FamilyId);
+        }
+
+        [TestMethod]
         public void Failed_ShouldCreateFailedResult()
         {
             RefreshResult result = RefreshResult.Failed(RefreshFailureReason.TokenExpired);
@@ -25,6 +51,27 @@ namespace EasyReasy.Auth.Tests
             Assert.IsNull(result.AuthResponse);
             Assert.IsNull(result.NewRefreshToken);
             Assert.AreEqual(RefreshFailureReason.TokenExpired, result.FailureReason);
+        }
+
+        [TestMethod]
+        public void Failed_WithoutSubjectOrFamilyId_ShouldDefaultToNull()
+        {
+            RefreshResult result = RefreshResult.Failed(RefreshFailureReason.TokenNotFound);
+
+            Assert.IsNull(result.Subject);
+            Assert.IsNull(result.FamilyId);
+        }
+
+        [TestMethod]
+        public void Failed_WithSubjectAndFamilyId_ShouldPopulateBoth()
+        {
+            RefreshResult result = RefreshResult.Failed(
+                RefreshFailureReason.TheftDetected,
+                subject: "user-42",
+                familyId: "family-abc");
+
+            Assert.AreEqual("user-42", result.Subject);
+            Assert.AreEqual("family-abc", result.FamilyId);
         }
 
         [TestMethod]

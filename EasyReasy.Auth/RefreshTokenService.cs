@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -14,6 +15,7 @@ namespace EasyReasy.Auth
         private readonly IRefreshTokenStore _store;
         private readonly TimeSpan _refreshTokenLifetime;
         private readonly TimeSpan _accessTokenLifetime;
+        private readonly IAuthAuditLogger? _auditLogger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RefreshTokenService"/> class.
@@ -25,14 +27,24 @@ namespace EasyReasy.Auth
         /// <param name="accessTokenLifetime">
         /// The lifetime of access tokens created during refresh. Defaults to 1 hour if not specified.
         /// </param>
+        /// <param name="auditLogger">
+        /// Optional audit logger. When supplied, this service invokes the matching hook after every
+        /// <see cref="RefreshAsync"/> (<see cref="IAuthAuditLogger.OnRefreshAsync"/>),
+        /// <see cref="LogoutAsync"/> (<see cref="IAuthAuditLogger.OnLogoutAsync"/>), and
+        /// <see cref="InvalidateAllSessionsAsync"/> (<see cref="IAuthAuditLogger.OnSessionsInvalidatedAsync"/>) call
+        /// so consumers can emit ISO 27001 A.12.4.1 / A.9.2.6 audit records for both HTTP-driven and programmatic flows.
+        /// Lifetime must be at least as long as this service — see <see cref="IAuthAuditLogger"/> remarks.
+        /// </param>
         public RefreshTokenService(
             IRefreshTokenStore store,
             TimeSpan? refreshTokenLifetime = null,
-            TimeSpan? accessTokenLifetime = null)
+            TimeSpan? accessTokenLifetime = null,
+            IAuthAuditLogger? auditLogger = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _refreshTokenLifetime = refreshTokenLifetime ?? TimeSpan.FromDays(30);
             _accessTokenLifetime = accessTokenLifetime ?? TimeSpan.FromHours(1);
+            _auditLogger = auditLogger;
         }
 
         /// <inheritdoc />
@@ -40,7 +52,8 @@ namespace EasyReasy.Auth
             string subject,
             string authType,
             string? serializedClaims,
-            string? serializedRoles)
+            string? serializedRoles,
+            CancellationToken cancellationToken = default)
         {
             string rawToken = GenerateToken();
             string tokenHash = HashToken(rawToken);
@@ -59,17 +72,29 @@ namespace EasyReasy.Auth
                 SerializedRoles = serializedRoles
             };
 
-            await _store.StoreAsync(storedToken);
+            await _store.StoreAsync(storedToken, cancellationToken);
 
             return rawToken;
         }
 
         /// <inheritdoc />
-        public async Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService)
+        public async Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
+        {
+            RefreshResult result = await ComputeRefreshAsync(refreshToken, jwtTokenService, cancellationToken);
+
+            if (_auditLogger != null)
+            {
+                await _auditLogger.OnRefreshAsync(httpContext, result);
+            }
+
+            return result;
+        }
+
+        private async Task<RefreshResult> ComputeRefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, CancellationToken cancellationToken)
         {
             DateTime now = DateTime.UtcNow;
             string tokenHash = HashToken(refreshToken);
-            StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(tokenHash);
+            StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(tokenHash, cancellationToken);
 
             // Step 1: Token not found
             if (storedToken == null)
@@ -80,28 +105,28 @@ namespace EasyReasy.Auth
             // Step 2: Token invalidated
             if (storedToken.IsInvalidated)
             {
-                return RefreshResult.Failed(RefreshFailureReason.TokenInvalidated);
+                return RefreshResult.Failed(RefreshFailureReason.TokenInvalidated, storedToken.Subject, storedToken.FamilyId);
             }
 
             // Step 3: Token already consumed — theft detected
             if (storedToken.ConsumedAt != null)
             {
-                await _store.InvalidateFamilyAsync(storedToken.FamilyId);
-                return RefreshResult.Failed(RefreshFailureReason.TheftDetected);
+                await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
+                return RefreshResult.Failed(RefreshFailureReason.TheftDetected, storedToken.Subject, storedToken.FamilyId);
             }
 
             // Step 4: Token expired
             if (storedToken.ExpiresAt <= now)
             {
-                return RefreshResult.Failed(RefreshFailureReason.TokenExpired);
+                return RefreshResult.Failed(RefreshFailureReason.TokenExpired, storedToken.Subject, storedToken.FamilyId);
             }
 
             // Step 5: Atomically mark old token as consumed — if another request already consumed it, treat as theft
-            bool consumed = await _store.MarkAsConsumedAsync(tokenHash, now);
+            bool consumed = await _store.MarkAsConsumedAsync(tokenHash, now, cancellationToken);
             if (!consumed)
             {
-                await _store.InvalidateFamilyAsync(storedToken.FamilyId);
-                return RefreshResult.Failed(RefreshFailureReason.TheftDetected);
+                await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
+                return RefreshResult.Failed(RefreshFailureReason.TheftDetected, storedToken.Subject, storedToken.FamilyId);
             }
 
             // Step 6: Deserialize stored claims and roles, create new access token
@@ -132,7 +157,7 @@ namespace EasyReasy.Auth
                 SerializedRoles = storedToken.SerializedRoles
             };
 
-            await _store.StoreAsync(newStoredToken);
+            await _store.StoreAsync(newStoredToken, cancellationToken);
 
             // Step 8: Return success with new token pair
             AuthResponse authResponse = new AuthResponse(
@@ -140,7 +165,58 @@ namespace EasyReasy.Auth
                 accessTokenExpiresAt.ToString("O"),
                 newRawToken);
 
-            return RefreshResult.Succeeded(authResponse, newRawToken);
+            return RefreshResult.Succeeded(authResponse, newRawToken, storedToken.Subject, storedToken.FamilyId);
+        }
+
+        /// <inheritdoc />
+        public async Task<LogoutResult> LogoutAsync(string? refreshToken, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
+        {
+            LogoutResult result = await ComputeLogoutAsync(refreshToken, cancellationToken);
+
+            if (_auditLogger != null)
+            {
+                await _auditLogger.OnLogoutAsync(httpContext, result);
+            }
+
+            return result;
+        }
+
+        private async Task<LogoutResult> ComputeLogoutAsync(string? refreshToken, CancellationToken cancellationToken)
+        {
+            // A null or empty token can't map to any family — treat as a no-op so that
+            // callers (including the unauthenticated HTTP endpoint) still see idempotent
+            // 204 behaviour instead of a 500 from a hashing exception.
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                return LogoutResult.Unknown();
+            }
+
+            string tokenHash = HashToken(refreshToken);
+            StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(tokenHash, cancellationToken);
+
+            if (storedToken == null)
+            {
+                return LogoutResult.Unknown();
+            }
+
+            await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
+            return LogoutResult.Known(storedToken.Subject, storedToken.FamilyId);
+        }
+
+        /// <inheritdoc />
+        public async Task<SessionRevocationResult> InvalidateAllSessionsAsync(string subject, CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(subject);
+
+            int invalidatedCount = await _store.InvalidateAllFamiliesForUserAsync(subject, cancellationToken);
+            SessionRevocationResult result = new SessionRevocationResult(subject, invalidatedCount);
+
+            if (_auditLogger != null)
+            {
+                await _auditLogger.OnSessionsInvalidatedAsync(result);
+            }
+
+            return result;
         }
 
         /// <summary>

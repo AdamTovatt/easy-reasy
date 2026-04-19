@@ -4,6 +4,7 @@
     public class RemoteIntegrationTests
     {
         [TestMethod]
+        [Ignore("Local-only smoke test: fill in a real base address and API key, then remove [Ignore] to run against a live server.")]
         public async Task CreateAuthenticatedClient()
         {
             // Arrange

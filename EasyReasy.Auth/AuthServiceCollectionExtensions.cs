@@ -118,7 +118,8 @@ namespace EasyReasy.Auth
             services.AddScoped<IRefreshTokenService>(provider =>
             {
                 IRefreshTokenStore store = provider.GetRequiredService<IRefreshTokenStore>();
-                return new RefreshTokenService(store, refreshTokenLifetime, accessTokenLifetime);
+                IAuthAuditLogger? auditLogger = provider.GetService<IAuthAuditLogger>();
+                return new RefreshTokenService(store, refreshTokenLifetime, accessTokenLifetime, auditLogger);
             });
 
             return services;

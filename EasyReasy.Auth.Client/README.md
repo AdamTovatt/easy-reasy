@@ -207,6 +207,27 @@ The client automatically handles token expiration:
 2. Automatically re-authenticates before making requests
 3. Retries failed requests once with a fresh token
 
+### Logging Out
+
+`LogoutAsync()` posts the current refresh token to the server's logout endpoint (default `/api/auth/logout`) and then clears all local auth state. The server call is best-effort — HTTP failures do not prevent local state from being cleared, so the client always ends up in an unauthenticated state after the call.
+
+```csharp
+using HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://api.example.com/");
+using AuthorizedHttpClient client = new AuthorizedHttpClient(
+    httpClient, username: "user", password: "pass");
+
+await client.GetAsync("api/data");
+
+// Later — revoke the refresh token family and clear local state.
+await client.LogoutAsync();
+
+// Subsequent requests will trigger a fresh authentication flow
+// (only possible when the client has credentials — API key or username/password.
+// A pre-authorized client cannot re-authenticate after logout.)
+```
+
+You can override the logout endpoint path via the `logoutEndpoint` constructor parameter if your server mounts it elsewhere.
+
 ## Best Practices
 
 ### 1. HttpClient Lifecycle Management

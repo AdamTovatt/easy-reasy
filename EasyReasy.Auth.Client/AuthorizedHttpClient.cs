@@ -35,6 +35,7 @@ namespace EasyReasy.Auth.Client
         private readonly AuthType _authType;
         private readonly string _authEndpoint;
         private readonly string _refreshEndpoint;
+        private readonly string _logoutEndpoint;
         private readonly Action<AuthResponse>? _onAuthResponseChanged;
         private readonly SemaphoreSlim _authLock = new SemaphoreSlim(1, 1);
         private string? _refreshToken;
@@ -49,12 +50,14 @@ namespace EasyReasy.Auth.Client
         /// <param name="apiKey">The API key for authentication.</param>
         /// <param name="authEndpoint">The authentication endpoint path. If not specified, defaults to "/api/auth/apikey".</param>
         /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
+        /// <param name="logoutEndpoint">The logout endpoint path. If not specified, defaults to "/api/auth/logout".</param>
         /// <param name="onAuthResponseChanged">An optional callback invoked whenever the auth state changes (initial auth, token refresh, or re-auth).</param>
         public AuthorizedHttpClient(
             HttpClient httpClient,
             string apiKey,
             string? authEndpoint = null,
             string? refreshEndpoint = null,
+            string? logoutEndpoint = null,
             Action<AuthResponse>? onAuthResponseChanged = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
@@ -65,6 +68,7 @@ namespace EasyReasy.Auth.Client
             _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
             _authEndpoint = authEndpoint ?? "api/auth/apikey";
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
+            _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
             _authType = AuthType.ApiKey;
             _onAuthResponseChanged = onAuthResponseChanged;
         }
@@ -77,6 +81,7 @@ namespace EasyReasy.Auth.Client
         /// <param name="password">The password for authentication.</param>
         /// <param name="authEndpoint">The authentication endpoint path. If not specified, defaults to "/api/auth/login".</param>
         /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
+        /// <param name="logoutEndpoint">The logout endpoint path. If not specified, defaults to "/api/auth/logout".</param>
         /// <param name="onAuthResponseChanged">An optional callback invoked whenever the auth state changes (initial auth, token refresh, or re-auth).</param>
         public AuthorizedHttpClient(
             HttpClient httpClient,
@@ -84,6 +89,7 @@ namespace EasyReasy.Auth.Client
             string password,
             string? authEndpoint = null,
             string? refreshEndpoint = null,
+            string? logoutEndpoint = null,
             Action<AuthResponse>? onAuthResponseChanged = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
@@ -91,6 +97,7 @@ namespace EasyReasy.Auth.Client
             _password = password ?? throw new ArgumentNullException(nameof(password));
             _authEndpoint = authEndpoint ?? "api/auth/login";
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
+            _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
             _authType = AuthType.UsernamePassword;
             _onAuthResponseChanged = onAuthResponseChanged;
         }
@@ -102,11 +109,13 @@ namespace EasyReasy.Auth.Client
         /// <param name="httpClient">The HTTP client to use for requests.</param>
         /// <param name="authResponse">The authentication response containing the token, expiration, and optional refresh token.</param>
         /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
+        /// <param name="logoutEndpoint">The logout endpoint path. If not specified, defaults to "/api/auth/logout".</param>
         /// <param name="onAuthResponseChanged">An optional callback invoked whenever the auth state changes (initial auth, token refresh, or re-auth).</param>
         public AuthorizedHttpClient(
             HttpClient httpClient,
             AuthResponse authResponse,
             string? refreshEndpoint = null,
+            string? logoutEndpoint = null,
             Action<AuthResponse>? onAuthResponseChanged = null)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
@@ -117,6 +126,7 @@ namespace EasyReasy.Auth.Client
             ArgumentNullException.ThrowIfNull(authResponse);
             _authEndpoint = string.Empty;
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
+            _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
             _authType = AuthType.PreAuthorized;
             _onAuthResponseChanged = onAuthResponseChanged;
 
@@ -206,11 +216,69 @@ namespace EasyReasy.Auth.Client
             await _authLock.WaitAsync(cancellationToken);
             try
             {
-                _isAuthorized = false;
-                _tokenExpiresAt = null;
-                _refreshToken = null;
-                _httpClient.DefaultRequestHeaders.Authorization = null;
+                ClearLocalAuthState();
                 await AuthorizeAsync(cancellationToken);
+            }
+            finally
+            {
+                _authLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Resets every field and header that represents "the client is authenticated"
+        /// back to the unauthenticated defaults. Must only be called while holding
+        /// <see cref="_authLock"/>.
+        /// </summary>
+        private void ClearLocalAuthState()
+        {
+            _isAuthorized = false;
+            _tokenExpiresAt = null;
+            _refreshToken = null;
+            _httpClient.DefaultRequestHeaders.Authorization = null;
+        }
+
+        /// <summary>
+        /// Logs out by posting the current refresh token to the logout endpoint, then clears
+        /// all local authorization state. The server call is best-effort — HTTP failures
+        /// (non-success status codes, transient network errors) do not prevent the local state
+        /// from being cleared.
+        /// </summary>
+        /// <remarks>
+        /// Cancellation semantics:
+        /// <list type="bullet">
+        /// <item><description>If cancellation fires <em>after</em> the logout sequence begins (i.e. during the HTTP call), local state is cleared before the <see cref="OperationCanceledException"/> propagates.</description></item>
+        /// <item><description>If cancellation fires <em>before</em> the logout sequence begins (e.g. while awaiting the internal synchronization lock during a concurrent operation), the call is aborted with no side effects — client state is unchanged.</description></item>
+        /// </list>
+        /// </remarks>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        public async Task LogoutAsync(CancellationToken cancellationToken = default)
+        {
+            await _authLock.WaitAsync(cancellationToken);
+            try
+            {
+                try
+                {
+                    if (_refreshToken != null)
+                    {
+                        LogoutRequest logoutRequest = new LogoutRequest(_refreshToken);
+                        StringContent content = new StringContent(logoutRequest.ToJson(), System.Text.Encoding.UTF8, "application/json");
+                        await _httpClient.PostAsync(_logoutEndpoint, content, cancellationToken);
+                    }
+                }
+                catch (HttpRequestException)
+                {
+                    // Logout is best-effort: a transient network error or non-success response
+                    // must not block the caller from ending up unauthenticated locally. The
+                    // server-side family invalidation will be retried implicitly the next time
+                    // the (now-discarded) refresh token is replayed.
+                }
+                finally
+                {
+                    // Always clear state — even if the server call was cancelled or failed —
+                    // so that the client ends up unauthenticated once the logout sequence begins.
+                    ClearLocalAuthState();
+                }
             }
             finally
             {

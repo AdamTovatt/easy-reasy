@@ -1151,7 +1151,7 @@ EXAMPLE_KEY2=example_value2
             string result = EnvironmentVariableHelper.GetExampleContent(typeof(TestEmptyConfiguration));
 
             // Assert
-            string expected = "# Use \"#\" to comment\r\n";
+            string expected = "# Use \"#\" to comment" + Environment.NewLine;
             Assert.AreEqual(expected, result);
         }
 
