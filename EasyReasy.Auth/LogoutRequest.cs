@@ -5,7 +5,7 @@ namespace EasyReasy.Auth
     /// <summary>
     /// Request model for logging out by revoking a refresh token family.
     /// </summary>
-    public class LogoutRequest
+    public sealed class LogoutRequest
     {
         /// <summary>
         /// Gets the refresh token whose family should be invalidated.

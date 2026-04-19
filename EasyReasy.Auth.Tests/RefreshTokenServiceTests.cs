@@ -288,7 +288,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task LogoutAsync_WithNullToken_ShouldCompleteSilently()
         {
-            await _service.LogoutAsync(null!);
+            await _service.LogoutAsync(null);
 
             Assert.AreEqual(0, _store.Tokens.Count);
         }
@@ -402,7 +402,7 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public async Task InvalidateAllSessionsAsync_WithNoSessions_ShouldCompleteSilently()
+        public async Task InvalidateAllSessionsAsync_WithNoSessions_ShouldNotMutateStore()
         {
             await _service.InvalidateAllSessionsAsync("user-with-no-tokens");
 
@@ -420,12 +420,16 @@ namespace EasyReasy.Auth.Tests
                 currentToken = result.NewRefreshToken!;
             }
 
-            await _service.InvalidateAllSessionsAsync("user-1");
+            SessionRevocationResult revocation = await _service.InvalidateAllSessionsAsync("user-1");
 
             foreach (StoredRefreshToken token in _store.Tokens.Values)
             {
                 Assert.IsTrue(token.IsInvalidated);
             }
+
+            // Three rotations put four tokens into one family, so the family count should be 1
+            // even though four individual token rows are invalidated.
+            Assert.AreEqual(1, revocation.InvalidatedFamilyCount);
         }
 
         [TestMethod]
@@ -499,6 +503,128 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual(RefreshFailureReason.TheftDetected, replayResult.FailureReason);
             Assert.AreEqual("user-1", replayResult.Subject);
             Assert.AreEqual(expectedFamilyId, replayResult.FamilyId);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithKnownToken_ShouldReturnKnownResultWithSubjectAndFamilyId()
+        {
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string hash = RefreshTokenService.HashToken(rawToken);
+            string expectedFamilyId = _store.Tokens[hash].FamilyId;
+
+            LogoutResult result = await _service.LogoutAsync(rawToken);
+
+            Assert.IsTrue(result.WasKnown);
+            Assert.AreEqual("user-1", result.Subject);
+            Assert.AreEqual(expectedFamilyId, result.FamilyId);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithNullToken_ShouldReturnUnknownResult()
+        {
+            LogoutResult result = await _service.LogoutAsync(null);
+
+            Assert.IsFalse(result.WasKnown);
+            Assert.IsNull(result.Subject);
+            Assert.IsNull(result.FamilyId);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithEmptyToken_ShouldReturnUnknownResult()
+        {
+            LogoutResult result = await _service.LogoutAsync(string.Empty);
+
+            Assert.IsFalse(result.WasKnown);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithNonexistentToken_ShouldReturnUnknownResult()
+        {
+            LogoutResult result = await _service.LogoutAsync("nonexistent-token");
+
+            Assert.IsFalse(result.WasKnown);
+        }
+
+        [TestMethod]
+        public async Task InvalidateAllSessionsAsync_ShouldReturnSubjectAndCountOfInvalidatedFamilies()
+        {
+            await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            await _service.CreateRefreshTokenAsync("user-2", "user", null, null);
+
+            SessionRevocationResult result = await _service.InvalidateAllSessionsAsync("user-1");
+
+            Assert.AreEqual("user-1", result.Subject);
+            Assert.AreEqual(3, result.InvalidatedFamilyCount);
+        }
+
+        [TestMethod]
+        public async Task InvalidateAllSessionsAsync_WithNoSessions_ShouldReturnZeroCount()
+        {
+            SessionRevocationResult result = await _service.InvalidateAllSessionsAsync("user-with-no-tokens");
+
+            Assert.AreEqual("user-with-no-tokens", result.Subject);
+            Assert.AreEqual(0, result.InvalidatedFamilyCount);
+        }
+
+        [TestMethod]
+        public async Task InvalidateAllSessionsAsync_AfterRotations_ShouldCountFamiliesNotIndividualTokens()
+        {
+            string currentToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            for (int i = 0; i < 3; i++)
+            {
+                RefreshResult r = await _service.RefreshAsync(currentToken, _jwtTokenService);
+                currentToken = r.NewRefreshToken!;
+            }
+
+            SessionRevocationResult result = await _service.InvalidateAllSessionsAsync("user-1");
+
+            Assert.AreEqual(1, result.InvalidatedFamilyCount);
+        }
+
+        [TestMethod]
+        public async Task InvalidateAllSessionsAsync_WithAuditLogger_ShouldInvokeOnSessionsInvalidatedAsync()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            RefreshTokenService serviceWithAuditor = new RefreshTokenService(_store, auditLogger: auditLogger);
+
+            await serviceWithAuditor.CreateRefreshTokenAsync("user-1", "user", null, null);
+            await serviceWithAuditor.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            SessionRevocationResult result = await serviceWithAuditor.InvalidateAllSessionsAsync("user-1");
+
+            Assert.AreEqual(1, auditLogger.SessionsInvalidatedCalls.Count);
+            Assert.AreSame(result, auditLogger.SessionsInvalidatedCalls[0]);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_ProgrammaticCall_ShouldInvokeOnLogoutAsyncWithNullHttpContext()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            RefreshTokenService serviceWithAuditor = new RefreshTokenService(_store, auditLogger: auditLogger);
+
+            string rawToken = await serviceWithAuditor.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            LogoutResult result = await serviceWithAuditor.LogoutAsync(rawToken);
+
+            Assert.AreEqual(1, auditLogger.LogoutCalls.Count);
+            Assert.IsNull(auditLogger.LogoutCalls[0].HttpContext);
+            Assert.AreSame(result, auditLogger.LogoutCalls[0].Result);
+            Assert.IsTrue(result.WasKnown);
+        }
+
+        [TestMethod]
+        public async Task LogoutAsync_WithUnknownToken_ShouldStillInvokeOnLogoutAsync()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            RefreshTokenService serviceWithAuditor = new RefreshTokenService(_store, auditLogger: auditLogger);
+
+            LogoutResult result = await serviceWithAuditor.LogoutAsync("nonexistent-token");
+
+            Assert.AreEqual(1, auditLogger.LogoutCalls.Count);
+            Assert.IsFalse(result.WasKnown);
+            Assert.IsFalse(auditLogger.LogoutCalls[0].Result.WasKnown);
         }
     }
 }

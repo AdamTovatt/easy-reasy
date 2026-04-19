@@ -49,6 +49,11 @@ namespace EasyReasy.Auth
         /// </summary>
         /// <param name="subject">The subject (user identifier) whose sessions should be revoked.</param>
         /// <param name="cancellationToken">A token to cancel the operation.</param>
-        Task InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken = default);
+        /// <returns>
+        /// The number of token families that were invalidated by the operation. Implementations should
+        /// count distinct families (not individual tokens) so that the value reflects the number of
+        /// real sessions terminated — this flows into audit logs via <see cref="SessionRevocationResult"/>.
+        /// </returns>
+        Task<int> InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken = default);
     }
 }

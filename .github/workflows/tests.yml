@@ -1,0 +1,31 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: ["master"]
+  push:
+    branches:
+      - master
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --no-restore --configuration Release
+
+    # Run every test project but skip integration-flavoured tests that require
+    # external services (real ByteShelf backend, remote auth server) or are
+    # placeholders not meant for CI.
+    - name: Test
+      run: dotnet test --no-build --configuration Release --filter "FullyQualifiedName!~IntegrationTests"

@@ -42,7 +42,7 @@ builder.Services.AddEasyReasyAuth(jwtSecret, options =>
     options.Issuer = "my-issuer";
 });
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 app.UseEasyReasyAuth(); // Progressive delay enabled by default
 ```
 
@@ -75,58 +75,78 @@ public class MyAuthService : IAuthRequestValidationService
         _passwordHasher = passwordHasher;
     }
 
-    public async Task<AuthResponse?> ValidateApiKeyRequestAsync(ApiKeyAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
+    public async Task<ApiKeyAuthResult> ValidateApiKeyRequestAsync(ApiKeyAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
     {
         // Validate API key (e.g., check database, external service, etc.)
-        var user = await _userRepository.GetByApiKeyAsync(request.ApiKey);
-        if (user == null) return null;
+        User? user = await _userRepository.GetByApiKeyAsync(request.ApiKey);
+        if (user == null)
+        {
+            return ApiKeyAuthResult.Failed(ApiKeyAuthFailureReason.UnknownKey);
+        }
 
         // Extract tenant ID from header if available
         string? tenantId = user.TenantId;
-        if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out var headerTenantId) == true)
+        if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out StringValues headerTenantId) == true)
         {
             tenantId = headerTenantId.ToString();
         }
 
-        // Create JWT token
+        // Create JWT token — only include the tenant_id claim if we actually have a value.
+        List<Claim> claims = new List<Claim>();
+        if (tenantId != null)
+        {
+            claims.Add(new Claim("tenant_id", tenantId));
+        }
+
         DateTime expiresAt = DateTime.UtcNow.AddHours(1);
         string token = jwtTokenService.CreateToken(
             subject: user.Id,
             authType: "apikey",
-            additionalClaims: new[] { new Claim("tenant_id", tenantId) },
+            additionalClaims: claims,
             roles: user.Roles.ToArray(),
             expiresAt: expiresAt);
 
-        return new AuthResponse(token, expiresAt.ToString("o"));
+        return ApiKeyAuthResult.Succeeded(new AuthResponse(token, expiresAt.ToString("o")), user.Id);
     }
 
-    public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
+    public async Task<LoginResult> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
     {
         // Validate username/password
-        var user = await _userRepository.GetByUsernameAsync(request.Username);
-        if (user == null) return null;
+        User? user = await _userRepository.GetByUsernameAsync(request.Username);
+        if (user == null)
+        {
+            // Populate AttemptedSubject so audit logs can attribute the failed attempt.
+            return LoginResult.Failed(LoginFailureReason.UnknownUser, attemptedSubject: request.Username);
+        }
 
-        // Validate password
         if (!_passwordHasher.ValidatePassword(request.Password, user.PasswordHash))
-            return null;
+        {
+            return LoginResult.Failed(LoginFailureReason.InvalidCredentials, attemptedSubject: user.Id);
+        }
 
         // Extract tenant ID from header if available
         string? tenantId = user.TenantId;
-        if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out var headerTenantId) == true)
+        if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out StringValues headerTenantId) == true)
         {
             tenantId = headerTenantId.ToString();
         }
 
-        // Create JWT token
+        // Create JWT token — only include the tenant_id claim if we actually have a value.
+        List<Claim> claims = new List<Claim>();
+        if (tenantId != null)
+        {
+            claims.Add(new Claim("tenant_id", tenantId));
+        }
+
         DateTime expiresAt = DateTime.UtcNow.AddHours(1);
         string token = jwtTokenService.CreateToken(
             subject: user.Id,
             authType: "user",
-            additionalClaims: new[] { new Claim("tenant_id", tenantId) },
+            additionalClaims: claims,
             roles: user.Roles.ToArray(),
             expiresAt: expiresAt);
 
-        return new AuthResponse(token, expiresAt.ToString("o"));
+        return LoginResult.Succeeded(new AuthResponse(token, expiresAt.ToString("o")), user.Id);
     }
 }
 ```
@@ -148,7 +168,7 @@ builder.Services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
 // 3. Register validation service (use AddScoped for services with database dependencies)
 builder.Services.AddScoped<IAuthRequestValidationService, MyAuthService>();
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
 // 4. Configure middleware (UseEasyReasyAuth includes UseAuthentication/UseAuthorization)
 app.UseEasyReasyAuth();
@@ -177,58 +197,80 @@ The `IAuthRequestValidationService` methods receive an optional `HttpContext` pa
 
 **Example: Extracting Tenant ID from Headers**
 ```csharp
-public async Task<AuthResponse?> ValidateApiKeyRequestAsync(ApiKeyAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
+public async Task<ApiKeyAuthResult> ValidateApiKeyRequestAsync(ApiKeyAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
 {
     // Validate API key
-    var user = await _userRepository.GetByApiKeyAsync(request.ApiKey);
-    if (user == null) return null;
+    User? user = await _userRepository.GetByApiKeyAsync(request.ApiKey);
+    if (user == null)
+    {
+        return ApiKeyAuthResult.Failed(ApiKeyAuthFailureReason.UnknownKey);
+    }
 
     // Extract tenant ID from header
     string? tenantId = null;
-    if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out var headerTenantId) == true)
+    if (httpContext?.Request.Headers.TryGetValue("X-Tenant-ID", out StringValues headerTenantId) == true)
     {
         tenantId = headerTenantId.ToString();
     }
 
-    // Create JWT token with tenant information
+    // Only include the tenant_id claim if we have a value — avoid writing empty-string claims.
+    List<Claim> claims = new List<Claim>();
+    if (tenantId != null)
+    {
+        claims.Add(new Claim("tenant_id", tenantId));
+    }
+
     DateTime expiresAt = DateTime.UtcNow.AddHours(1);
     string token = jwtTokenService.CreateToken(
         subject: user.Id,
         authType: "apikey",
-        additionalClaims: new[] { new Claim("tenant_id", tenantId) },
+        additionalClaims: claims,
         roles: user.Roles.ToArray(),
         expiresAt: expiresAt);
 
-    return new AuthResponse(token, expiresAt.ToString("o"));
+    return ApiKeyAuthResult.Succeeded(new AuthResponse(token, expiresAt.ToString("o")), user.Id);
 }
 ```
 
 **Example: Accessing Query Parameters**
 ```csharp
-public async Task<AuthResponse?> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
+public async Task<LoginResult> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
 {
     // Validate credentials
-    var user = await _userRepository.GetByUsernameAsync(request.Username);
-    if (user == null || !VerifyPassword(request.Password, user.PasswordHash)) 
-        return null;
+    User? user = await _userRepository.GetByUsernameAsync(request.Username);
+    if (user == null)
+    {
+        return LoginResult.Failed(LoginFailureReason.UnknownUser, attemptedSubject: request.Username);
+    }
+
+    if (!_passwordHasher.ValidatePassword(request.Password, user.PasswordHash))
+    {
+        return LoginResult.Failed(LoginFailureReason.InvalidCredentials, attemptedSubject: user.Id);
+    }
 
     // Extract organization from query parameter
     string? organization = httpContext?.Request.Query["org"].ToString();
 
-    // Create JWT token with organization information
+    // Only include claims for values we actually have.
+    List<Claim> claims = new List<Claim>();
+    if (user.TenantId != null)
+    {
+        claims.Add(new Claim("tenant_id", user.TenantId));
+    }
+    if (organization != null)
+    {
+        claims.Add(new Claim("organization", organization));
+    }
+
     DateTime expiresAt = DateTime.UtcNow.AddHours(1);
     string token = jwtTokenService.CreateToken(
         subject: user.Id,
         authType: "user",
-        additionalClaims: new[] 
-        { 
-            new Claim("tenant_id", user.TenantId),
-            new Claim("organization", organization)
-        },
+        additionalClaims: claims,
         roles: user.Roles.ToArray(),
         expiresAt: expiresAt);
 
-    return new AuthResponse(token, expiresAt.ToString("o"));
+    return LoginResult.Succeeded(new AuthResponse(token, expiresAt.ToString("o")), user.Id);
 }
 ```
 
@@ -336,7 +378,7 @@ public class MyRefreshTokenStore : IRefreshTokenStore
     public Task<StoredRefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default) { /* SELECT by hash */ }
     public Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt, CancellationToken cancellationToken = default) { /* see note below */ }
     public Task InvalidateFamilyAsync(string familyId, CancellationToken cancellationToken = default) { /* UPDATE SET invalidated WHERE family_id = ... */ }
-    public Task InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken = default) { /* UPDATE SET invalidated WHERE subject = ... AND invalidated = false */ }
+    public Task<int> InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken = default) { /* UPDATE SET invalidated WHERE subject = ... AND invalidated = false; return affected-family count */ }
 }
 ```
 
@@ -354,21 +396,40 @@ This creates `POST /api/auth/refresh` which accepts `{ "refreshToken": "..." }` 
 
 The logout endpoint (`POST /api/auth/logout`) is enabled by default when you call `AddAuthEndpoints` — see the Logout section below.
 
-3. **Issue refresh tokens in your validation service** by injecting `IRefreshTokenService`:
+3. **Issue refresh tokens in your validation service** by injecting `IRefreshTokenService` alongside whatever user repository / password hasher you already use:
 ```csharp
 public class MyAuthService : IAuthRequestValidationService
 {
+    private readonly IUserRepository _userRepository;
+    private readonly IPasswordHasher _passwordHasher;
     private readonly IRefreshTokenService _refreshTokenService;
 
-    public MyAuthService(IRefreshTokenService refreshTokenService)
+    public MyAuthService(
+        IUserRepository userRepository,
+        IPasswordHasher passwordHasher,
+        IRefreshTokenService refreshTokenService)
     {
+        _userRepository = userRepository;
+        _passwordHasher = passwordHasher;
         _refreshTokenService = refreshTokenService;
     }
 
-    public async Task<AuthResponse?> ValidateLoginRequestAsync(
+    public async Task<LoginResult> ValidateLoginRequestAsync(
         LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)
     {
-        // ... validate credentials, create access token ...
+        User? user = await _userRepository.GetByUsernameAsync(request.Username);
+        if (user == null)
+        {
+            // Populate AttemptedSubject so audit logs can attribute the failed attempt.
+            return LoginResult.Failed(LoginFailureReason.UnknownUser, attemptedSubject: request.Username);
+        }
+
+        if (!_passwordHasher.ValidatePassword(request.Password, user.PasswordHash))
+        {
+            return LoginResult.Failed(LoginFailureReason.InvalidCredentials, attemptedSubject: user.Id);
+        }
+
+        // ... create access token (see the main example) ...
 
         string refreshToken = await _refreshTokenService.CreateRefreshTokenAsync(
             subject: user.Id,
@@ -376,7 +437,7 @@ public class MyAuthService : IAuthRequestValidationService
             serializedClaims: RefreshTokenService.SerializeClaims(claims),
             serializedRoles: RefreshTokenService.SerializeRoles(roles));
 
-        return new AuthResponse(token, expiresAt.ToString("o"), refreshToken);
+        return LoginResult.Succeeded(new AuthResponse(token, expiresAt.ToString("o"), refreshToken), user.Id);
     }
 }
 ```
@@ -410,7 +471,7 @@ For other stores (Redis, MongoDB, etc.), use the equivalent atomic compare-and-s
 
 **Logout endpoint (`POST /api/auth/logout`)** — revokes the refresh token family for a supplied token so that even a captured refresh token can no longer mint new access tokens.
 
-- Enabled by default when you call `AddAuthEndpoints`. Disable with `allowLogout: false`.
+- Enabled by default when you call `AddAuthEndpoints`. Because it's on by default you **must** register `IRefreshTokenService` (e.g. `builder.Services.AddRefreshTokenService<MyStore>()`) — otherwise `AddAuthEndpoints` throws at startup. Disable with `allowLogout: false` if you don't need logout.
 - Accepts `{ "refreshToken": "..." }` (same shape as `/refresh`).
 - Anonymous — no access token required. This makes logout-on-expired-access-token still work.
 - Always returns `204 No Content`, even for unknown, null, or already-invalidated tokens — the response body does not reveal whether the token was known to the server. A theoretical timing side channel exists (a hit performs one extra write) but with 256-bit random tokens it is not a practical attack surface.
@@ -434,6 +495,11 @@ public class AccountService
 {
     private readonly IRefreshTokenService _refreshTokenService;
 
+    public AccountService(IRefreshTokenService refreshTokenService)
+    {
+        _refreshTokenService = refreshTokenService;
+    }
+
     public async Task ChangePasswordAsync(string userId, string newPassword)
     {
         // ... hash and persist new password ...
@@ -445,6 +511,129 @@ public class AccountService
 ```
 
 The library does not expose an HTTP endpoint for admins to revoke other users' sessions — build your own around `InvalidateAllSessionsAsync` if you need one.
+
+### 10. Security Audit Logging (ISO 27001 A.9 / A.12)
+
+Every authentication event the library surfaces — success or failure — is reported through a single optional DI service: `IAuthAuditLogger`. Register an implementation and the built-in endpoints (plus `RefreshTokenService.InvalidateAllSessionsAsync`) will invoke it with a structured result object.
+
+| Event | Hook | Control | Typical data to log |
+|---|---|---|---|
+| Successful / failed username+password login | `OnLoginAsync(httpContext, LoginResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedSubject`, `FailureReason`, IP, User-Agent, time |
+| Successful / failed API key auth | `OnApiKeyAuthAsync(httpContext, ApiKeyAuthResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedClientId`, `FailureReason`, IP, User-Agent, time |
+| Refresh (incl. `TheftDetected`) | `OnRefreshAsync(httpContext, RefreshResult)` | ISO 27001 A.12.4.1 | outcome, `Subject`, `FamilyId`, `FailureReason`, IP, time |
+| Logout | `OnLogoutAsync(httpContext, LogoutResult)` | ISO 27001 A.9.2.6 | `WasKnown`, `Subject`, `FamilyId`, IP, time |
+| Bulk session revocation | `OnSessionsInvalidatedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
+
+All methods have default no-op implementations — implement only the events you care about. The result objects deliberately never carry a raw password or a raw API key, so failure records are safe to serialise to your log store.
+
+⚠️ **Do not serialise the whole result object on the success path.** `LoginResult` and `ApiKeyAuthResult` embed an `AuthResponse` that carries the issued JWT access token and (when refresh tokens are enabled) the raw refresh token — both are bearer credentials. Log **metadata** from the result (`Success`, `AttemptedSubject` / `AttemptedClientId`, `FailureReason`) — never log `result.AuthResponse` with a structured logger's destructuring syntax (e.g. Serilog `{@result}`) or `JsonSerializer.Serialize(result)`. The example below follows the right pattern.
+
+```csharp
+public class MyAuditLogger : IAuthAuditLogger
+{
+    private readonly ILogger<MyAuditLogger> _logger;
+
+    public MyAuditLogger(ILogger<MyAuditLogger> logger) { _logger = logger; }
+
+    public Task OnLoginAsync(HttpContext ctx, LoginResult result)
+    {
+        _logger.LogInformation(
+            "auth.login {Outcome} subject={Subject} reason={Reason} ip={Ip}",
+            result.Success ? "success" : "failure",
+            result.AttemptedSubject,
+            result.FailureReason,
+            ctx.Connection.RemoteIpAddress);
+        return Task.CompletedTask;
+    }
+
+    public Task OnRefreshAsync(HttpContext? ctx, RefreshResult result)
+    {
+        // TheftDetected is particularly worth alerting on.
+        _logger.LogInformation(
+            "auth.refresh {Outcome} subject={Subject} family={Family} reason={Reason}",
+            result.Success ? "success" : "failure",
+            result.Subject, result.FamilyId, result.FailureReason);
+        return Task.CompletedTask;
+    }
+
+    public Task OnLogoutAsync(HttpContext? ctx, LogoutResult result)
+    {
+        if (result.WasKnown)
+        {
+            _logger.LogInformation(
+                "auth.logout subject={Subject} family={Family}",
+                result.Subject, result.FamilyId);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task OnSessionsInvalidatedAsync(SessionRevocationResult result)
+    {
+        _logger.LogInformation(
+            "auth.sessions_revoked subject={Subject} count={Count}",
+            result.Subject, result.InvalidatedFamilyCount);
+        return Task.CompletedTask;
+    }
+}
+
+// Program.cs
+builder.Services.AddSingleton<IAuthAuditLogger, MyAuditLogger>();
+```
+
+The audit logger runs in the request scope, so implementations may resolve scoped dependencies. Implementations must not throw — an exception will propagate out of the endpoint and turn a successful auth into a 500.
+
+### 11. Sensitive Request Bodies (do not log)
+
+Four endpoints accept secrets in the request body. Exclude them from any body-logging middleware you run:
+
+| Path | Secret in body |
+|---|---|
+| `POST /api/auth/login` | password |
+| `POST /api/auth/apikey` | API key |
+| `POST /api/auth/refresh` | refresh token |
+| `POST /api/auth/logout` | refresh token |
+
+The library already redacts these via `ToString()` on the request DTOs (so structured logging that serialises the DTO object is safe). The risk is raw-stream logging that reads the request body before model binding.
+
+Define a shared path-matching helper and reuse it everywhere you exclude sensitive paths. In a top-level `Program.cs` this is a local function; inside a class it should be a `private static` method.
+
+```csharp
+// Program.cs (top-level statements) — local function
+static bool IsSensitiveAuthPath(PathString path) =>
+    path.StartsWithSegments("/api/auth/login") ||
+    path.StartsWithSegments("/api/auth/apikey") ||
+    path.StartsWithSegments("/api/auth/refresh") ||
+    path.StartsWithSegments("/api/auth/logout");
+```
+
+**`Microsoft.AspNetCore.HttpLogging`**
+
+```csharp
+builder.Services.AddHttpLogging(options =>
+{
+    options.LoggingFields = HttpLoggingFields.All;
+    options.MediaTypeOptions.AddText("application/json");
+});
+
+app.UseWhen(
+    ctx => !IsSensitiveAuthPath(ctx.Request.Path),
+    branch => branch.UseHttpLogging());
+```
+
+**Serilog request logging**
+
+```csharp
+app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diag, ctx) =>
+    {
+        if (IsSensitiveAuthPath(ctx.Request.Path)) return;
+        // only enrich with body contents for non-sensitive paths
+    };
+});
+```
+
+**OpenTelemetry** — ensure any `AspNetCoreInstrumentationOptions.EnrichWithHttpRequest` callback that captures request bodies checks the same path list.
 
 ## Advanced Configuration
 
@@ -573,19 +762,46 @@ For more details, see XML comments in the code or explore the source. This libra
 
 ## Migration from 3.x
 
-Version 4.0.0 introduces breaking changes:
+Version 4.0.0 introduces breaking changes. All are in service of structured results that flow into `IAuthAuditLogger` — the new optional DI service that backs ISO 27001–style security audit logging.
+
+### Validation Service
+- **`IAuthRequestValidationService` return types changed**:
+  - `ValidateLoginRequestAsync` now returns `Task<LoginResult>` (was `Task<AuthResponse?>`).
+  - `ValidateApiKeyRequestAsync` now returns `Task<ApiKeyAuthResult>` (was `Task<AuthResponse?>`).
+- **Both result types carry an `AttemptedSubject` / `AttemptedClientId`** that must be populated even on failure when knowable (e.g. `UnknownUser`, `UnknownKey`) so audit logs can attribute failed authentication attempts to an identifier. See Section 10 "Security Audit Logging".
+- **Neither result type carries the raw credential** (password / API key). Consumers logging the result cannot accidentally leak secrets.
+
+Migration shape:
+```csharp
+// Before
+return valid ? new AuthResponse(...) : null;
+
+// After
+return valid
+    ? LoginResult.Succeeded(new AuthResponse(...), user.Id)
+    : LoginResult.Failed(LoginFailureReason.InvalidCredentials, attemptedSubject: user.Id);
+```
 
 ### Refresh Token Store
-- **`IRefreshTokenStore` has a new required method**: `Task InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken)`. Existing implementations must add it — typically an `UPDATE refresh_tokens SET invalidated = true WHERE subject = @subject AND invalidated = false` (or the equivalent in your store).
-- **All `IRefreshTokenStore` methods now take `CancellationToken cancellationToken = default`**: `StoreAsync`, `GetByTokenHashAsync`, `MarkAsConsumedAsync`, `InvalidateFamilyAsync`. Existing implementations must add the parameter to each signature. Callers relying on the default value require no changes.
+- **`IRefreshTokenStore.InvalidateAllFamiliesForUserAsync`** is a new required method and returns `Task<int>` (count of families invalidated), flowing into `SessionRevocationResult.InvalidatedFamilyCount`. Typical SQL: `UPDATE refresh_tokens SET invalidated = true WHERE subject = @subject AND invalidated = false` — return the distinct-family count.
+- **All `IRefreshTokenStore` methods now take `CancellationToken cancellationToken = default`**: `StoreAsync`, `GetByTokenHashAsync`, `MarkAsConsumedAsync`, `InvalidateFamilyAsync`. Callers relying on the default value require no changes; custom implementations must add the parameter.
 
 ### Refresh Token Service
-- **The existing `IRefreshTokenService` methods now take `CancellationToken cancellationToken = default`**: `CreateRefreshTokenAsync`, `RefreshAsync`. Because the token is appended with a default value, existing callers require no changes — but custom `IRefreshTokenService` implementations must add the parameter to each override.
-- **Two new methods on `IRefreshTokenService`, both also with `CancellationToken cancellationToken = default`**: `LogoutAsync(string refreshToken, …)` and `InvalidateAllSessionsAsync(string subject, …)`. Available on the library-provided `RefreshTokenService` implementation — no consumer action needed unless you implement the service yourself.
+- **`IRefreshTokenService.LogoutAsync` and `IRefreshTokenService.InvalidateAllSessionsAsync` are new additions in 4.0.0** (not renames of pre-3.x methods). Custom implementations of `IRefreshTokenService` must add both — the built-in `RefreshTokenService` already implements them.
+- **`RefreshAsync` signature changed**: `Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext = null, CancellationToken cancellationToken = default)`. The new `httpContext` parameter flows into `IAuthAuditLogger.OnRefreshAsync`; pass `null` for programmatic refreshes. Existing positional callers of just `(refreshToken, jwtTokenService)` compile unchanged.
+- **`LogoutAsync` signature**: `Task<LogoutResult> LogoutAsync(string? refreshToken, HttpContext? httpContext = null, CancellationToken cancellationToken = default)`. The built-in endpoint still returns `204` on the wire; the structured result flows into `IAuthAuditLogger.OnLogoutAsync`. `refreshToken` is nullable — null/empty is a no-op. `httpContext` is null when called programmatically.
+- **`InvalidateAllSessionsAsync` signature**: `Task<SessionRevocationResult> InvalidateAllSessionsAsync(string subject, CancellationToken cancellationToken = default)`. Returns the count of families invalidated, fed into `IAuthAuditLogger.OnSessionsInvalidatedAsync`.
+- **`CreateRefreshTokenAsync` now takes `CancellationToken cancellationToken = default`**. Existing callers are unaffected; custom implementations must add the parameter.
 
 ### Auth Endpoints
-- **`AddAuthEndpoints` signature extended**: new `bool allowLogout = true` parameter controls the `POST /api/auth/logout` endpoint. Existing callers are unaffected because the default enables it; disable with `allowLogout: false` if undesired.
-- **Refresh and logout endpoints now honour `HttpContext.RequestAborted`**: a client disconnect will cancel the in-flight token operation instead of running it to completion. Custom store implementations should respect the supplied `CancellationToken` if they want the same behaviour.
+- **`AddAuthEndpoints` signature extended**: new `bool allowLogout = true` parameter controls the `POST /api/auth/logout` endpoint. **Breaking for existing callers who did not register `IRefreshTokenService`**: because the default enables logout, `AddAuthEndpoints` will throw at startup unless you either register a refresh token service (`builder.Services.AddRefreshTokenService<MyStore>()`) or explicitly opt out with `allowLogout: false`.
+- **`AddAuthEndpoints` startup validation is now conditional**: the check for `IAuthRequestValidationService` only fires when `allowApiKeys || allowUsernamePassword`; the check for `IRefreshTokenService` only fires when `allowRefresh || allowLogout`. A caller enabling only one endpoint family no longer needs to register services for the other.
+- **Refresh and logout endpoints now honour `HttpContext.RequestAborted`**: a client disconnect cancels the in-flight token operation.
+- **Audit hooks are split between the endpoint layer and the service layer**: `OnLoginAsync` and `OnApiKeyAuthAsync` are invoked by the endpoint (because `IAuthRequestValidationService` is consumer-implemented and cannot be guaranteed to call the hook). `OnRefreshAsync`, `OnLogoutAsync`, and `OnSessionsInvalidatedAsync` are invoked inside `RefreshTokenService`, so both HTTP and programmatic callers trigger them uniformly. See `IAuthAuditLogger` remarks.
+
+### New: `IAuthAuditLogger`
+- Opt-in DI service with default no-op methods — implement only what you need. See Section 10 "Security Audit Logging" for the full hook list and an example implementation. Registering one does not change wire behaviour; it only enables audit records.
+- **Register as singleton or scoped.** `RefreshTokenService` captures the logger at construction time, and the library registers the service as scoped — so both singleton and scoped loggers work correctly. Transient is wasteful but harmless. The only broken shape is a logger with a shorter lifetime than `IRefreshTokenService` itself, which in practice can only happen if you re-register the service as singleton while keeping a scoped logger.
 
 ## Migration from 2.x
 

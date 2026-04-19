@@ -46,16 +46,18 @@ namespace EasyReasy.Auth.Tests
             return Task.CompletedTask;
         }
 
-        public Task InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken = default)
+        public Task<int> InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken = default)
         {
+            HashSet<string> invalidatedFamilies = new HashSet<string>();
             foreach (StoredRefreshToken token in _tokens.Values)
             {
                 if (token.Subject == subject && !token.IsInvalidated)
                 {
                     token.IsInvalidated = true;
+                    invalidatedFamilies.Add(token.FamilyId);
                 }
             }
-            return Task.CompletedTask;
+            return Task.FromResult(invalidatedFamilies.Count);
         }
 
         /// <summary>

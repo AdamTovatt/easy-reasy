@@ -1,0 +1,64 @@
+name: Publish NuGet
+
+on:
+  push:
+    tags:
+      - '*-v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Parse tag
+      id: tag
+      run: |
+        TAG="${GITHUB_REF_NAME}"
+        PACKAGE="${TAG%-v*}"
+        VERSION="${TAG##*-v}"
+        echo "PACKAGE=${PACKAGE}" >> $GITHUB_OUTPUT
+        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+        echo "Publishing package '${PACKAGE}' version ${VERSION}"
+
+    - name: Resolve project
+      id: project
+      run: |
+        PACKAGE="${{ steps.tag.outputs.PACKAGE }}"
+        # Map tag prefix to project name + matching test project.
+        case "$PACKAGE" in
+          core)          PROJECT="EasyReasy";                     TEST_PROJECT="EasyReasy.Tests" ;;
+          auth)          PROJECT="EasyReasy.Auth";                TEST_PROJECT="EasyReasy.Auth.Tests" ;;
+          auth-client)   PROJECT="EasyReasy.Auth.Client";         TEST_PROJECT="EasyReasy.Auth.Client.Tests" ;;
+          byteshelf)     PROJECT="EasyReasy.ByteShelfProvider";   TEST_PROJECT="EasyReasy.ByteShelfProvider.Tests" ;;
+          env)           PROJECT="EasyReasy.EnvironmentVariables"; TEST_PROJECT="EasyReasy.EnvironmentVariables.Tests" ;;
+          vectorstorage) PROJECT="EasyReasy.VectorStorage";       TEST_PROJECT="EasyReasy.VectorStorage.Tests" ;;
+          *)             echo "Unknown package: $PACKAGE" && exit 1 ;;
+        esac
+        echo "PROJECT=${PROJECT}" >> $GITHUB_OUTPUT
+        echo "TEST_PROJECT=${TEST_PROJECT}" >> $GITHUB_OUTPUT
+        echo "Project: ${PROJECT}"
+        echo "Test project: ${TEST_PROJECT}"
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --no-restore --configuration Release -p:Version=${{ steps.tag.outputs.VERSION }}
+
+    # Only run the test project matching the package being published, and skip
+    # integration-flavoured tests that require external services (real ByteShelf
+    # backend, remote auth server) or are placeholders not meant for CI.
+    - name: Test
+      run: dotnet test ${{ steps.project.outputs.TEST_PROJECT }} --no-build --configuration Release --filter "FullyQualifiedName!~IntegrationTests"
+
+    - name: Pack
+      run: dotnet pack ${{ steps.project.outputs.PROJECT }} --no-build --configuration Release -p:Version=${{ steps.tag.outputs.VERSION }} --output ./nupkgs
+
+    - name: Publish to NuGet
+      run: dotnet nuget push ./nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} --skip-duplicate
