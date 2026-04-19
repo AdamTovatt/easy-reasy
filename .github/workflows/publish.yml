@@ -51,11 +51,13 @@ jobs:
     - name: Build
       run: dotnet build --no-restore --configuration Release -p:Version=${{ steps.tag.outputs.VERSION }}
 
-    # Only run the test project matching the package being published, and skip
-    # integration-flavoured tests that require external services (real ByteShelf
-    # backend, remote auth server) or are placeholders not meant for CI.
+    # Only run the test project matching the package being published, and skip:
+    # - IntegrationTests: require external services (real ByteShelf backend,
+    #   remote auth server) or are placeholders not meant for CI.
+    # - PerformanceTest: memory/timing assertions that are unreliable on
+    #   shared CI runners.
     - name: Test
-      run: dotnet test ${{ steps.project.outputs.TEST_PROJECT }} --no-build --configuration Release --filter "FullyQualifiedName!~IntegrationTests"
+      run: dotnet test ${{ steps.project.outputs.TEST_PROJECT }} --no-build --configuration Release --filter "FullyQualifiedName!~IntegrationTests&FullyQualifiedName!~PerformanceTest"
 
     - name: Pack
       run: dotnet pack ${{ steps.project.outputs.PROJECT }} --no-build --configuration Release -p:Version=${{ steps.tag.outputs.VERSION }} --output ./nupkgs

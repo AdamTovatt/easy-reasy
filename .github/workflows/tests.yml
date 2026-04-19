@@ -24,8 +24,10 @@ jobs:
     - name: Build
       run: dotnet build --no-restore --configuration Release
 
-    # Run every test project but skip integration-flavoured tests that require
-    # external services (real ByteShelf backend, remote auth server) or are
-    # placeholders not meant for CI.
+    # Run every test project but skip:
+    # - IntegrationTests: require external services (real ByteShelf backend,
+    #   remote auth server) or are placeholders not meant for CI.
+    # - PerformanceTest: memory/timing assertions that are unreliable on
+    #   shared CI runners.
     - name: Test
-      run: dotnet test --no-build --configuration Release --filter "FullyQualifiedName!~IntegrationTests"
+      run: dotnet test --no-build --configuration Release --filter "FullyQualifiedName!~IntegrationTests&FullyQualifiedName!~PerformanceTest"
