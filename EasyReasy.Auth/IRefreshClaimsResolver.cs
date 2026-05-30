@@ -45,8 +45,12 @@ namespace EasyReasy.Auth
         /// A <see cref="RefreshClaimsDecision"/> describing the resolver's verdict. Exceptions
         /// thrown from this method propagate out of <see cref="IRefreshTokenService.RefreshAsync"/>
         /// without consuming the stored refresh token, so the client can retry once the
-        /// underlying issue is resolved. Consumers that prefer graceful failure should catch
-        /// internally and return <see cref="RefreshClaimsDecision.Deny"/> instead.
+        /// underlying issue is resolved. Before the exception propagates, a synthetic
+        /// <see cref="RefreshFailureReason.ResolverError"/> result is emitted to
+        /// <see cref="IAuthAuditLogger.OnRefreshAsync"/> so the audit trail remains the
+        /// authoritative record of every refresh outcome (ISO 27001 A.12.4.1). Consumers
+        /// that prefer graceful failure without surfacing an exception should catch internally
+        /// and return <see cref="RefreshClaimsDecision.Deny"/> instead.
         /// </returns>
         Task<RefreshClaimsDecision> ResolveAsync(RefreshClaimsContext context, CancellationToken cancellationToken);
     }

@@ -33,6 +33,16 @@ namespace EasyReasy.Auth
         /// token is not consumed, so a subsequent legitimate refresh after the deny condition
         /// clears is not affected.
         /// </summary>
-        DeniedByResolver
+        DeniedByResolver,
+
+        /// <summary>
+        /// The consumer-supplied <see cref="IRefreshClaimsResolver"/> threw an exception.
+        /// The stored refresh token is not consumed, so the client can retry once the
+        /// underlying issue is resolved. Emitted to <see cref="IAuthAuditLogger.OnRefreshAsync"/>
+        /// so the audit trail records every refresh outcome, including faults (ISO 27001
+        /// A.12.4.1). The original exception still propagates out of
+        /// <see cref="IRefreshTokenService.RefreshAsync"/>.
+        /// </summary>
+        ResolverError
     }
 }

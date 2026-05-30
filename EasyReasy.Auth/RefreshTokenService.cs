@@ -89,7 +89,19 @@ namespace EasyReasy.Auth
         /// <inheritdoc />
         public async Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
         {
-            RefreshResult result = await ComputeRefreshAsync(refreshToken, jwtTokenService, httpContext, cancellationToken);
+            RefreshResult result;
+            try
+            {
+                result = await ComputeRefreshAsync(refreshToken, jwtTokenService, httpContext, cancellationToken);
+            }
+            catch
+            {
+                // The audit trail must record every refresh outcome including resolver faults
+                // (ISO 27001 A.12.4.1). Emit a synthetic ResolverError result, then rethrow so
+                // the original exception still propagates with its original stack trace.
+                await TryLogResolverFaultAsync(refreshToken, httpContext, cancellationToken);
+                throw;
+            }
 
             if (_auditLogger != null)
             {
@@ -97,6 +109,36 @@ namespace EasyReasy.Auth
             }
 
             return result;
+        }
+
+        private async Task TryLogResolverFaultAsync(string refreshToken, HttpContext? httpContext, CancellationToken cancellationToken)
+        {
+            if (_auditLogger == null)
+            {
+                return;
+            }
+
+            // Best-effort: a fault here must never replace the original exception. If the
+            // store lookup or the logger itself throws, swallow and fall through to the
+            // outer rethrow so the consumer still sees the resolver's exception.
+            try
+            {
+                string? subject = null;
+                string? familyId = null;
+                StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(HashToken(refreshToken), cancellationToken);
+                if (storedToken != null)
+                {
+                    subject = storedToken.Subject;
+                    familyId = storedToken.FamilyId;
+                }
+
+                RefreshResult faultResult = RefreshResult.Failed(RefreshFailureReason.ResolverError, subject, familyId);
+                await _auditLogger.OnRefreshAsync(httpContext, faultResult);
+            }
+            catch
+            {
+                // Intentionally swallowed — the outer catch's rethrow is the source of truth.
+            }
         }
 
         private async Task<RefreshResult> ComputeRefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext, CancellationToken cancellationToken)

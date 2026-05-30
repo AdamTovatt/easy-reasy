@@ -215,6 +215,26 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public async Task RefreshAsync_WithResolverThrowing_ShouldPreserveOriginalStackTrace()
+        {
+            // Throws inside the resolver must propagate with the original stack intact, not
+            // wrapped or re-thrown via `throw new …(…)`. A bare `throw;` is the C# idiom for
+            // this; the test pins it so a future refactor that catches and re-throws (or
+            // wraps in another exception type) gets caught.
+            InvalidOperationException injected = new InvalidOperationException("resolver blew up");
+            FakeRefreshClaimsResolver resolver = Throwing(injected);
+            RefreshTokenService service = BuildService(resolver);
+
+            string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            InvalidOperationException thrown = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+                () => service.RefreshAsync(rawToken, _jwtTokenService));
+            Assert.AreSame(injected, thrown);
+            Assert.IsTrue(thrown.StackTrace?.Contains(nameof(FakeRefreshClaimsResolver)) == true,
+                "expected stack trace to retain the resolver frame; got: " + thrown.StackTrace);
+        }
+
+        [TestMethod]
         public async Task RefreshAsync_WithResolverThrowing_ShouldNotConsumeStoredToken()
         {
             FakeRefreshClaimsResolver resolver = Throwing(new InvalidOperationException("resolver blew up"));
@@ -345,21 +365,27 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public async Task RefreshAsync_WithResolverThrowing_ShouldNotInvokeAuditLogger()
+        public async Task RefreshAsync_WithResolverThrowing_ShouldInvokeAuditLoggerWithResolverErrorResult()
         {
-            // Pins the documented contract that resolver throws propagate without burning the
-            // stored token AND without surfacing an audit event. If a future refactor wraps the
-            // resolver in try/finally to "fix" the audit gap, this test catches it.
+            // ISO 27001 A.12.4.1: the audit log must be the authoritative record of every
+            // refresh outcome, including faults. A resolver throw emits a synthetic
+            // ResolverError result BEFORE the exception propagates.
             FakeRefreshClaimsResolver resolver = Throwing(new InvalidOperationException("resolver blew up"));
             RecordingAuditLogger auditLogger = new RecordingAuditLogger();
             RefreshTokenService service = BuildService(resolver, auditLogger);
 
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string expectedFamilyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
 
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(
                 () => service.RefreshAsync(rawToken, _jwtTokenService));
 
-            Assert.AreEqual(0, auditLogger.RefreshCalls.Count);
+            Assert.AreEqual(1, auditLogger.RefreshCalls.Count);
+            RefreshResult auditedResult = auditLogger.RefreshCalls[0].Result;
+            Assert.IsFalse(auditedResult.Success);
+            Assert.AreEqual(RefreshFailureReason.ResolverError, auditedResult.FailureReason);
+            Assert.AreEqual("user-1", auditedResult.Subject);
+            Assert.AreEqual(expectedFamilyId, auditedResult.FamilyId);
         }
     }
 }

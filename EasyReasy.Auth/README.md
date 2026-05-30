@@ -498,7 +498,7 @@ builder.Services.AddRefreshTokenService<MyRefreshTokenStore>();
 A few contract notes worth knowing:
 
 - **Resolver runs before the atomic consume.** A `Deny()` or a thrown resolver does **not** burn the stored refresh token. The client can retry once the consumer fixes the underlying issue. Theft detection is unchanged — it still fires at the atomic consume on the legitimate winning request.
-- **Throws propagate.** If your resolver fails (DB blip, transient error), the exception bubbles out of `RefreshAsync` and the audit logger is **not** invoked. Consumers that prefer a graceful denial should catch internally and return `RefreshClaimsDecision.Deny()`.
+- **Throws propagate, with an audit row first.** If your resolver fails (DB blip, transient error), the exception bubbles out of `RefreshAsync` — but before it propagates, the audit logger receives a synthetic `RefreshFailureReason.ResolverError` result so the audit trail remains the authoritative record of every refresh outcome (ISO 27001 A.12.4.1). Consumers that prefer a graceful denial without surfacing an exception should catch internally and return `RefreshClaimsDecision.Deny()`.
 - **Side effects must be idempotent.** Even on `Allow`, the subsequent atomic consume can still fail (concurrent reuse → `TheftDetected`). Any side effects the resolver already committed will persist.
 - **Keep it fast.** The resolver runs inside the read-then-consume window. A slow resolver widens the race window in which two legitimate near-simultaneous refreshes trip theft detection. Cache hot lookups; avoid per-refresh network calls.
 - **`DeniedByResolver` flows through `IAuthAuditLogger.OnRefreshAsync`** like any other refresh failure — your existing audit pipeline picks it up automatically.
@@ -574,7 +574,7 @@ Every authentication event the library surfaces — success or failure — is re
 |---|---|---|---|
 | Successful / failed username+password login | `OnLoginAsync(httpContext, LoginResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedSubject`, `FailureReason`, IP, User-Agent, time |
 | Successful / failed API key auth | `OnApiKeyAuthAsync(httpContext, ApiKeyAuthResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedClientId`, `FailureReason`, IP, User-Agent, time |
-| Refresh (incl. `TheftDetected` and `DeniedByResolver`) | `OnRefreshAsync(httpContext, RefreshResult)` | ISO 27001 A.12.4.1 | outcome, `Subject`, `FamilyId`, `FailureReason`, IP, time |
+| Refresh (incl. `TheftDetected`, `DeniedByResolver`, `ResolverError`) | `OnRefreshAsync(httpContext, RefreshResult)` | ISO 27001 A.12.4.1 | outcome, `Subject`, `FamilyId`, `FailureReason`, IP, time |
 | Logout | `OnLogoutAsync(httpContext, LogoutResult)` | ISO 27001 A.9.2.6 | `WasKnown`, `Subject`, `FamilyId`, IP, time |
 | Bulk session revocation | `OnSessionsInvalidatedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
 
@@ -824,6 +824,7 @@ Version 4.1.0 is additive — no breaking changes. Existing callers compile and 
 - **Opt-in DI service.** Register an implementation before `AddRefreshTokenService<TStore>` and the refresh path picks it up automatically. Without a registration, refresh behaviour is identical to 4.0.0 — stored claims and roles are replayed verbatim onto the new tokens.
 - **Use cases.** Mid-session password expiry enforcement (e.g. 21 CFR Part 11 §11.300), mid-session role demotion, mid-session account disable. See Section 8 "Refresh Tokens → Mid-session re-evaluation" for the full contract and an example implementation.
 - **New `RefreshFailureReason.DeniedByResolver`** distinguishes a consumer-driven deny from theft, expiry, or invalidation. It flows through `IAuthAuditLogger.OnRefreshAsync` like every other refresh failure.
+- **New `RefreshFailureReason.ResolverError`** is emitted to `IAuthAuditLogger.OnRefreshAsync` when a resolver throws, so the audit trail records every refresh outcome including faults (ISO 27001 A.12.4.1). The original exception still propagates out of `RefreshAsync` with its original stack trace, so consumer exception-handling middleware is unaffected.
 - **No interface or signature changes.** `IRefreshTokenService`, `IRefreshTokenStore`, `RefreshResult`, and the wire format are all unchanged.
 
 ## Migration from 3.x
