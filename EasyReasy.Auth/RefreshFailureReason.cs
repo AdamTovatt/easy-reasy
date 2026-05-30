@@ -24,6 +24,15 @@ namespace EasyReasy.Auth
         /// The refresh token has already been consumed, indicating potential token theft.
         /// The entire token family has been invalidated as a security measure.
         /// </summary>
-        TheftDetected
+        TheftDetected,
+
+        /// <summary>
+        /// The consumer-supplied <see cref="IRefreshClaimsResolver"/> denied the refresh
+        /// (for example because the user's password has expired, the account has been
+        /// disabled, or the role required for the session was revoked). The stored refresh
+        /// token is not consumed, so a subsequent legitimate refresh after the deny condition
+        /// clears is not affected.
+        /// </summary>
+        DeniedByResolver
     }
 }

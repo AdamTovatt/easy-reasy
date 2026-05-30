@@ -449,6 +449,60 @@ public class MyAuthService : IAuthRequestValidationService
 - If a token that was already used gets presented again, the library detects theft and **invalidates the entire family**
 - Everything is opt-in: you must register the service, enable the endpoint, and inject `IRefreshTokenService` in your validation service
 
+#### Mid-session re-evaluation: `IRefreshClaimsResolver`
+
+By default, the refresh path inherits the claims and roles from the previous token in the family. That works fine for stable sessions, but it does not let policy changes ride into the new access token: a password that expires mid-session, a role that gets revoked, an account that gets disabled — none of these reach the user until they log in again.
+
+Register an `IRefreshClaimsResolver` and the library calls it on every refresh, before the atomic consume. The resolver either returns the claims and roles to put on the new tokens (replacing what was stored) or denies the refresh outright with `RefreshFailureReason.DeniedByResolver`. When no resolver is registered, refresh behaviour is identical to today.
+
+The intended pattern is **re-derive from the current user state on every refresh**, not "take what's stored and patch it." Anything the resolver outputs replaces the stored claims and roles on both the new access token and the new stored refresh row, so any value you want to ride forward must be returned each time.
+
+```csharp
+public class PolicyAwareRefreshResolver : IRefreshClaimsResolver
+{
+    private readonly IUserRepository _users;
+
+    public PolicyAwareRefreshResolver(IUserRepository users) { _users = users; }
+
+    public async Task<RefreshClaimsDecision> ResolveAsync(
+        RefreshClaimsContext context, CancellationToken cancellationToken)
+    {
+        User? user = await _users.GetByIdAsync(context.Subject, cancellationToken);
+        if (user == null || user.IsDisabled)
+        {
+            return RefreshClaimsDecision.Deny();
+        }
+
+        // Build claims fresh from the current user, not from context.StoredClaims —
+        // re-deriving each refresh is the whole point of the resolver. (Use
+        // context.StoredClaims only for facts that genuinely cannot be re-derived.)
+        List<Claim> claims = new List<Claim>
+        {
+            new Claim("tenant_id", user.TenantId),
+            new Claim("email", user.Email),
+        };
+        if (user.PasswordExpiresAt <= DateTime.UtcNow)
+        {
+            claims.Add(new Claim("pwd_expired", "true"));
+        }
+
+        return RefreshClaimsDecision.Allow(claims, user.CurrentRoles);
+    }
+}
+
+// Program.cs — register before AddRefreshTokenService<TStore>
+builder.Services.AddScoped<IRefreshClaimsResolver, PolicyAwareRefreshResolver>();
+builder.Services.AddRefreshTokenService<MyRefreshTokenStore>();
+```
+
+A few contract notes worth knowing:
+
+- **Resolver runs before the atomic consume.** A `Deny()` or a thrown resolver does **not** burn the stored refresh token. The client can retry once the consumer fixes the underlying issue. Theft detection is unchanged — it still fires at the atomic consume on the legitimate winning request.
+- **Throws propagate.** If your resolver fails (DB blip, transient error), the exception bubbles out of `RefreshAsync` and the audit logger is **not** invoked. Consumers that prefer a graceful denial should catch internally and return `RefreshClaimsDecision.Deny()`.
+- **Side effects must be idempotent.** Even on `Allow`, the subsequent atomic consume can still fail (concurrent reuse → `TheftDetected`). Any side effects the resolver already committed will persist.
+- **Keep it fast.** The resolver runs inside the read-then-consume window. A slow resolver widens the race window in which two legitimate near-simultaneous refreshes trip theft detection. Cache hot lookups; avoid per-refresh network calls.
+- **`DeniedByResolver` flows through `IAuthAuditLogger.OnRefreshAsync`** like any other refresh failure — your existing audit pipeline picks it up automatically.
+
 #### Important: `MarkAsConsumedAsync` Must Be Atomic
 
 `MarkAsConsumedAsync` returns `bool` — it must return `true` only for the **first** caller and `false` for any concurrent requests that try to consume the same token. This prevents a race condition where two simultaneous requests both redeem the same refresh token before either marks it consumed.
@@ -520,7 +574,7 @@ Every authentication event the library surfaces — success or failure — is re
 |---|---|---|---|
 | Successful / failed username+password login | `OnLoginAsync(httpContext, LoginResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedSubject`, `FailureReason`, IP, User-Agent, time |
 | Successful / failed API key auth | `OnApiKeyAuthAsync(httpContext, ApiKeyAuthResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedClientId`, `FailureReason`, IP, User-Agent, time |
-| Refresh (incl. `TheftDetected`) | `OnRefreshAsync(httpContext, RefreshResult)` | ISO 27001 A.12.4.1 | outcome, `Subject`, `FamilyId`, `FailureReason`, IP, time |
+| Refresh (incl. `TheftDetected` and `DeniedByResolver`) | `OnRefreshAsync(httpContext, RefreshResult)` | ISO 27001 A.12.4.1 | outcome, `Subject`, `FamilyId`, `FailureReason`, IP, time |
 | Logout | `OnLogoutAsync(httpContext, LogoutResult)` | ISO 27001 A.9.2.6 | `WasKnown`, `Subject`, `FamilyId`, IP, time |
 | Bulk session revocation | `OnSessionsInvalidatedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
 
@@ -548,7 +602,9 @@ public class MyAuditLogger : IAuthAuditLogger
 
     public Task OnRefreshAsync(HttpContext? ctx, RefreshResult result)
     {
-        // TheftDetected is particularly worth alerting on.
+        // TheftDetected and DeniedByResolver are particularly worth alerting on —
+        // both can indicate a compromised session or a policy state change (password
+        // expiry, role revocation, account disable) that just blocked a refresh.
         _logger.LogInformation(
             "auth.refresh {Outcome} subject={Subject} family={Family} reason={Reason}",
             result.Success ? "success" : "failure",
@@ -759,6 +815,16 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 4.0.0
+
+Version 4.1.0 is additive — no breaking changes. Existing callers compile and behave identically. The new capability is one optional DI service: `IRefreshClaimsResolver`, which lets consumers re-evaluate claims and roles on every refresh or deny a refresh outright.
+
+### New: `IRefreshClaimsResolver`
+- **Opt-in DI service.** Register an implementation before `AddRefreshTokenService<TStore>` and the refresh path picks it up automatically. Without a registration, refresh behaviour is identical to 4.0.0 — stored claims and roles are replayed verbatim onto the new tokens.
+- **Use cases.** Mid-session password expiry enforcement (e.g. 21 CFR Part 11 §11.300), mid-session role demotion, mid-session account disable. See Section 8 "Refresh Tokens → Mid-session re-evaluation" for the full contract and an example implementation.
+- **New `RefreshFailureReason.DeniedByResolver`** distinguishes a consumer-driven deny from theft, expiry, or invalidation. It flows through `IAuthAuditLogger.OnRefreshAsync` like every other refresh failure.
+- **No interface or signature changes.** `IRefreshTokenService`, `IRefreshTokenStore`, `RefreshResult`, and the wire format are all unchanged.
 
 ## Migration from 3.x
 
