@@ -16,6 +16,7 @@ namespace EasyReasy.Auth
         private readonly TimeSpan _refreshTokenLifetime;
         private readonly TimeSpan _accessTokenLifetime;
         private readonly IAuthAuditLogger? _auditLogger;
+        private readonly IRefreshClaimsResolver? _claimsResolver;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RefreshTokenService"/> class.
@@ -35,16 +36,24 @@ namespace EasyReasy.Auth
         /// so consumers can emit ISO 27001 A.12.4.1 / A.9.2.6 audit records for both HTTP-driven and programmatic flows.
         /// Lifetime must be at least as long as this service — see <see cref="IAuthAuditLogger"/> remarks.
         /// </param>
+        /// <param name="claimsResolver">
+        /// Optional consumer-supplied claims/roles resolver. When supplied, this service invokes the
+        /// resolver on every refresh — before the atomic consume — to either re-evaluate the claims
+        /// and roles that ride onto the new tokens (replacing what was originally stored at login
+        /// time) or deny the refresh outright. See <see cref="IRefreshClaimsResolver"/>.
+        /// </param>
         public RefreshTokenService(
             IRefreshTokenStore store,
             TimeSpan? refreshTokenLifetime = null,
             TimeSpan? accessTokenLifetime = null,
-            IAuthAuditLogger? auditLogger = null)
+            IAuthAuditLogger? auditLogger = null,
+            IRefreshClaimsResolver? claimsResolver = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _refreshTokenLifetime = refreshTokenLifetime ?? TimeSpan.FromDays(30);
             _accessTokenLifetime = accessTokenLifetime ?? TimeSpan.FromHours(1);
             _auditLogger = auditLogger;
+            _claimsResolver = claimsResolver;
         }
 
         /// <inheritdoc />
@@ -80,7 +89,19 @@ namespace EasyReasy.Auth
         /// <inheritdoc />
         public async Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
         {
-            RefreshResult result = await ComputeRefreshAsync(refreshToken, jwtTokenService, cancellationToken);
+            RefreshResult result;
+            try
+            {
+                result = await ComputeRefreshAsync(refreshToken, jwtTokenService, httpContext, cancellationToken);
+            }
+            catch
+            {
+                // The audit trail must record every refresh outcome including resolver faults
+                // (ISO 27001 A.12.4.1). Emit a synthetic ResolverError result, then rethrow so
+                // the original exception still propagates with its original stack trace.
+                await TryLogResolverFaultAsync(refreshToken, httpContext, cancellationToken);
+                throw;
+            }
 
             if (_auditLogger != null)
             {
@@ -90,48 +111,99 @@ namespace EasyReasy.Auth
             return result;
         }
 
-        private async Task<RefreshResult> ComputeRefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, CancellationToken cancellationToken)
+        private async Task TryLogResolverFaultAsync(string refreshToken, HttpContext? httpContext, CancellationToken cancellationToken)
+        {
+            if (_auditLogger == null)
+            {
+                return;
+            }
+
+            // Best-effort: a fault here must never replace the original exception. If the
+            // store lookup or the logger itself throws, swallow and fall through to the
+            // outer rethrow so the consumer still sees the resolver's exception.
+            try
+            {
+                string? subject = null;
+                string? familyId = null;
+                StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(HashToken(refreshToken), cancellationToken);
+                if (storedToken != null)
+                {
+                    subject = storedToken.Subject;
+                    familyId = storedToken.FamilyId;
+                }
+
+                RefreshResult faultResult = RefreshResult.Failed(RefreshFailureReason.ResolverError, subject, familyId);
+                await _auditLogger.OnRefreshAsync(httpContext, faultResult);
+            }
+            catch
+            {
+                // Intentionally swallowed — the outer catch's rethrow is the source of truth.
+            }
+        }
+
+        private async Task<RefreshResult> ComputeRefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext, CancellationToken cancellationToken)
         {
             DateTime now = DateTime.UtcNow;
             string tokenHash = HashToken(refreshToken);
             StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(tokenHash, cancellationToken);
 
-            // Step 1: Token not found
             if (storedToken == null)
             {
                 return RefreshResult.Failed(RefreshFailureReason.TokenNotFound);
             }
 
-            // Step 2: Token invalidated
             if (storedToken.IsInvalidated)
             {
                 return RefreshResult.Failed(RefreshFailureReason.TokenInvalidated, storedToken.Subject, storedToken.FamilyId);
             }
 
-            // Step 3: Token already consumed — theft detected
+            // Token was already consumed — theft detected.
             if (storedToken.ConsumedAt != null)
             {
                 await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
                 return RefreshResult.Failed(RefreshFailureReason.TheftDetected, storedToken.Subject, storedToken.FamilyId);
             }
 
-            // Step 4: Token expired
             if (storedToken.ExpiresAt <= now)
             {
                 return RefreshResult.Failed(RefreshFailureReason.TokenExpired, storedToken.Subject, storedToken.FamilyId);
             }
 
-            // Step 5: Atomically mark old token as consumed — if another request already consumed it, treat as theft
+            // Deserialize once — both the no-resolver branch and the resolver-input branch need these.
+            IReadOnlyList<Claim> claims = DeserializeClaims(storedToken.SerializedClaims);
+            IReadOnlyList<string> roles = DeserializeRoles(storedToken.SerializedRoles);
+
+            // Invoke the consumer-supplied resolver, if registered. This runs BEFORE the atomic
+            // consume so that a deny or a thrown resolver does not burn the stored refresh
+            // token — a transient failure would otherwise trip theft detection on the legitimate
+            // retry and invalidate the entire session family.
+            if (_claimsResolver != null)
+            {
+                RefreshClaimsContext context = new RefreshClaimsContext(
+                    storedToken.Subject,
+                    storedToken.AuthType,
+                    claims,
+                    roles,
+                    httpContext);
+
+                RefreshClaimsDecision decision = await _claimsResolver.ResolveAsync(context, cancellationToken);
+
+                if (decision.IsDenied)
+                {
+                    return RefreshResult.Failed(RefreshFailureReason.DeniedByResolver, storedToken.Subject, storedToken.FamilyId);
+                }
+
+                claims = decision.Claims;
+                roles = decision.Roles;
+            }
+
+            // Atomically mark old token as consumed — if another request already consumed it, treat as theft.
             bool consumed = await _store.MarkAsConsumedAsync(tokenHash, now, cancellationToken);
             if (!consumed)
             {
                 await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
                 return RefreshResult.Failed(RefreshFailureReason.TheftDetected, storedToken.Subject, storedToken.FamilyId);
             }
-
-            // Step 6: Deserialize stored claims and roles, create new access token
-            List<Claim> claims = DeserializeClaims(storedToken.SerializedClaims);
-            List<string> roles = DeserializeRoles(storedToken.SerializedRoles);
 
             DateTime accessTokenExpiresAt = now.Add(_accessTokenLifetime);
             string accessToken = jwtTokenService.CreateToken(
@@ -141,9 +213,14 @@ namespace EasyReasy.Auth
                 roles,
                 accessTokenExpiresAt);
 
-            // Step 7: Generate new refresh token in same family
+            // When the resolver ran, the new row persists the resolved claims/roles so subsequent
+            // refreshes start from there; when no resolver is registered, the original serialized
+            // JSON is reused verbatim.
             string newRawToken = GenerateToken();
             string newTokenHash = HashToken(newRawToken);
+
+            string? newSerializedClaims = _claimsResolver != null ? SerializeClaims(claims) : storedToken.SerializedClaims;
+            string? newSerializedRoles = _claimsResolver != null ? SerializeRoles(roles) : storedToken.SerializedRoles;
 
             StoredRefreshToken newStoredToken = new StoredRefreshToken
             {
@@ -153,13 +230,12 @@ namespace EasyReasy.Auth
                 FamilyId = storedToken.FamilyId,
                 CreatedAt = now,
                 ExpiresAt = now.Add(_refreshTokenLifetime),
-                SerializedClaims = storedToken.SerializedClaims,
-                SerializedRoles = storedToken.SerializedRoles
+                SerializedClaims = newSerializedClaims,
+                SerializedRoles = newSerializedRoles,
             };
 
             await _store.StoreAsync(newStoredToken, cancellationToken);
 
-            // Step 8: Return success with new token pair
             AuthResponse authResponse = new AuthResponse(
                 accessToken,
                 accessTokenExpiresAt.ToString("O"),

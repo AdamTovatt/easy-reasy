@@ -97,6 +97,15 @@ namespace EasyReasy.Auth
         /// Registers the refresh token service and its backing store for dependency injection.
         /// The consumer-provided <typeparamref name="TStore"/> is registered as scoped.
         /// </summary>
+        /// <remarks>
+        /// If an <see cref="IAuthAuditLogger"/> is registered in the same service collection,
+        /// the refresh token service picks it up automatically and invokes its hooks on every
+        /// refresh, logout, and bulk session invalidation. If an <see cref="IRefreshClaimsResolver"/>
+        /// is registered, the refresh token service picks it up automatically and invokes it on
+        /// every refresh to either re-evaluate the claims and roles that ride onto the new
+        /// tokens or deny the refresh outright. Both registrations are optional and must be
+        /// added to the service collection before this method is called.
+        /// </remarks>
         /// <typeparam name="TStore">
         /// The consumer's implementation of <see cref="IRefreshTokenStore"/> for persisting refresh tokens.
         /// </typeparam>
@@ -119,7 +128,8 @@ namespace EasyReasy.Auth
             {
                 IRefreshTokenStore store = provider.GetRequiredService<IRefreshTokenStore>();
                 IAuthAuditLogger? auditLogger = provider.GetService<IAuthAuditLogger>();
-                return new RefreshTokenService(store, refreshTokenLifetime, accessTokenLifetime, auditLogger);
+                IRefreshClaimsResolver? claimsResolver = provider.GetService<IRefreshClaimsResolver>();
+                return new RefreshTokenService(store, refreshTokenLifetime, accessTokenLifetime, auditLogger, claimsResolver);
             });
 
             return services;

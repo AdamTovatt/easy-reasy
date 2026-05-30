@@ -25,12 +25,19 @@ namespace EasyReasy.Auth
         /// Implements token rotation with theft detection — if a consumed token is reused,
         /// the entire token family is invalidated.
         /// </summary>
+        /// <remarks>
+        /// When an <see cref="IRefreshClaimsResolver"/> is registered, the implementation
+        /// invokes it before the atomic consume to either re-evaluate the claims and roles
+        /// that ride onto the new tokens (replacing what was stored at login time) or deny
+        /// the refresh outright with <see cref="RefreshFailureReason.DeniedByResolver"/>.
+        /// </remarks>
         /// <param name="refreshToken">The raw refresh token from the client.</param>
         /// <param name="jwtTokenService">The JWT token service used to create the new access token.</param>
         /// <param name="httpContext">
         /// The HTTP context of the triggering request, when called from an HTTP endpoint.
-        /// Pass <c>null</c> for programmatic refreshes (e.g. from a background service). Only used to
-        /// propagate context to <see cref="IAuthAuditLogger.OnRefreshAsync"/>.
+        /// Pass <c>null</c> for programmatic refreshes (e.g. from a background service). Used to
+        /// propagate context to both <see cref="IAuthAuditLogger.OnRefreshAsync"/> and
+        /// <see cref="IRefreshClaimsResolver.ResolveAsync"/>.
         /// </param>
         /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>A <see cref="RefreshResult"/> indicating success or failure.</returns>
