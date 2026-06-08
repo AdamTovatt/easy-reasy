@@ -434,13 +434,15 @@ public class MyAuthService : IAuthRequestValidationService
         string refreshToken = await _refreshTokenService.CreateRefreshTokenAsync(
             subject: user.Id,
             authType: "user",
-            serializedClaims: RefreshTokenService.SerializeClaims(claims),
-            serializedRoles: RefreshTokenService.SerializeRoles(roles));
+            serializedClaims: RefreshTokenClaims.SerializeClaims(claims),
+            serializedRoles: RefreshTokenClaims.SerializeRoles(roles));
 
         return LoginResult.Succeeded(new AuthResponse(token, expiresAt.ToString("o"), refreshToken), user.Id);
     }
 }
 ```
+
+> **Producing the serialized strings.** `CreateRefreshTokenAsync` takes the claims and roles as already-serialized JSON. Use `RefreshTokenClaims.SerializeClaims(claims)` and `RefreshTokenClaims.SerializeRoles(roles)` to produce them — they emit the exact format the refresh path round-trips, so any claim you seed this way survives a refresh (subject to your `IRefreshClaimsResolver`, if registered).
 
 #### How It Works
 

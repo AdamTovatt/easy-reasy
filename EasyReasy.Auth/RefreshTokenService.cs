@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 
 namespace EasyReasy.Auth
 {
@@ -170,8 +169,8 @@ namespace EasyReasy.Auth
             }
 
             // Deserialize once — both the no-resolver branch and the resolver-input branch need these.
-            IReadOnlyList<Claim> claims = DeserializeClaims(storedToken.SerializedClaims);
-            IReadOnlyList<string> roles = DeserializeRoles(storedToken.SerializedRoles);
+            IReadOnlyList<Claim> claims = RefreshTokenClaims.DeserializeClaims(storedToken.SerializedClaims);
+            IReadOnlyList<string> roles = RefreshTokenClaims.DeserializeRoles(storedToken.SerializedRoles);
 
             // Invoke the consumer-supplied resolver, if registered. This runs BEFORE the atomic
             // consume so that a deny or a thrown resolver does not burn the stored refresh
@@ -219,8 +218,8 @@ namespace EasyReasy.Auth
             string newRawToken = GenerateToken();
             string newTokenHash = HashToken(newRawToken);
 
-            string? newSerializedClaims = _claimsResolver != null ? SerializeClaims(claims) : storedToken.SerializedClaims;
-            string? newSerializedRoles = _claimsResolver != null ? SerializeRoles(roles) : storedToken.SerializedRoles;
+            string? newSerializedClaims = _claimsResolver != null ? RefreshTokenClaims.SerializeClaims(claims) : storedToken.SerializedClaims;
+            string? newSerializedRoles = _claimsResolver != null ? RefreshTokenClaims.SerializeRoles(roles) : storedToken.SerializedRoles;
 
             StoredRefreshToken newStoredToken = new StoredRefreshToken
             {
@@ -296,40 +295,6 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
-        /// Serializes a collection of claims to a JSON string.
-        /// </summary>
-        /// <param name="claims">The claims to serialize.</param>
-        /// <returns>A JSON string representing the claims, or null if the collection is empty.</returns>
-        internal static string? SerializeClaims(IEnumerable<Claim> claims)
-        {
-            List<ClaimEntry> entries = claims.Select(c => new ClaimEntry(c.Type, c.Value)).ToList();
-
-            if (entries.Count == 0)
-            {
-                return null;
-            }
-
-            return JsonSerializer.Serialize(entries, JsonSerializerSettings.CurrentOptions);
-        }
-
-        /// <summary>
-        /// Serializes a collection of roles to a JSON string.
-        /// </summary>
-        /// <param name="roles">The roles to serialize.</param>
-        /// <returns>A JSON string representing the roles, or null if the collection is empty.</returns>
-        internal static string? SerializeRoles(IEnumerable<string> roles)
-        {
-            List<string> roleList = roles.ToList();
-
-            if (roleList.Count == 0)
-            {
-                return null;
-            }
-
-            return JsonSerializer.Serialize(roleList, JsonSerializerSettings.CurrentOptions);
-        }
-
-        /// <summary>
         /// Computes the SHA-256 hash of a raw refresh token.
         /// </summary>
         /// <param name="token">The raw refresh token.</param>
@@ -349,38 +314,5 @@ namespace EasyReasy.Auth
                 .Replace('/', '_')
                 .TrimEnd('=');
         }
-
-        private static List<Claim> DeserializeClaims(string? serializedClaims)
-        {
-            if (string.IsNullOrEmpty(serializedClaims))
-            {
-                return new List<Claim>();
-            }
-
-            List<ClaimEntry>? entries = JsonSerializer.Deserialize<List<ClaimEntry>>(serializedClaims, JsonSerializerSettings.CurrentOptions);
-
-            if (entries == null)
-            {
-                return new List<Claim>();
-            }
-
-            return entries.Select(e => new Claim(e.Type, e.Value)).ToList();
-        }
-
-        private static List<string> DeserializeRoles(string? serializedRoles)
-        {
-            if (string.IsNullOrEmpty(serializedRoles))
-            {
-                return new List<string>();
-            }
-
-            List<string>? roles = JsonSerializer.Deserialize<List<string>>(serializedRoles, JsonSerializerSettings.CurrentOptions);
-            return roles ?? new List<string>();
-        }
-
-        /// <summary>
-        /// Internal record used for JSON serialization of claims.
-        /// </summary>
-        private record ClaimEntry(string Type, string Value);
     }
 }

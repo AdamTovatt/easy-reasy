@@ -52,8 +52,8 @@ namespace EasyReasy.Auth.Tests
         {
             List<Claim> claims = new List<Claim> { new Claim("tenant_id", "tenant-42") };
             List<string> roles = new List<string> { "admin" };
-            string? serializedClaims = RefreshTokenService.SerializeClaims(claims);
-            string? serializedRoles = RefreshTokenService.SerializeRoles(roles);
+            string? serializedClaims = RefreshTokenClaims.SerializeClaims(claims);
+            string? serializedRoles = RefreshTokenClaims.SerializeRoles(roles);
 
             RefreshTokenService service = BuildService();
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", serializedClaims, serializedRoles);
@@ -71,8 +71,8 @@ namespace EasyReasy.Auth.Tests
         {
             List<Claim> claims = new List<Claim> { new Claim("tenant_id", "tenant-42") };
             List<string> roles = new List<string> { "admin" };
-            string? serializedClaims = RefreshTokenService.SerializeClaims(claims);
-            string? serializedRoles = RefreshTokenService.SerializeRoles(roles);
+            string? serializedClaims = RefreshTokenClaims.SerializeClaims(claims);
+            string? serializedRoles = RefreshTokenClaims.SerializeRoles(roles);
 
             RefreshTokenService service = BuildService();
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", serializedClaims, serializedRoles);
@@ -92,7 +92,7 @@ namespace EasyReasy.Auth.Tests
                 Array.Empty<string>());
             RefreshTokenService service = BuildService(resolver);
 
-            string? storedClaims = RefreshTokenService.SerializeClaims(new List<Claim> { new Claim("tenant_id", "tenant-42") });
+            string? storedClaims = RefreshTokenClaims.SerializeClaims(new List<Claim> { new Claim("tenant_id", "tenant-42") });
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", storedClaims, null);
 
             RefreshResult result = await service.RefreshAsync(rawToken, _jwtTokenService);
@@ -116,7 +116,7 @@ namespace EasyReasy.Auth.Tests
             RefreshTokenService serviceWithResolver = BuildService(resolver);
             RefreshTokenService serviceWithoutResolver = BuildService();
 
-            string? storedClaims = RefreshTokenService.SerializeClaims(new List<Claim> { new Claim("tenant_id", "tenant-42") });
+            string? storedClaims = RefreshTokenClaims.SerializeClaims(new List<Claim> { new Claim("tenant_id", "tenant-42") });
             string firstToken = await serviceWithResolver.CreateRefreshTokenAsync("user-1", "user", storedClaims, null);
 
             RefreshResult firstRefresh = await serviceWithResolver.RefreshAsync(firstToken, _jwtTokenService);
@@ -136,7 +136,7 @@ namespace EasyReasy.Auth.Tests
                 new List<string> { "user" });
             RefreshTokenService service = BuildService(resolver);
 
-            string? storedRoles = RefreshTokenService.SerializeRoles(new List<string> { "admin" });
+            string? storedRoles = RefreshTokenClaims.SerializeRoles(new List<string> { "admin" });
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, storedRoles);
 
             RefreshResult result = await service.RefreshAsync(rawToken, _jwtTokenService);
@@ -157,8 +157,8 @@ namespace EasyReasy.Auth.Tests
             FakeRefreshClaimsResolver resolver = AllowReturning(Array.Empty<Claim>(), Array.Empty<string>());
             RefreshTokenService service = BuildService(resolver);
 
-            string? storedClaims = RefreshTokenService.SerializeClaims(new List<Claim> { new Claim("tenant_id", "tenant-42") });
-            string? storedRoles = RefreshTokenService.SerializeRoles(new List<string> { "admin" });
+            string? storedClaims = RefreshTokenClaims.SerializeClaims(new List<Claim> { new Claim("tenant_id", "tenant-42") });
+            string? storedRoles = RefreshTokenClaims.SerializeRoles(new List<string> { "admin" });
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", storedClaims, storedRoles);
 
             RefreshResult result = await service.RefreshAsync(rawToken, _jwtTokenService);
@@ -282,12 +282,12 @@ namespace EasyReasy.Auth.Tests
             FakeRefreshClaimsResolver resolver = AllowReturning(Array.Empty<Claim>(), Array.Empty<string>());
             RefreshTokenService service = BuildService(resolver);
 
-            string? storedClaims = RefreshTokenService.SerializeClaims(new List<Claim>
+            string? storedClaims = RefreshTokenClaims.SerializeClaims(new List<Claim>
             {
                 new Claim("tenant_id", "tenant-42"),
                 new Claim("email", "test@example.com"),
             });
-            string? storedRoles = RefreshTokenService.SerializeRoles(new List<string> { "admin", "auditor" });
+            string? storedRoles = RefreshTokenClaims.SerializeRoles(new List<string> { "admin", "auditor" });
 
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", storedClaims, storedRoles);
 

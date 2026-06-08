@@ -113,8 +113,8 @@ namespace EasyReasy.Auth.Tests
             List<Claim> claims = new List<Claim> { new Claim("tenant_id", "tenant-42") };
             List<string> roles = new List<string> { "admin", "user" };
 
-            string? serializedClaims = RefreshTokenService.SerializeClaims(claims);
-            string? serializedRoles = RefreshTokenService.SerializeRoles(roles);
+            string? serializedClaims = RefreshTokenClaims.SerializeClaims(claims);
+            string? serializedRoles = RefreshTokenClaims.SerializeRoles(roles);
 
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", serializedClaims, serializedRoles);
 
@@ -228,48 +228,6 @@ namespace EasyReasy.Auth.Tests
 
             Assert.AreEqual(hash1, hash2);
             Assert.AreEqual(64, hash1.Length); // SHA-256 produces 32 bytes = 64 hex chars
-        }
-
-        [TestMethod]
-        public void SerializeClaims_WithClaims_ShouldRoundTrip()
-        {
-            List<Claim> claims = new List<Claim>
-            {
-                new Claim("tenant_id", "tenant-42"),
-                new Claim("email", "test@example.com")
-            };
-
-            string? serialized = RefreshTokenService.SerializeClaims(claims);
-
-            Assert.IsNotNull(serialized);
-            Assert.IsTrue(serialized.Contains("tenant_id"));
-            Assert.IsTrue(serialized.Contains("tenant-42"));
-        }
-
-        [TestMethod]
-        public void SerializeClaims_WithEmptyClaims_ShouldReturnNull()
-        {
-            string? serialized = RefreshTokenService.SerializeClaims(new List<Claim>());
-            Assert.IsNull(serialized);
-        }
-
-        [TestMethod]
-        public void SerializeRoles_WithRoles_ShouldRoundTrip()
-        {
-            List<string> roles = new List<string> { "admin", "user" };
-
-            string? serialized = RefreshTokenService.SerializeRoles(roles);
-
-            Assert.IsNotNull(serialized);
-            Assert.IsTrue(serialized.Contains("admin"));
-            Assert.IsTrue(serialized.Contains("user"));
-        }
-
-        [TestMethod]
-        public void SerializeRoles_WithEmptyRoles_ShouldReturnNull()
-        {
-            string? serialized = RefreshTokenService.SerializeRoles(new List<string>());
-            Assert.IsNull(serialized);
         }
 
         [TestMethod]
