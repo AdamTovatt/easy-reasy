@@ -13,6 +13,7 @@ namespace EasyReasy.Auth.Tests
         public List<(HttpContext? HttpContext, RefreshResult Result)> RefreshCalls { get; } = new List<(HttpContext?, RefreshResult)>();
         public List<(HttpContext? HttpContext, LogoutResult Result)> LogoutCalls { get; } = new List<(HttpContext?, LogoutResult)>();
         public List<SessionRevocationResult> SessionsInvalidatedCalls { get; } = new List<SessionRevocationResult>();
+        public List<SessionRevocationResult> ConcurrentSessionsRevokedCalls { get; } = new List<SessionRevocationResult>();
 
         public Task OnLoginAsync(HttpContext httpContext, LoginResult result)
         {
@@ -41,6 +42,12 @@ namespace EasyReasy.Auth.Tests
         public Task OnSessionsInvalidatedAsync(SessionRevocationResult result)
         {
             SessionsInvalidatedCalls.Add(result);
+            return Task.CompletedTask;
+        }
+
+        public Task OnConcurrentSessionsRevokedAsync(SessionRevocationResult result)
+        {
+            ConcurrentSessionsRevokedCalls.Add(result);
             return Task.CompletedTask;
         }
     }

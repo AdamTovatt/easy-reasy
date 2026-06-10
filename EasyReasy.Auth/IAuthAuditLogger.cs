@@ -97,5 +97,22 @@ namespace EasyReasy.Auth
         /// </summary>
         /// <param name="result">The structured result of the bulk revocation.</param>
         Task OnSessionsInvalidatedAsync(SessionRevocationResult result) => Task.CompletedTask;
+
+        /// <summary>
+        /// Invoked when creating a new refresh-token family (a login) revoked one or more existing
+        /// sessions because the service is configured with <see cref="ConcurrentSessionPolicy.SingleSession"/>.
+        /// Fired from inside <see cref="IRefreshTokenService.CreateRefreshTokenAsync"/> — so both HTTP-endpoint
+        /// and programmatic logins trigger it — and only when at least one family was actually revoked.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately distinct from <see cref="OnSessionsInvalidatedAsync"/>: that hook reports an explicit
+        /// bulk revocation (password change, role demotion, admin-forced logout), whereas this one reports the
+        /// automatic revoke-others-on-login enforcement, so consumers can record it as its own audit event
+        /// (e.g. a "concurrent session revoked" security event). Not tied to an HTTP request — the creating
+        /// call carries no <see cref="HttpContext"/> — so consumers should log timestamp and any caller-side
+        /// context themselves.
+        /// </remarks>
+        /// <param name="result">The subject and the number of prior sessions revoked by the new login.</param>
+        Task OnConcurrentSessionsRevokedAsync(SessionRevocationResult result) => Task.CompletedTask;
     }
 }

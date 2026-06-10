@@ -68,6 +68,86 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public async Task CreateRefreshTokenAsync_WithAllowMultiplePolicy_ShouldLeavePriorFamiliesValid()
+        {
+            // The default service (_service) uses ConcurrentSessionPolicy.AllowMultiple.
+            string firstToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            string firstHash = RefreshTokenService.HashToken(firstToken);
+            Assert.IsFalse(_store.Tokens[firstHash].IsInvalidated);
+            Assert.AreEqual(2, _store.Tokens.Count, "both sessions should coexist under AllowMultiple");
+        }
+
+        [TestMethod]
+        public async Task CreateRefreshTokenAsync_WithSingleSessionPolicy_ShouldInvalidatePriorFamiliesForSameSubject()
+        {
+            RefreshTokenService service = new RefreshTokenService(_store, concurrentSessionPolicy: ConcurrentSessionPolicy.SingleSession);
+
+            string firstToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string secondToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            string firstHash = RefreshTokenService.HashToken(firstToken);
+            string secondHash = RefreshTokenService.HashToken(secondToken);
+
+            Assert.IsTrue(_store.Tokens[firstHash].IsInvalidated, "The earlier session should have been revoked.");
+            Assert.IsFalse(_store.Tokens[secondHash].IsInvalidated, "The newest session must survive its own enforcement.");
+        }
+
+        [TestMethod]
+        public async Task CreateRefreshTokenAsync_WithSingleSessionPolicy_ShouldKeepOnlyNewestSessionRefreshable()
+        {
+            RefreshTokenService service = new RefreshTokenService(_store, concurrentSessionPolicy: ConcurrentSessionPolicy.SingleSession);
+
+            string firstToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string secondToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            RefreshResult oldResult = await service.RefreshAsync(firstToken, _jwtTokenService);
+            RefreshResult newResult = await service.RefreshAsync(secondToken, _jwtTokenService);
+
+            Assert.IsFalse(oldResult.Success);
+            Assert.AreEqual(RefreshFailureReason.TokenInvalidated, oldResult.FailureReason);
+            Assert.IsTrue(newResult.Success);
+        }
+
+        [TestMethod]
+        public async Task CreateRefreshTokenAsync_WithSingleSessionPolicy_ShouldNotInvalidateOtherSubjects()
+        {
+            RefreshTokenService service = new RefreshTokenService(_store, concurrentSessionPolicy: ConcurrentSessionPolicy.SingleSession);
+
+            string otherUserToken = await service.CreateRefreshTokenAsync("user-2", "user", null, null);
+            await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            string otherHash = RefreshTokenService.HashToken(otherUserToken);
+            Assert.IsFalse(_store.Tokens[otherHash].IsInvalidated);
+        }
+
+        [TestMethod]
+        public async Task CreateRefreshTokenAsync_WithSingleSessionPolicy_AndPriorSessions_ShouldFireConcurrentSessionsRevokedAudit()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            RefreshTokenService service = new RefreshTokenService(_store, auditLogger: auditLogger, concurrentSessionPolicy: ConcurrentSessionPolicy.SingleSession);
+
+            await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            Assert.AreEqual(1, auditLogger.ConcurrentSessionsRevokedCalls.Count);
+            Assert.AreEqual("user-1", auditLogger.ConcurrentSessionsRevokedCalls[0].Subject);
+            Assert.AreEqual(1, auditLogger.ConcurrentSessionsRevokedCalls[0].InvalidatedFamilyCount);
+        }
+
+        [TestMethod]
+        public async Task CreateRefreshTokenAsync_WithSingleSessionPolicy_AndNoPriorSessions_ShouldNotFireConcurrentSessionsRevokedAudit()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            RefreshTokenService service = new RefreshTokenService(_store, auditLogger: auditLogger, concurrentSessionPolicy: ConcurrentSessionPolicy.SingleSession);
+
+            await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            Assert.AreEqual(0, auditLogger.ConcurrentSessionsRevokedCalls.Count);
+        }
+
+        [TestMethod]
         public async Task RefreshAsync_WithValidToken_ShouldReturnNewTokenPair()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);

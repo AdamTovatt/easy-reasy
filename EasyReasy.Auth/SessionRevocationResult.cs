@@ -1,7 +1,10 @@
 namespace EasyReasy.Auth
 {
     /// <summary>
-    /// Represents the result of a bulk session revocation (e.g. password change, role demotion, admin-forced logout).
+    /// Represents the result of revoking one or more refresh-token families for a subject — whether from an
+    /// explicit bulk revocation (password change, role demotion, admin-forced logout via
+    /// <see cref="IRefreshTokenService.InvalidateAllSessionsAsync"/>) or from automatic
+    /// <see cref="ConcurrentSessionPolicy.SingleSession"/> enforcement when a new login supersedes earlier ones.
     /// </summary>
     public sealed class SessionRevocationResult
     {

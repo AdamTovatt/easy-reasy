@@ -386,7 +386,8 @@ public class MyRefreshTokenStore : IRefreshTokenStore
 ```csharp
 builder.Services.AddRefreshTokenService<MyRefreshTokenStore>(
     refreshTokenLifetime: TimeSpan.FromDays(30),  // default
-    accessTokenLifetime: TimeSpan.FromHours(1));   // default
+    accessTokenLifetime: TimeSpan.FromHours(1),   // default
+    concurrentSessionPolicy: ConcurrentSessionPolicy.AllowMultiple);  // default — see Section 9 for single-session enforcement
 
 // Enable the refresh endpoint alongside your auth endpoints
 app.AddAuthEndpoints(allowRefresh: true);
@@ -568,9 +569,22 @@ public class AccountService
 
 The library does not expose an HTTP endpoint for admins to revoke other users' sessions — build your own around `InvalidateAllSessionsAsync` if you need one.
 
+**Single-session enforcement (`ConcurrentSessionPolicy.SingleSession`)** — makes every new login automatically revoke the subject's existing sessions, so only the newest login stays live. Opt in on the service registration:
+
+```csharp
+builder.Services.AddRefreshTokenService<MyStore>(
+    concurrentSessionPolicy: ConcurrentSessionPolicy.SingleSession);
+```
+
+- The default, `ConcurrentSessionPolicy.AllowMultiple`, places no limit on concurrent sessions — each login coexists with any existing ones.
+- Under `SingleSession`, `CreateRefreshTokenAsync` invalidates every existing family for the subject before storing the new one. Earlier sessions can no longer refresh, and any still-live access token expires within its (short) lifetime. Use it for "no shared accounts" / single-session requirements such as EU GMP Annex 11 or 21 CFR Part 11 §11.200.
+- This is the automatic, per-login counterpart to the manual `InvalidateAllSessionsAsync`. Reach for `SingleSession` when "newest login wins" should be a standing policy; call `InvalidateAllSessionsAsync` for one-off, event-driven kicks (password change, role demotion, admin-forced logout). Both go through the same `IRefreshTokenStore.InvalidateAllFamiliesForUserAsync` primitive and surface the same `SessionRevocationResult` shape.
+- When enforcement actually revokes at least one prior session, the service fires `IAuthAuditLogger.OnConcurrentSessionsRevokedAsync` — distinct from `OnSessionsInvalidatedAsync` so you can audit automatic, login-driven revocations separately. See Section 10.
+- **Concurrency caveat**: enforcement is two store calls (invalidate, then store), not one transaction. Two logins for the same subject racing concurrently can each miss the other's not-yet-stored family and both stay live. If you need a hard guarantee, serialize concurrent logins for the same subject in your store (a per-subject lock or a unique constraint) — the library cannot, because `IRefreshTokenStore` has no atomic store-and-invalidate-others operation.
+
 ### 10. Security Audit Logging (ISO 27001 A.9 / A.12)
 
-Every authentication event the library surfaces — success or failure — is reported through a single optional DI service: `IAuthAuditLogger`. Register an implementation and the built-in endpoints (plus `RefreshTokenService.InvalidateAllSessionsAsync`) will invoke it with a structured result object.
+Every authentication event the library surfaces — success or failure — is reported through a single optional DI service: `IAuthAuditLogger`. Register an implementation and the built-in endpoints (plus the programmatic triggers `RefreshTokenService.InvalidateAllSessionsAsync` and single-session enforcement on login) will invoke it with a structured result object.
 
 | Event | Hook | Control | Typical data to log |
 |---|---|---|---|
@@ -579,6 +593,7 @@ Every authentication event the library surfaces — success or failure — is re
 | Refresh (incl. `TheftDetected`, `DeniedByResolver`, `ResolverError`) | `OnRefreshAsync(httpContext, RefreshResult)` | ISO 27001 A.12.4.1 | outcome, `Subject`, `FamilyId`, `FailureReason`, IP, time |
 | Logout | `OnLogoutAsync(httpContext, LogoutResult)` | ISO 27001 A.9.2.6 | `WasKnown`, `Subject`, `FamilyId`, IP, time |
 | Bulk session revocation | `OnSessionsInvalidatedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
+| Concurrent session revoked on login (`SingleSession` policy) | `OnConcurrentSessionsRevokedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
 
 All methods have default no-op implementations — implement only the events you care about. The result objects deliberately never carry a raw password or a raw API key, so failure records are safe to serialise to your log store.
 
@@ -817,6 +832,16 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.0.0
+
+Version 5.1.0 is additive — no breaking changes. Existing callers compile and behave identically. The new capability is opt-in single-session enforcement.
+
+### New: `ConcurrentSessionPolicy`
+- **New optional `concurrentSessionPolicy` parameter** on `AddRefreshTokenService<TStore>` (and the `RefreshTokenService` constructor). Defaults to `ConcurrentSessionPolicy.AllowMultiple`, which is identical to 5.0.0 behaviour — no limit on concurrent sessions.
+- **`ConcurrentSessionPolicy.SingleSession`** makes each new login revoke the subject's existing sessions so only the newest stays live. See Section 9 "Logout and Bulk Session Revocation → Single-session enforcement" for the contract, its relationship to `InvalidateAllSessionsAsync`, and the concurrency caveat.
+- **New `IAuthAuditLogger.OnConcurrentSessionsRevokedAsync` hook** fires when a login revokes one or more prior sessions under `SingleSession`. It has a default no-op implementation, so existing audit loggers are unaffected. It is deliberately distinct from `OnSessionsInvalidatedAsync` (explicit bulk revocation) so the automatic, login-driven revocations can be audited as their own event.
+- **No interface or signature changes** to `IRefreshTokenStore`, `IRefreshTokenService`, `RefreshResult`, or the wire format. The new hook is a default-method addition to `IAuthAuditLogger`, so existing implementations keep compiling.
 
 ## Migration from 4.0.0
 

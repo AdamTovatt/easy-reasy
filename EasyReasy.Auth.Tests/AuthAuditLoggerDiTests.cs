@@ -66,6 +66,8 @@ namespace EasyReasy.Auth.Tests
             Assert.IsTrue(asInterface.OnApiKeyAuthAsync(httpContext, ApiKeyAuthResult.Failed(ApiKeyAuthFailureReason.UnknownKey)).IsCompletedSuccessfully);
             Assert.IsTrue(asInterface.OnRefreshAsync(httpContext, RefreshResult.Failed(RefreshFailureReason.TokenExpired)).IsCompletedSuccessfully);
             Assert.IsTrue(asInterface.OnLogoutAsync(httpContext, LogoutResult.Unknown()).IsCompletedSuccessfully);
+            Assert.IsTrue(asInterface.OnSessionsInvalidatedAsync(new SessionRevocationResult("user-1", 0)).IsCompletedSuccessfully);
+            Assert.IsTrue(asInterface.OnConcurrentSessionsRevokedAsync(new SessionRevocationResult("user-1", 0)).IsCompletedSuccessfully);
         }
 
         private sealed class MinimalAuditLogger : IAuthAuditLogger

@@ -16,6 +16,7 @@ namespace EasyReasy.Auth
         private readonly TimeSpan _accessTokenLifetime;
         private readonly IAuthAuditLogger? _auditLogger;
         private readonly IRefreshClaimsResolver? _claimsResolver;
+        private readonly ConcurrentSessionPolicy _concurrentSessionPolicy;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RefreshTokenService"/> class.
@@ -41,18 +42,27 @@ namespace EasyReasy.Auth
         /// and roles that ride onto the new tokens (replacing what was originally stored at login
         /// time) or deny the refresh outright. See <see cref="IRefreshClaimsResolver"/>.
         /// </param>
+        /// <param name="concurrentSessionPolicy">
+        /// How many concurrent sessions a single subject may hold. Defaults to
+        /// <see cref="ConcurrentSessionPolicy.AllowMultiple"/> (no limit).
+        /// <see cref="ConcurrentSessionPolicy.SingleSession"/> makes <see cref="CreateRefreshTokenAsync"/>
+        /// revoke every existing family for the subject before storing the new one, so the newest
+        /// login is the only live session. See <see cref="ConcurrentSessionPolicy"/>.
+        /// </param>
         public RefreshTokenService(
             IRefreshTokenStore store,
             TimeSpan? refreshTokenLifetime = null,
             TimeSpan? accessTokenLifetime = null,
             IAuthAuditLogger? auditLogger = null,
-            IRefreshClaimsResolver? claimsResolver = null)
+            IRefreshClaimsResolver? claimsResolver = null,
+            ConcurrentSessionPolicy concurrentSessionPolicy = ConcurrentSessionPolicy.AllowMultiple)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _refreshTokenLifetime = refreshTokenLifetime ?? TimeSpan.FromDays(30);
             _accessTokenLifetime = accessTokenLifetime ?? TimeSpan.FromHours(1);
             _auditLogger = auditLogger;
             _claimsResolver = claimsResolver;
+            _concurrentSessionPolicy = concurrentSessionPolicy;
         }
 
         /// <inheritdoc />
@@ -80,9 +90,38 @@ namespace EasyReasy.Auth
                 SerializedRoles = serializedRoles
             };
 
+            int invalidatedFamilyCount = await EnforceSingleSessionPolicyAsync(subject, cancellationToken);
+
             await _store.StoreAsync(storedToken, cancellationToken);
 
+            // Fire the audit hook only after the new family is persisted, matching the other hook sites
+            // (OnRefreshAsync / OnLogoutAsync / OnSessionsInvalidatedAsync), which all fire after their
+            // mutation lands. A throwing logger then leaves a stored session rather than a session-less
+            // subject, and the "concurrent sessions revoked" record only fires for a login that completed.
+            if (invalidatedFamilyCount > 0 && _auditLogger != null)
+            {
+                await _auditLogger.OnConcurrentSessionsRevokedAsync(new SessionRevocationResult(subject, invalidatedFamilyCount));
+            }
+
             return rawToken;
+        }
+
+        /// <summary>
+        /// When the service is configured with <see cref="ConcurrentSessionPolicy.SingleSession"/>, invalidates
+        /// every existing family for <paramref name="subject"/> so the login about to be stored becomes the only
+        /// live session. Runs before the new family is stored, so that family is never caught by its own bulk
+        /// invalidation. Returns the number of families invalidated (0 under
+        /// <see cref="ConcurrentSessionPolicy.AllowMultiple"/>), which the caller surfaces to
+        /// <see cref="IAuthAuditLogger.OnConcurrentSessionsRevokedAsync"/> after the new family is stored.
+        /// </summary>
+        private async Task<int> EnforceSingleSessionPolicyAsync(string subject, CancellationToken cancellationToken)
+        {
+            if (_concurrentSessionPolicy != ConcurrentSessionPolicy.SingleSession)
+            {
+                return 0;
+            }
+
+            return await _store.InvalidateAllFamiliesForUserAsync(subject, cancellationToken);
         }
 
         /// <inheritdoc />
@@ -283,8 +322,8 @@ namespace EasyReasy.Auth
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(subject);
 
-            int invalidatedCount = await _store.InvalidateAllFamiliesForUserAsync(subject, cancellationToken);
-            SessionRevocationResult result = new SessionRevocationResult(subject, invalidatedCount);
+            int invalidatedFamilyCount = await _store.InvalidateAllFamiliesForUserAsync(subject, cancellationToken);
+            SessionRevocationResult result = new SessionRevocationResult(subject, invalidatedFamilyCount);
 
             if (_auditLogger != null)
             {

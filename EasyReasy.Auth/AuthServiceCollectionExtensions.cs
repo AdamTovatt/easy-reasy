@@ -116,11 +116,18 @@ namespace EasyReasy.Auth
         /// <param name="accessTokenLifetime">
         /// The lifetime of access tokens created during refresh. Defaults to 1 hour if not specified.
         /// </param>
+        /// <param name="concurrentSessionPolicy">
+        /// How many concurrent sessions a single subject may hold. Defaults to
+        /// <see cref="ConcurrentSessionPolicy.AllowMultiple"/> (no limit).
+        /// <see cref="ConcurrentSessionPolicy.SingleSession"/> revokes a subject's existing sessions
+        /// each time a new one is created. See <see cref="ConcurrentSessionPolicy"/>.
+        /// </param>
         /// <returns>The service collection for chaining.</returns>
         public static IServiceCollection AddRefreshTokenService<TStore>(
             this IServiceCollection services,
             TimeSpan? refreshTokenLifetime = null,
-            TimeSpan? accessTokenLifetime = null)
+            TimeSpan? accessTokenLifetime = null,
+            ConcurrentSessionPolicy concurrentSessionPolicy = ConcurrentSessionPolicy.AllowMultiple)
             where TStore : class, IRefreshTokenStore
         {
             services.AddScoped<IRefreshTokenStore, TStore>();
@@ -129,7 +136,7 @@ namespace EasyReasy.Auth
                 IRefreshTokenStore store = provider.GetRequiredService<IRefreshTokenStore>();
                 IAuthAuditLogger? auditLogger = provider.GetService<IAuthAuditLogger>();
                 IRefreshClaimsResolver? claimsResolver = provider.GetService<IRefreshClaimsResolver>();
-                return new RefreshTokenService(store, refreshTokenLifetime, accessTokenLifetime, auditLogger, claimsResolver);
+                return new RefreshTokenService(store, refreshTokenLifetime, accessTokenLifetime, auditLogger, claimsResolver, concurrentSessionPolicy);
             });
 
             return services;
