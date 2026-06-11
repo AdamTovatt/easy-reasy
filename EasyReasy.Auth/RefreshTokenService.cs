@@ -29,12 +29,11 @@ namespace EasyReasy.Auth
         /// The lifetime of access tokens created during refresh. Defaults to 1 hour if not specified.
         /// </param>
         /// <param name="auditLogger">
-        /// Optional audit logger. When supplied, this service invokes the matching hook after every
-        /// <see cref="RefreshAsync"/> (<see cref="IAuthAuditLogger.OnRefreshAsync"/>),
-        /// <see cref="LogoutAsync"/> (<see cref="IAuthAuditLogger.OnLogoutAsync"/>), and
-        /// <see cref="InvalidateAllSessionsAsync"/> (<see cref="IAuthAuditLogger.OnSessionsInvalidatedAsync"/>) call
-        /// so consumers can emit ISO 27001 A.12.4.1 / A.9.2.6 audit records for both HTTP-driven and programmatic flows.
-        /// Lifetime must be at least as long as this service — see <see cref="IAuthAuditLogger"/> remarks.
+        /// Optional audit logger. When supplied, this service invokes the matching service-layer hook after the
+        /// corresponding operation completes, so consumers can emit ISO 27001 A.12.4.1 / A.9.2.6 audit records for
+        /// both HTTP-driven and programmatic flows. See <see cref="IAuthAuditLogger"/> for the full set of hooks
+        /// and which fire from the service versus the endpoint layer. Lifetime must be at least as long as this
+        /// service — see <see cref="IAuthAuditLogger"/> remarks.
         /// </param>
         /// <param name="claimsResolver">
         /// Optional consumer-supplied claims/roles resolver. When supplied, this service invokes the
@@ -73,6 +72,20 @@ namespace EasyReasy.Auth
             string? serializedRoles,
             CancellationToken cancellationToken = default)
         {
+            // Delegate to the detailed overload so there is exactly one creation code path; this method
+            // simply discards the family id that existing callers do not need.
+            RefreshTokenCreationResult result = await CreateRefreshTokenWithFamilyAsync(subject, authType, serializedClaims, serializedRoles, cancellationToken);
+            return result.RawToken;
+        }
+
+        /// <inheritdoc />
+        public async Task<RefreshTokenCreationResult> CreateRefreshTokenWithFamilyAsync(
+            string subject,
+            string authType,
+            string? serializedClaims,
+            string? serializedRoles,
+            CancellationToken cancellationToken = default)
+        {
             string rawToken = GenerateToken();
             string tokenHash = HashToken(rawToken);
             string familyId = Guid.NewGuid().ToString();
@@ -103,7 +116,7 @@ namespace EasyReasy.Auth
                 await _auditLogger.OnConcurrentSessionsRevokedAsync(new SessionRevocationResult(subject, invalidatedFamilyCount));
             }
 
-            return rawToken;
+            return new RefreshTokenCreationResult { RawToken = rawToken, FamilyId = familyId };
         }
 
         /// <summary>
@@ -244,10 +257,20 @@ namespace EasyReasy.Auth
             }
 
             DateTime accessTokenExpiresAt = now.Add(_accessTokenLifetime);
+
+            // The family id rides on the access token as the authoritative "family_id" claim so a re-issue
+            // endpoint can name and retire exactly this prior family. The value always comes from
+            // storedToken.FamilyId (copied onto every rotation's row, so it is stable across the family's
+            // lifetime) — never from caller-supplied stored claims — so any value already present is stripped
+            // and replaced here, and it cannot be spoofed via SerializedClaims. Built as a separate list so it
+            // is not persisted into the new row's serialized claims; the re-injection above is the single source.
+            List<Claim> accessTokenClaims = claims.Where(claim => claim.Type != "family_id").ToList();
+            accessTokenClaims.Add(new Claim("family_id", storedToken.FamilyId));
+
             string accessToken = jwtTokenService.CreateToken(
                 storedToken.Subject,
                 storedToken.AuthType,
-                claims,
+                accessTokenClaims,
                 roles,
                 accessTokenExpiresAt);
 
@@ -331,6 +354,28 @@ namespace EasyReasy.Auth
             }
 
             return result;
+        }
+
+        /// <inheritdoc />
+        public async Task RetireFamilyAsync(string? familyId, string? subject = null, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
+        {
+            // A null/whitespace family id can't name any family — no-op so a re-issue endpoint can pass
+            // HttpContext.GetRefreshFamilyId() directly (it is null for access tokens minted before the claim
+            // existed) without a store call, an audit record, or a throw.
+            if (string.IsNullOrWhiteSpace(familyId))
+            {
+                return;
+            }
+
+            await _store.InvalidateFamilyAsync(familyId, cancellationToken);
+
+            // Fire after the retire lands, matching the other hook sites. The store reports neither existence
+            // nor a subject, so the record means "a retire was requested for this family"; subject rides along
+            // only for the audit row.
+            if (_auditLogger != null)
+            {
+                await _auditLogger.OnSessionSupersededAsync(httpContext, new FamilyRetirementResult { FamilyId = familyId, Subject = subject });
+            }
         }
 
         /// <summary>

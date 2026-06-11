@@ -6,6 +6,7 @@ namespace EasyReasy.Auth.Tests
     public class FakeRefreshTokenStore : IRefreshTokenStore
     {
         private readonly Dictionary<string, StoredRefreshToken> _tokens = new Dictionary<string, StoredRefreshToken>();
+        private readonly List<string> _invalidatedFamilyIds = new List<string>();
 
         public Task StoreAsync(StoredRefreshToken refreshToken, CancellationToken cancellationToken = default)
         {
@@ -36,6 +37,7 @@ namespace EasyReasy.Auth.Tests
 
         public Task InvalidateFamilyAsync(string familyId, CancellationToken cancellationToken = default)
         {
+            _invalidatedFamilyIds.Add(familyId);
             foreach (StoredRefreshToken token in _tokens.Values)
             {
                 if (token.FamilyId == familyId)
@@ -64,5 +66,11 @@ namespace EasyReasy.Auth.Tests
         /// Gets all stored tokens for test inspection.
         /// </summary>
         public IReadOnlyDictionary<string, StoredRefreshToken> Tokens => _tokens;
+
+        /// <summary>
+        /// Records every family id passed to <see cref="InvalidateFamilyAsync"/>, in call order, so tests can
+        /// assert exactly which families were retired and how many times.
+        /// </summary>
+        public IReadOnlyList<string> InvalidatedFamilyIds => _invalidatedFamilyIds;
     }
 }
