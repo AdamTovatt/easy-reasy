@@ -288,6 +288,10 @@ string? email = HttpContext.GetClaimValue("email");
 string? userId2 = HttpContext.GetClaimValue(EasyReasyClaim.UserId);
 string? tenantId2 = HttpContext.GetClaimValue(EasyReasyClaim.TenantId);
 string? issuer = HttpContext.GetClaimValue(EasyReasyClaim.Issuer);
+
+// The refresh token family id rides on the access token as the "family_id" claim (see Section 9).
+string? familyId = HttpContext.GetRefreshFamilyId();
+string? familyId2 = HttpContext.GetClaimValue(EasyReasyClaim.RefreshFamilyId);
 ```
 
 ### 6. Password Hashing
@@ -582,6 +586,27 @@ builder.Services.AddRefreshTokenService<MyStore>(
 - When enforcement actually revokes at least one prior session, the service fires `IAuthAuditLogger.OnConcurrentSessionsRevokedAsync` — distinct from `OnSessionsInvalidatedAsync` so you can audit automatic, login-driven revocations separately. See Section 10.
 - **Concurrency caveat**: enforcement is two store calls (invalidate, then store), not one transaction. Two logins for the same subject racing concurrently can each miss the other's not-yet-stored family and both stay live. If you need a hard guarantee, serialize concurrent logins for the same subject in your store (a per-subject lock or a unique constraint) — the library cannot, because `IRefreshTokenStore` has no atomic store-and-invalidate-others operation.
 
+**Targeted session supersession on re-issue (`IRefreshTokenService.RetireFamilyAsync`)** — when an endpoint re-mints a fresh token pair for an *already-authenticated* subject (for example an "active organization switch" that re-issues the access token with a changed claim), it mints a **new** refresh-token family while the caller's **prior** family stays live until it expires. To retire *exactly that prior family* as part of the re-mint — and only it, leaving the subject's other devices live — without the misleading `Logout` record that `LogoutAsync` would produce, use `RetireFamilyAsync`:
+
+```csharp
+// At the re-issue endpoint (the caller is already authenticated):
+string? priorFamilyId = HttpContext.GetRefreshFamilyId();
+
+// ... mint the new pair carrying the changed claim, e.g. via IJwtTokenService.CreateToken +
+//     IRefreshTokenService.CreateRefreshTokenAsync (or CreateRefreshTokenWithFamilyAsync if you
+//     want the new family id to seed the family_id claim onto this first access token) ...
+
+// Retire the caller's prior family. Other devices stay live; the event is audited as a
+// supersession (OnSessionSupersededAsync), not a logout.
+await _refreshTokenService.RetireFamilyAsync(priorFamilyId, HttpContext.GetUserId());
+```
+
+- **How the prior family is named.** The refresh token family id is surfaced on every access token as the `family_id` claim, readable with `HttpContext.GetRefreshFamilyId()` (or `EasyReasyClaim.RefreshFamilyId`). The claim is injected authoritatively on every refresh from the server-side family id, so it is stable across a family's rotations and cannot be spoofed via stored claims. Exposing it in the signed, client-readable JWT is intended and safe: it is the client's own opaque session id, and possessing it grants no ability to revoke the session — retirement is a server-only operation.
+- **`subject` is for the audit row only.** The service cannot derive the subject from a family id, so pass it from the access token (`HttpContext.GetUserId()`). It is recorded on the `FamilyRetirementResult`; it does not affect which family is retired.
+- **Null/whitespace is a clean no-op** — no store call, no audit hook, no throw. This is the normal path during rollout: access tokens minted before 5.2.0 carry no `family_id`, so `GetRefreshFamilyId()` returns `null` and `RetireFamilyAsync(null)` simply does nothing. Existing sessions self-heal — each gains the `family_id` claim on its next refresh, no consumer action required.
+- This is the targeted, audited counterpart to `IRefreshTokenStore.InvalidateFamilyAsync` — distinct from the global `SingleSession` policy (which kills every other session) and from the bulk `InvalidateAllSessionsAsync`. When a non-empty family id is retired, the service fires `IAuthAuditLogger.OnSessionSupersededAsync`. See Section 10.
+- **Assumes `ConcurrentSessionPolicy.AllowMultiple` (the default).** Under `SingleSession`, minting the new pair already revokes the subject's *other* families during creation, so the prior family is gone before `RetireFamilyAsync` runs and "other devices stay live" no longer applies — targeted retirement is redundant there.
+
 ### 10. Security Audit Logging (ISO 27001 A.9 / A.12)
 
 Every authentication event the library surfaces — success or failure — is reported through a single optional DI service: `IAuthAuditLogger`. Register an implementation and the built-in endpoints (plus the programmatic triggers `RefreshTokenService.InvalidateAllSessionsAsync` and single-session enforcement on login) will invoke it with a structured result object.
@@ -594,6 +619,7 @@ Every authentication event the library surfaces — success or failure — is re
 | Logout | `OnLogoutAsync(httpContext, LogoutResult)` | ISO 27001 A.9.2.6 | `WasKnown`, `Subject`, `FamilyId`, IP, time |
 | Bulk session revocation | `OnSessionsInvalidatedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
 | Concurrent session revoked on login (`SingleSession` policy) | `OnConcurrentSessionsRevokedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
+| Targeted session supersession on re-issue (`RetireFamilyAsync`) | `OnSessionSupersededAsync(httpContext, FamilyRetirementResult)` | ISO 27001 A.9.2.6 | `FamilyId`, `Subject`, IP, time |
 
 All methods have default no-op implementations — implement only the events you care about. The result objects deliberately never carry a raw password or a raw API key, so failure records are safe to serialise to your log store.
 
@@ -645,6 +671,16 @@ public class MyAuditLogger : IAuthAuditLogger
         _logger.LogInformation(
             "auth.sessions_revoked subject={Subject} count={Count}",
             result.Subject, result.InvalidatedFamilyCount);
+        return Task.CompletedTask;
+    }
+
+    public Task OnSessionSupersededAsync(HttpContext? ctx, FamilyRetirementResult result)
+    {
+        // A specific prior session was retired by a re-issue (see Section 9) — distinct from a
+        // logout and from global single-session enforcement.
+        _logger.LogInformation(
+            "auth.session_superseded subject={Subject} family={Family}",
+            result.Subject, result.FamilyId);
         return Task.CompletedTask;
     }
 }
@@ -832,6 +868,20 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.1.0
+
+Version 5.2.0 is additive. Existing callers using the built-in `RefreshTokenService` compile and behave identically. The new capability is targeted retirement of a single prior refresh-token family at token re-issue. See Section 9 "Targeted session supersession on re-issue".
+
+### New: name and retire a prior family at re-issue
+- **`IRefreshTokenService.CreateRefreshTokenWithFamilyAsync`** returns a `RefreshTokenCreationResult` carrying both the `RawToken` and the generated `FamilyId`. The existing `CreateRefreshTokenAsync` is unchanged — it now delegates to this single shared code path and returns `result.RawToken`.
+- **`EasyReasyClaim.RefreshFamilyId` / `HttpContext.GetRefreshFamilyId()`** read the `family_id` claim. The refresh path injects this claim authoritatively from the server-side family id on every refresh, so it is stable across rotations and cannot be spoofed via stored claims.
+- **`IRefreshTokenService.RetireFamilyAsync(familyId, subject?, httpContext?, ct)`** retires exactly one family (other devices stay live). Null/whitespace family id is a no-op. When a non-empty family id is retired and an audit logger is registered, it fires the new hook.
+- **New `IAuthAuditLogger.OnSessionSupersededAsync(httpContext, FamilyRetirementResult)` hook** reports the supersession. It has a default no-op implementation, so existing audit loggers are unaffected. Distinct from `OnLogoutAsync` (a real logout) and `OnConcurrentSessionsRevokedAsync` (global single-session enforcement).
+
+**Rollout is safe with no consumer action.** Access tokens minted before 5.2.0 carry no `family_id`, so `GetRefreshFamilyId()` returns `null` and `RetireFamilyAsync(null)` is a clean no-op. Existing sessions self-heal — each gains the `family_id` claim on its next refresh. A consumer that wants the claim on the very first (login) access token adds it itself using the `FamilyId` from `CreateRefreshTokenWithFamilyAsync`.
+
+**`IRefreshTokenService` gains two methods; nothing else changes.** No `IRefreshTokenStore`, DI-registration, or wire-format changes, and the new `IAuthAuditLogger` member is a default-method addition so existing audit loggers keep compiling. The two new `IRefreshTokenService` methods are *not* default-implemented, so a **custom `IRefreshTokenService` implementation** (rare — most consumers implement only `IRefreshTokenStore` and use the built-in service) must add `CreateRefreshTokenWithFamilyAsync` and `RetireFamilyAsync`.
 
 ## Migration from 5.0.0
 

@@ -24,6 +24,17 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
+        /// Gets the refresh token family id (claim type <c>"family_id"</c>) from the HTTP context, if available.
+        /// This is the client's own opaque session identifier; it is intentionally readable from the signed
+        /// access token, and possessing it grants no ability to revoke the session — retirement is a
+        /// server-only operation via <see cref="IRefreshTokenService.RetireFamilyAsync"/>. A re-mint endpoint
+        /// reads it to name the prior family it wants to retire.
+        /// </summary>
+        /// <param name="context">The HTTP context.</param>
+        /// <returns>The refresh token family id, or null if not available.</returns>
+        public static string? GetRefreshFamilyId(this HttpContext context) => context.GetClaimValue("family_id");
+
+        /// <summary>
         /// Gets the user id from the HTTP context, if available.
         /// </summary>
         /// <param name="context">The HTTP context.</param>
@@ -88,6 +99,8 @@ namespace EasyReasy.Auth
                     return context.GetClaimValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Email);
                 case EasyReasyClaim.AuthType:
                     return context.GetClaimValue("auth_type");
+                case EasyReasyClaim.RefreshFamilyId:
+                    return context.GetClaimValue("family_id");
                 case EasyReasyClaim.Issuer:
                     // JWT Issuer is not a claim, but a property on the token. Try to get it from ClaimsPrincipal if available.
                     ClaimsIdentity? jwt = context.User.Identity as ClaimsIdentity;

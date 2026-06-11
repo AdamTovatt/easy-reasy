@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
 namespace EasyReasy.Auth.Tests
@@ -18,6 +19,11 @@ namespace EasyReasy.Auth.Tests
             _store = new FakeRefreshTokenStore();
             _service = new RefreshTokenService(_store);
             _jwtTokenService = new JwtTokenService(TestSecret, TestIssuer);
+        }
+
+        private static IEnumerable<Claim> DecodeClaims(string accessToken)
+        {
+            return new JwtSecurityTokenHandler().ReadJwtToken(accessToken).Claims;
         }
 
         [TestMethod]
@@ -663,6 +669,172 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual(1, auditLogger.LogoutCalls.Count);
             Assert.IsFalse(result.WasKnown);
             Assert.IsFalse(auditLogger.LogoutCalls[0].Result.WasKnown);
+        }
+
+        [TestMethod]
+        public async Task CreateRefreshTokenWithFamilyAsync_ReturnsFamilyIdMatchingStoredToken()
+        {
+            RefreshTokenCreationResult result = await _service.CreateRefreshTokenWithFamilyAsync("user-1", "user", null, null);
+
+            string hash = RefreshTokenService.HashToken(result.RawToken);
+            Assert.IsTrue(_store.Tokens.ContainsKey(hash), "the returned raw token should hash to a stored entry");
+            Assert.AreEqual(_store.Tokens[hash].FamilyId, result.FamilyId);
+        }
+
+        [TestMethod]
+        public async Task CreateRefreshTokenAsync_ReturnsRawTokenFromSharedCreationPath()
+        {
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            // The store is keyed by HashToken(rawToken), so a hit proves the legacy method returned the raw
+            // token itself (not the hash or the family id, neither of which would hash to this key).
+            string hash = RefreshTokenService.HashToken(rawToken);
+            Assert.IsTrue(_store.Tokens.ContainsKey(hash), "the legacy method must return the raw token");
+        }
+
+        [TestMethod]
+        public async Task RefreshAsync_AfterRefresh_AccessTokenCarriesSingleFamilyIdClaimEqualToFamilyId()
+        {
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+
+            RefreshResult result = await _service.RefreshAsync(rawToken, _jwtTokenService);
+
+            Assert.IsTrue(result.Success);
+            List<Claim> issued = DecodeClaims(result.AuthResponse!.Token).ToList();
+            Assert.AreEqual(1, issued.Count(c => c.Type == "family_id"));
+            Assert.AreEqual(familyId, issued.Single(c => c.Type == "family_id").Value);
+        }
+
+        [TestMethod]
+        public async Task RefreshAsync_AcrossRotation_FamilyIdClaimUnchanged()
+        {
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+
+            RefreshResult first = await _service.RefreshAsync(rawToken, _jwtTokenService);
+            RefreshResult second = await _service.RefreshAsync(first.NewRefreshToken!, _jwtTokenService);
+
+            string firstFamily = DecodeClaims(first.AuthResponse!.Token).Single(c => c.Type == "family_id").Value;
+            string secondFamily = DecodeClaims(second.AuthResponse!.Token).Single(c => c.Type == "family_id").Value;
+            Assert.AreEqual(familyId, firstFamily);
+            Assert.AreEqual(familyId, secondFamily);
+        }
+
+        [TestMethod]
+        public async Task RefreshAsync_WithSpoofedFamilyIdInStoredClaims_OverwritesWithAuthoritativeValue()
+        {
+            string? spoofedClaims = RefreshTokenClaims.SerializeClaims(new List<Claim> { new Claim("family_id", "attacker-supplied") });
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", spoofedClaims, null);
+            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+
+            RefreshResult result = await _service.RefreshAsync(rawToken, _jwtTokenService);
+
+            List<Claim> issued = DecodeClaims(result.AuthResponse!.Token).ToList();
+            Assert.AreEqual(1, issued.Count(c => c.Type == "family_id"), "the spoofed claim must not be duplicated");
+            Assert.AreEqual(familyId, issued.Single(c => c.Type == "family_id").Value);
+            Assert.AreEqual(0, issued.Count(c => c.Type == "family_id" && c.Value == "attacker-supplied"));
+        }
+
+        [TestMethod]
+        public async Task RetireFamilyAsync_WithFamilyId_InvalidatesThatFamilyOnceAndFiresSupersededNotLogout()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            RefreshTokenService service = new RefreshTokenService(_store, auditLogger: auditLogger);
+
+            string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+
+            await service.RetireFamilyAsync(familyId, "user-1");
+
+            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(rawToken)].IsInvalidated);
+            Assert.AreEqual(1, _store.InvalidatedFamilyIds.Count(id => id == familyId), "InvalidateFamilyAsync should be called exactly once for the family");
+            Assert.AreEqual(0, auditLogger.LogoutCalls.Count, "a supersession must not be recorded as a logout");
+            Assert.AreEqual(1, auditLogger.SessionSupersededCalls.Count);
+            Assert.AreEqual(familyId, auditLogger.SessionSupersededCalls[0].Result.FamilyId);
+            Assert.AreEqual("user-1", auditLogger.SessionSupersededCalls[0].Result.Subject);
+        }
+
+        [TestMethod]
+        public async Task RetireFamilyAsync_LeavesOtherFamiliesLive()
+        {
+            string priorToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string otherDeviceToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string otherUserToken = await _service.CreateRefreshTokenAsync("user-2", "user", null, null);
+
+            string priorFamilyId = _store.Tokens[RefreshTokenService.HashToken(priorToken)].FamilyId;
+
+            await _service.RetireFamilyAsync(priorFamilyId, "user-1");
+
+            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(priorToken)].IsInvalidated);
+            Assert.IsFalse(_store.Tokens[RefreshTokenService.HashToken(otherDeviceToken)].IsInvalidated, "the subject's other device must stay live");
+            Assert.IsFalse(_store.Tokens[RefreshTokenService.HashToken(otherUserToken)].IsInvalidated, "another subject must stay live");
+        }
+
+        [TestMethod]
+        public async Task RetireFamilyAsync_WithoutAuditLogger_StillInvalidatesFamily()
+        {
+            // The default _service has no audit logger — the hook block must be skipped, not throw.
+            string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
+            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+
+            await _service.RetireFamilyAsync(familyId, "user-1");
+
+            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(rawToken)].IsInvalidated);
+        }
+
+        [TestMethod]
+        public async Task RetireFamilyAsync_WithNonExistentFamilyId_StillCallsStoreAndFiresSuperseded()
+        {
+            // A non-empty family id always acts: the store can't report whether the family existed, so the
+            // contract is "a retire was requested for this family" — InvalidateFamilyAsync is called and the
+            // hook fires even when nothing matches, without throwing.
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            RefreshTokenService service = new RefreshTokenService(_store, auditLogger: auditLogger);
+
+            await service.RetireFamilyAsync("no-such-family", "user-1");
+
+            Assert.AreEqual(1, _store.InvalidatedFamilyIds.Count(id => id == "no-such-family"));
+            Assert.AreEqual(1, auditLogger.SessionSupersededCalls.Count);
+            Assert.AreEqual("no-such-family", auditLogger.SessionSupersededCalls[0].Result.FamilyId);
+            Assert.AreEqual("user-1", auditLogger.SessionSupersededCalls[0].Result.Subject);
+        }
+
+        [TestMethod]
+        public async Task RetireFamilyAsync_WithNullFamilyId_IsNoOp()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            RefreshTokenService service = new RefreshTokenService(_store, auditLogger: auditLogger);
+            await service.CreateRefreshTokenAsync("user-1", "user", null, null);
+
+            await service.RetireFamilyAsync(null, "user-1");
+
+            Assert.AreEqual(0, _store.InvalidatedFamilyIds.Count);
+            Assert.AreEqual(0, auditLogger.SessionSupersededCalls.Count);
+        }
+
+        [TestMethod]
+        public async Task RetireFamilyAsync_WithEmptyFamilyId_IsNoOp()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            RefreshTokenService service = new RefreshTokenService(_store, auditLogger: auditLogger);
+
+            await service.RetireFamilyAsync(string.Empty);
+
+            Assert.AreEqual(0, _store.InvalidatedFamilyIds.Count);
+            Assert.AreEqual(0, auditLogger.SessionSupersededCalls.Count);
+        }
+
+        [TestMethod]
+        public async Task RetireFamilyAsync_WithWhitespaceFamilyId_IsNoOp()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            RefreshTokenService service = new RefreshTokenService(_store, auditLogger: auditLogger);
+
+            await service.RetireFamilyAsync("   ");
+
+            Assert.AreEqual(0, _store.InvalidatedFamilyIds.Count);
+            Assert.AreEqual(0, auditLogger.SessionSupersededCalls.Count);
         }
     }
 }

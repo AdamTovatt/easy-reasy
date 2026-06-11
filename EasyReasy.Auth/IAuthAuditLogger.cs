@@ -114,5 +114,26 @@ namespace EasyReasy.Auth
         /// </remarks>
         /// <param name="result">The subject and the number of prior sessions revoked by the new login.</param>
         Task OnConcurrentSessionsRevokedAsync(SessionRevocationResult result) => Task.CompletedTask;
+
+        /// <summary>
+        /// Invoked when a specific prior refresh-token family is retired because a re-issue superseded it —
+        /// the targeted counterpart to <see cref="IRefreshTokenService.RetireFamilyAsync"/>. Fired from inside
+        /// <see cref="RefreshTokenService"/> whenever a non-empty family id is retired, so both HTTP-endpoint
+        /// and programmatic callers trigger it.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately distinct from <see cref="OnLogoutAsync"/> (an actual logout) and from
+        /// <see cref="OnConcurrentSessionsRevokedAsync"/> (global single-session enforcement that kills the
+        /// subject's other sessions): this one means "this one prior session was superseded by a re-issue,"
+        /// leaving the subject's other sessions untouched. Because the underlying store call reports neither
+        /// existence nor a subject, the record means "a retire was requested for this family."
+        /// </remarks>
+        /// <param name="httpContext">
+        /// The HTTP context of the request that triggered the event, or <c>null</c> when invoked programmatically
+        /// (e.g. from a background service). Implementations should guard against null when recording IP or
+        /// User-Agent data.
+        /// </param>
+        /// <param name="result">The retired family id and, when the caller supplied it, the subject.</param>
+        Task OnSessionSupersededAsync(HttpContext? httpContext, FamilyRetirementResult result) => Task.CompletedTask;
     }
 }
