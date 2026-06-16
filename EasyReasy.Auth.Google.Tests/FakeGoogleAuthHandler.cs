@@ -21,6 +21,13 @@ namespace EasyReasy.Auth.Google.Tests
         public GoogleUserInfo? LastReceivedUserInfo { get; private set; }
 
         /// <summary>
+        /// The last <see cref="IRefreshTokenService"/> received by <see cref="HandleGoogleUserAsync"/>,
+        /// or null if none was registered in the DI container. Lets a test verify that the endpoint
+        /// resolves a registered refresh-token service and passes it through to the handler.
+        /// </summary>
+        public IRefreshTokenService? LastReceivedRefreshTokenService { get; private set; }
+
+        /// <summary>
         /// Whether <see cref="HandleGoogleUserAsync"/> was called.
         /// </summary>
         public bool WasCalled { get; private set; }
@@ -34,6 +41,7 @@ namespace EasyReasy.Auth.Google.Tests
         {
             WasCalled = true;
             LastReceivedUserInfo = userInfo;
+            LastReceivedRefreshTokenService = refreshTokenService;
             return Task.FromResult(ResponseToReturn);
         }
     }

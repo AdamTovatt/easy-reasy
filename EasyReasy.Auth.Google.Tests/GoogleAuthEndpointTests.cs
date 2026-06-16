@@ -64,6 +64,7 @@ namespace EasyReasy.Auth.Google.Tests
                 "/api/auth/google", new { idToken = "bad-token" });
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.AreEqual("no-store", response.Headers.CacheControl?.ToString());
             Assert.AreEqual(1, auditLogger.Calls.Count);
             Assert.IsFalse(auditLogger.Calls[0].Result.Success);
             Assert.AreEqual(ExternalAuthFailureReason.InvalidToken, auditLogger.Calls[0].Result.FailureReason);
@@ -108,6 +109,27 @@ namespace EasyReasy.Auth.Google.Tests
                 "/api/auth/google", new { idToken = "valid-token" });
 
             Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task GoogleEndpoint_RefreshTokenServiceRegistered_PassesItThroughToHandler()
+        {
+            FakeGoogleIdTokenValidator validator = new FakeGoogleIdTokenValidator
+            {
+                UserInfoToReturn = new GoogleUserInfo { Subject = "sub-refresh", Email = "user@example.com", EmailVerified = true },
+            };
+            FakeGoogleAuthHandler handler = new FakeGoogleAuthHandler
+            {
+                ResponseToReturn = new AuthResponse("jwt-token", "2099-01-01T00:00:00Z"),
+            };
+            FakeRefreshTokenService refreshTokenService = new FakeRefreshTokenService();
+            await using HostedApp host = await HostedApp.StartAsync(validator, handler, auditLogger: null, refreshTokenService);
+
+            HttpResponseMessage response = await host.Client.PostAsJsonAsync(
+                "/api/auth/google", new { idToken = "valid-token" });
+
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+            Assert.AreSame(refreshTokenService, handler.LastReceivedRefreshTokenService);
         }
 
         [TestMethod]
@@ -188,7 +210,8 @@ namespace EasyReasy.Auth.Google.Tests
             public static async Task<HostedApp> StartAsync(
                 IGoogleIdTokenValidator validator,
                 IGoogleAuthHandler handler,
-                IAuthAuditLogger? auditLogger)
+                IAuthAuditLogger? auditLogger,
+                IRefreshTokenService? refreshTokenService = null)
             {
                 WebApplicationBuilder builder = WebApplication.CreateBuilder();
                 builder.WebHost.UseTestServer();
@@ -202,6 +225,11 @@ namespace EasyReasy.Auth.Google.Tests
                 if (auditLogger != null)
                 {
                     builder.Services.AddSingleton<IAuthAuditLogger>(auditLogger);
+                }
+
+                if (refreshTokenService != null)
+                {
+                    builder.Services.AddSingleton<IRefreshTokenService>(refreshTokenService);
                 }
 
                 WebApplication app = builder.Build();
@@ -251,6 +279,32 @@ namespace EasyReasy.Auth.Google.Tests
             {
                 throw new InvalidOperationException("audit logger failure");
             }
+        }
+
+        /// <summary>
+        /// Inert <see cref="IRefreshTokenService"/> used only to assert that the endpoint resolves a
+        /// registered refresh-token service and passes the same instance through to the handler. None of
+        /// its members are exercised by that path, so they throw rather than return fabricated results.
+        /// </summary>
+        private sealed class FakeRefreshTokenService : IRefreshTokenService
+        {
+            public Task<string> CreateRefreshTokenAsync(string subject, string authType, string? serializedClaims, string? serializedRoles, CancellationToken cancellationToken = default)
+                => throw new NotImplementedException();
+
+            public Task<RefreshTokenCreationResult> CreateRefreshTokenWithFamilyAsync(string subject, string authType, string? serializedClaims, string? serializedRoles, CancellationToken cancellationToken = default)
+                => throw new NotImplementedException();
+
+            public Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
+                => throw new NotImplementedException();
+
+            public Task<LogoutResult> LogoutAsync(string? refreshToken, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
+                => throw new NotImplementedException();
+
+            public Task<SessionRevocationResult> InvalidateAllSessionsAsync(string subject, CancellationToken cancellationToken = default)
+                => throw new NotImplementedException();
+
+            public Task RetireFamilyAsync(string? familyId, string? subject = null, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
+                => throw new NotImplementedException();
         }
     }
 }
