@@ -35,6 +35,7 @@ jobs:
           core)          PROJECT="EasyReasy";                     TEST_PROJECT="EasyReasy.Tests" ;;
           auth)          PROJECT="EasyReasy.Auth";                TEST_PROJECT="EasyReasy.Auth.Tests" ;;
           auth-client)   PROJECT="EasyReasy.Auth.Client";         TEST_PROJECT="EasyReasy.Auth.Client.Tests" ;;
+          auth-google)   PROJECT="EasyReasy.Auth.Google";         TEST_PROJECT="EasyReasy.Auth.Google.Tests" ;;
           byteshelf)     PROJECT="EasyReasy.ByteShelfProvider";   TEST_PROJECT="EasyReasy.ByteShelfProvider.Tests" ;;
           env)           PROJECT="EasyReasy.EnvironmentVariables"; TEST_PROJECT="EasyReasy.EnvironmentVariables.Tests" ;;
           vectorstorage) PROJECT="EasyReasy.VectorStorage";       TEST_PROJECT="EasyReasy.VectorStorage.Tests" ;;
