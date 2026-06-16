@@ -46,11 +46,34 @@ jobs:
         echo "Project: ${PROJECT}"
         echo "Test project: ${TEST_PROJECT}"
 
+    # Each project's csproj <VersionPrefix> is the single source of truth for its
+    # version; the tag only selects which package to publish. Fail fast if they
+    # disagree so a mistyped tag can never publish an unintended version. The
+    # build/pack steps deliberately do NOT pass -p:Version: a global Version
+    # property propagates into referenced projects and would stamp cross-package
+    # dependencies (e.g. EasyReasy.Auth.Google -> EasyReasy.Auth) at the wrong
+    # version, so each project must carry its own version in its csproj.
+    - name: Verify tag version matches csproj
+      run: |
+        PROJECT="${{ steps.project.outputs.PROJECT }}"
+        VERSION="${{ steps.tag.outputs.VERSION }}"
+        CSPROJ="${PROJECT}/${PROJECT}.csproj"
+        CSPROJ_VERSION=$(grep -oP '(?<=<VersionPrefix>)[^<]+' "$CSPROJ" || true)
+        if [ -z "$CSPROJ_VERSION" ]; then
+          echo "::error::No <VersionPrefix> found in ${CSPROJ}; add one so the published version is explicit and verifiable."
+          exit 1
+        fi
+        if [ "$CSPROJ_VERSION" != "$VERSION" ]; then
+          echo "::error::Tag version ${VERSION} does not match ${CSPROJ} <VersionPrefix> ${CSPROJ_VERSION}. Bump the csproj or fix the tag."
+          exit 1
+        fi
+        echo "Version check OK: ${PROJECT} ${VERSION}"
+
     - name: Restore dependencies
       run: dotnet restore
 
     - name: Build
-      run: dotnet build --no-restore --configuration Release -p:Version=${{ steps.tag.outputs.VERSION }}
+      run: dotnet build --no-restore --configuration Release
 
     # Only run the test project matching the package being published, and skip:
     # - IntegrationTests: require external services (real ByteShelf backend,
@@ -61,7 +84,7 @@ jobs:
       run: dotnet test ${{ steps.project.outputs.TEST_PROJECT }} --no-build --configuration Release --filter "FullyQualifiedName!~IntegrationTests&FullyQualifiedName!~PerformanceTest"
 
     - name: Pack
-      run: dotnet pack ${{ steps.project.outputs.PROJECT }} --no-build --configuration Release -p:Version=${{ steps.tag.outputs.VERSION }} --output ./nupkgs
+      run: dotnet pack ${{ steps.project.outputs.PROJECT }} --no-build --configuration Release --output ./nupkgs
 
     - name: Publish to NuGet
       run: dotnet nuget push ./nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} --skip-duplicate
