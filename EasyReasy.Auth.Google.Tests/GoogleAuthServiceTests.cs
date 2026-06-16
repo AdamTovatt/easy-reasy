@@ -129,6 +129,28 @@ namespace EasyReasy.Auth.Google.Tests
             Assert.AreEqual("specific-id-token", _fakeValidator.LastValidatedToken);
         }
 
+        [TestMethod]
+        public async Task AuthenticateAsync_EmptyIdToken_ReturnsInvalidTokenWithoutCallingValidator()
+        {
+            ExternalAuthResult result = await _service.AuthenticateAsync("", _stubJwtTokenService, null, null);
+
+            Assert.IsFalse(result.Success);
+            Assert.AreEqual(ExternalAuthFailureReason.InvalidToken, result.FailureReason);
+            Assert.IsNull(_fakeValidator.LastValidatedToken);
+            Assert.IsFalse(_fakeHandler.WasCalled);
+        }
+
+        [TestMethod]
+        public async Task AuthenticateAsync_WhitespaceIdToken_ReturnsInvalidTokenWithoutCallingValidator()
+        {
+            ExternalAuthResult result = await _service.AuthenticateAsync("   ", _stubJwtTokenService, null, null);
+
+            Assert.IsFalse(result.Success);
+            Assert.AreEqual(ExternalAuthFailureReason.InvalidToken, result.FailureReason);
+            Assert.IsNull(_fakeValidator.LastValidatedToken);
+            Assert.IsFalse(_fakeHandler.WasCalled);
+        }
+
         /// <summary>
         /// Minimal stub for <see cref="IJwtTokenService"/> used in tests where the service
         /// is passed through but not directly invoked by <see cref="GoogleAuthService"/>.

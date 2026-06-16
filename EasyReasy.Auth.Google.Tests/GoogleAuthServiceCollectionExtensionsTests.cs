@@ -46,5 +46,28 @@ namespace EasyReasy.Auth.Google.Tests
 
             Assert.IsNull(provider.GetService<IGoogleAuthHandler>());
         }
+
+        [TestMethod]
+        public void AddEasyReasyGoogleAuth_PopulatesOptionsFromArguments()
+        {
+            ServiceCollection services = new ServiceCollection();
+            services.AddEasyReasyGoogleAuth(ClientId, new[] { "example.com" }, requireVerifiedEmail: false);
+
+            using ServiceProvider provider = services.BuildServiceProvider();
+            GoogleAuthOptions options = provider.GetRequiredService<GoogleAuthOptions>();
+
+            Assert.AreEqual(ClientId, options.ClientId);
+            Assert.IsNotNull(options.AllowedHostedDomains);
+            Assert.IsTrue(options.AllowedHostedDomains!.Contains("example.com"));
+            Assert.IsFalse(options.RequireVerifiedEmail);
+        }
+
+        [TestMethod]
+        public void AddEasyReasyGoogleAuth_BlankClientId_Throws()
+        {
+            ServiceCollection services = new ServiceCollection();
+
+            Assert.ThrowsException<ArgumentException>(() => services.AddEasyReasyGoogleAuth("   "));
+        }
     }
 }

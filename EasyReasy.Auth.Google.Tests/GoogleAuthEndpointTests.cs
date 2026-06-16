@@ -124,6 +124,52 @@ namespace EasyReasy.Auth.Google.Tests
             Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoint());
         }
 
+        [TestMethod]
+        public async Task GoogleEndpoint_WithoutRegisteredValidator_ThrowsAtStartup()
+        {
+            WebApplicationBuilder builder = WebApplication.CreateBuilder();
+            builder.Logging.ClearProviders();
+            builder.Services.AddEasyReasyAuth(Secret);
+            // Deliberately not calling AddEasyReasyGoogleAuth, so IGoogleIdTokenValidator is absent.
+
+            await using WebApplication app = builder.Build();
+
+            Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoint());
+        }
+
+        [TestMethod]
+        public async Task GoogleEndpoint_WithoutRegisteredJwtTokenService_ThrowsAtStartup()
+        {
+            WebApplicationBuilder builder = WebApplication.CreateBuilder();
+            builder.Logging.ClearProviders();
+            builder.Services.AddEasyReasyGoogleAuth("client-id.apps.googleusercontent.com");
+            builder.Services.AddScoped<IGoogleAuthHandler, FakeGoogleAuthHandler>();
+            // Deliberately not calling AddEasyReasyAuth, so IJwtTokenService is absent.
+
+            await using WebApplication app = builder.Build();
+
+            Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoint());
+        }
+
+        [TestMethod]
+        public async Task GoogleEndpoint_AuditLoggerThrows_PropagatesOutOfEndpoint()
+        {
+            FakeGoogleIdTokenValidator validator = new FakeGoogleIdTokenValidator
+            {
+                UserInfoToReturn = new GoogleUserInfo { Subject = "sub-1", Email = "user@example.com", EmailVerified = true },
+            };
+            FakeGoogleAuthHandler handler = new FakeGoogleAuthHandler
+            {
+                ResponseToReturn = new AuthResponse("jwt-token", "2099-01-01T00:00:00Z"),
+            };
+            await using HostedApp host = await HostedApp.StartAsync(validator, handler, new ThrowingExternalAuthLogger());
+
+            // The endpoint does not swallow audit-logger failures. Under TestServer the unhandled exception
+            // surfaces directly on the call; in a hosted server it would become a 500.
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+                () => host.Client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" }));
+        }
+
         /// <summary>
         /// Builds a real <see cref="WebApplication"/> with <see cref="GoogleAuthApplicationBuilderExtensions.AddGoogleAuthEndpoint"/>
         /// wired to test fakes, and exposes a <see cref="TestServer"/>-backed <see cref="HttpClient"/>.
@@ -142,7 +188,7 @@ namespace EasyReasy.Auth.Google.Tests
             public static async Task<HostedApp> StartAsync(
                 IGoogleIdTokenValidator validator,
                 IGoogleAuthHandler handler,
-                RecordingExternalAuthLogger? auditLogger)
+                IAuthAuditLogger? auditLogger)
             {
                 WebApplicationBuilder builder = WebApplication.CreateBuilder();
                 builder.WebHost.UseTestServer();
@@ -192,6 +238,18 @@ namespace EasyReasy.Auth.Google.Tests
             {
                 Calls.Add((httpContext, result));
                 return Task.CompletedTask;
+            }
+        }
+
+        /// <summary>
+        /// <see cref="IAuthAuditLogger"/> whose <see cref="OnExternalAuthAsync"/> always throws, used to verify
+        /// that an audit-logger failure propagates out of the endpoint rather than being swallowed.
+        /// </summary>
+        private sealed class ThrowingExternalAuthLogger : IAuthAuditLogger
+        {
+            public Task OnExternalAuthAsync(HttpContext httpContext, ExternalAuthResult result)
+            {
+                throw new InvalidOperationException("audit logger failure");
             }
         }
     }
