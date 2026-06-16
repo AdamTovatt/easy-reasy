@@ -29,6 +29,8 @@ namespace EasyReasy.Auth.Google
             ICollection<string>? allowedHostedDomains = null,
             bool requireVerifiedEmail = true)
         {
+            ArgumentException.ThrowIfNullOrWhiteSpace(googleClientId);
+
             GoogleAuthOptions options = new GoogleAuthOptions
             {
                 ClientId = googleClientId,
@@ -37,11 +39,7 @@ namespace EasyReasy.Auth.Google
             };
 
             services.AddSingleton(options);
-            services.AddSingleton<IGoogleIdTokenValidator>(provider =>
-            {
-                GoogleAuthOptions registeredOptions = provider.GetRequiredService<GoogleAuthOptions>();
-                return new GoogleIdTokenValidator(registeredOptions);
-            });
+            services.AddSingleton<IGoogleIdTokenValidator, GoogleIdTokenValidator>();
             services.AddScoped<GoogleAuthService>();
 
             return services;

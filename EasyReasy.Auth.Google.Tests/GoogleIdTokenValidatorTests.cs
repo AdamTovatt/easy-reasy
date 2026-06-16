@@ -13,7 +13,7 @@ namespace EasyReasy.Auth.Google.Tests
     {
         private static GoogleJsonWebSignature.Payload CreatePayload(
             string subject = "sub-1",
-            string email = "user@example.com",
+            string? email = "user@example.com",
             bool emailVerified = true,
             string? hostedDomain = null,
             string? name = "Test User",
@@ -119,6 +119,26 @@ namespace EasyReasy.Auth.Google.Tests
             GoogleUserInfo userInfo = GoogleIdTokenValidator.ValidatePolicyAndBuildUserInfo(payload, options);
 
             Assert.IsFalse(userInfo.EmailVerified);
+        }
+
+        [TestMethod]
+        public void ValidatePolicyAndBuildUserInfo_EmptyAllowedDomains_AcceptsAnyDomain()
+        {
+            GoogleAuthOptions options = new GoogleAuthOptions { ClientId = "client-id", AllowedHostedDomains = new string[0] };
+            GoogleJsonWebSignature.Payload payload = CreatePayload(hostedDomain: "anything.com");
+
+            GoogleUserInfo userInfo = GoogleIdTokenValidator.ValidatePolicyAndBuildUserInfo(payload, options);
+
+            Assert.AreEqual("user@example.com", userInfo.Email);
+        }
+
+        [TestMethod]
+        public void ValidatePolicyAndBuildUserInfo_MissingEmail_Throws()
+        {
+            GoogleAuthOptions options = new GoogleAuthOptions { ClientId = "client-id", RequireVerifiedEmail = false };
+            GoogleJsonWebSignature.Payload payload = CreatePayload(email: null, emailVerified: false);
+
+            Assert.ThrowsException<GoogleTokenValidationException>(() => GoogleIdTokenValidator.ValidatePolicyAndBuildUserInfo(payload, options));
         }
     }
 }

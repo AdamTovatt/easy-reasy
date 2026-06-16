@@ -45,13 +45,14 @@ namespace EasyReasy.Auth.Google.Tests
         }
 
         [TestMethod]
-        public void ToString_ReturnsJson()
+        public void ToString_RedactsIdToken()
         {
-            GoogleAuthRequest request = new GoogleAuthRequest("some-token");
+            GoogleAuthRequest request = new GoogleAuthRequest("super-secret-token");
 
             string result = request.ToString();
 
-            Assert.AreEqual(request.ToJson(), result);
+            Assert.AreEqual("{\"idToken\":\"[REDACTED]\"}", result);
+            Assert.IsFalse(result.Contains("super-secret-token"));
         }
 
         [TestMethod]

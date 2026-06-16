@@ -32,12 +32,13 @@ namespace EasyReasy.Auth.Google
         }
 
         /// <summary>
-        /// Returns a JSON string representation of this <see cref="GoogleAuthRequest"/> instance.
+        /// Returns a string representation of this <see cref="GoogleAuthRequest"/> instance
+        /// with the ID token redacted to prevent accidental secret leakage in logs.
         /// </summary>
-        /// <returns>A JSON string representation of this <see cref="GoogleAuthRequest"/> instance.</returns>
+        /// <returns>A string representation with the ID token replaced by "[REDACTED]".</returns>
         public override string ToString()
         {
-            return ToJson();
+            return "{\"idToken\":\"[REDACTED]\"}";
         }
 
         /// <summary>

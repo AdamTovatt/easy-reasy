@@ -65,6 +65,11 @@ namespace EasyReasy.Auth.Google
                 }
             }
 
+            if (string.IsNullOrEmpty(payload.Email))
+            {
+                throw new GoogleTokenValidationException("The Google ID token does not contain an email address.");
+            }
+
             if (options.RequireVerifiedEmail && !payload.EmailVerified)
             {
                 throw new GoogleTokenValidationException("The Google account's email address is not verified.");

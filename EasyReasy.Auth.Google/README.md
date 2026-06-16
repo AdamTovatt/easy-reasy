@@ -61,7 +61,7 @@ builder.Services.AddEasyReasyAuth(jwtSecret);
 builder.Services.AddEasyReasyGoogleAuth(googleClientId: "your-client-id.apps.googleusercontent.com");
 builder.Services.AddScoped<IGoogleAuthHandler, MyGoogleAuthHandler>();
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
 app.UseEasyReasyAuth();
 app.AddGoogleAuthEndpoint();   // POST /api/auth/google
@@ -134,7 +134,7 @@ public class MyAuditLogger : IAuthAuditLogger
 }
 ```
 
-The `ExternalAuthResult.FailureReason` is `InvalidToken` when the Google ID token fails validation (bad signature, expiry, audience mismatch, or a disallowed hosted domain) and `Rejected` when your `IGoogleAuthHandler` returns `null` to decline an otherwise-valid identity. As with the other result types, log the **metadata** shown above — never the whole result, because on success it embeds the issued bearer token.
+The `ExternalAuthResult.FailureReason` is `InvalidToken` when the Google ID token fails validation (bad signature, expiry, audience mismatch, a disallowed hosted domain, or an unverified email) and `Rejected` when your `IGoogleAuthHandler` returns `null` to decline an otherwise-valid identity. As with the other result types, log the **metadata** shown above — never the whole result, because on success it embeds the issued bearer token.
 
 ## Models
 
