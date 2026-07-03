@@ -18,6 +18,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **Claim access**: Retrieve any claim value by key or enum with a single call
 - **Progressive delay**: Built-in middleware to slow down brute-force attacks (enabled by default)
 - **Refresh token rotation**: Opt-in refresh tokens with automatic theft detection via token family tracking
+- **MFA primitives**: RFC 6238 TOTP generator and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **Flexible configuration**: Options pattern for JWT settings (issuer, audience, clock skew) and progressive delay tuning
 - **Clear error messages**: Enforces minimum secret length for security
 
@@ -745,6 +746,63 @@ app.UseSerilogRequestLogging(options =>
 
 **OpenTelemetry** — ensure any `AspNetCoreInstrumentationOptions.EnrichWithHttpRequest` callback that captures request bodies checks the same path list.
 
+### 12. TOTP and Secret Encryption Primitives
+
+Two low-level, storage-agnostic building blocks for multi-factor authentication: an RFC 6238 (TOTP) code generator and an AES-256-GCM cipher for holding the shared secret encrypted at rest. They are pure — no clock, no persistence, no DI required — so the enrollment, storage, and replay-protection policy stay entirely in your application.
+
+```csharp
+public sealed class Rfc6238TotpGenerator
+{
+    // Defaults (6 digits, 30-second steps) match mainstream authenticator apps; digits must be 6–8.
+    Rfc6238TotpGenerator(int digits = 6, int stepSeconds = 30);
+    long GetTimeStep(DateTimeOffset timestamp);
+    string Generate(ReadOnlySpan<byte> secret, long timeStep);
+    // Reports the matched step so you can persist it and reject replay.
+    bool TryValidate(ReadOnlySpan<byte> secret, string code, long currentStep, int window, out long matchedStep);
+}
+
+public interface ISecretCipher   // AesGcmSecretCipher is the AES-256-GCM implementation
+{
+    byte EnvelopeVersion { get; }                   // leading envelope byte; increases when the layout changes
+    byte[] Encrypt(ReadOnlySpan<byte> plaintext);   // self-describing envelope: [version][nonce][tag][ciphertext]
+    byte[] Decrypt(ReadOnlySpan<byte> envelope);    // throws on tamper / wrong key
+}
+```
+
+Register the cipher with a 32-byte key kept **outside** your datastore (e.g. an environment variable), so a database or backup dump alone can't recover the secret:
+
+```csharp
+byte[] key = Convert.FromBase64String(Environment.GetEnvironmentVariable("MFA_SECRET_ENCRYPTION_KEY")!);
+builder.Services.AddSingleton<ISecretCipher>(new AesGcmSecretCipher(key));
+builder.Services.AddSingleton<Rfc6238TotpGenerator>();
+```
+
+**Usage example:**
+```csharp
+// Enrollment: generate a secret, store the ciphertext, show the user an otpauth:// URI / QR code.
+byte[] secret = RandomNumberGenerator.GetBytes(20); // 160-bit, the authenticator-app standard
+// Persisting EnvelopeVersion alongside the ciphertext lets you find rows on an older format to re-encrypt.
+await _store.SaveEnrollment(userId, _cipher.Encrypt(secret), _cipher.EnvelopeVersion);
+
+// Verification: decrypt, validate within a ±1-step skew window, then advance the replay high-water-mark.
+byte[] secret = _cipher.Decrypt(await _store.GetCiphertext(userId));
+long currentStep = _totp.GetTimeStep(DateTimeOffset.UtcNow);
+if (_totp.TryValidate(secret, presentedCode, currentStep, window: 1, out long matchedStep)
+    // RFC 6238 §5.2: atomically require matchedStep > the stored last-used step, then store it. This
+    // rejects any code at or below the last accepted step, including a still-in-window neighbour.
+    && await _store.TryAdvanceLastUsedStep(userId, matchedStep))
+{
+    // code accepted
+}
+```
+
+**Key Features:**
+- RFC 6238 TOTP over RFC 4226 HOTP with HMAC-SHA1 (what mainstream authenticator apps implement), configurable digit count and time-step
+- Constant-time code comparison; validation reports the matched step so the caller can reject any code at or below the last accepted step (RFC 6238 §5.2 high-water-mark)
+- AES-256-GCM authenticated encryption — a tampered or wrong-key ciphertext fails closed rather than returning garbage
+- Self-describing ciphertext envelope with a leading, integrity-protected version byte for future format evolution
+- Pure and stateless: the application owns the clock, the secret store, and the atomic replay high-water-mark
+
 ## Advanced Configuration
 
 ### Service Registration Options
@@ -841,6 +899,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **Refresh token rotation**: Opt-in refresh tokens with token family tracking and automatic theft detection
 - **Secure password hashing**: PBKDF2 with HMAC-SHA512, max password length enforcement, and constant-time comparison
 - **Password reset tokens**: Cryptographically secure token generation with SHA-256 hashing for storage
+- **MFA primitives**: RFC 6238 TOTP generator and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
 - **Claim access**: Retrieve any claim value by key or enum via `GetClaimValue()`
