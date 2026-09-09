@@ -190,7 +190,10 @@ This will automatically create:
 
 Both endpoints return:
 - `200 OK` with `AuthResponse` (token, expiration, and optional refresh token) on success
+- `400 Bad Request` with a validation problem when the request carries no credentials at all, keyed by the wire field names the endpoint publishes (`username`, `password`, `apiKey`). See "Requests that carry no credentials" below.
 - `401 Unauthorized` on invalid credentials
+
+**Requests that carry no credentials.** An absent or empty `username`/`password` (or `apiKey`) never becomes an authentication attempt, so it is answered as a `400`, not the `401` that means "wrong credentials". `IAuthRequestValidationService` is not called on that path. A whitespace-only value is a value the caller supplied, so it goes on to the validation service and takes the ordinary 401.
 
 ### 4. Accessing HTTP Context in Validation
 
@@ -614,8 +617,8 @@ Every authentication event the library surfaces — success or failure — is re
 
 | Event | Hook | Control | Typical data to log |
 |---|---|---|---|
-| Successful / failed username+password login | `OnLoginAsync(httpContext, LoginResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedSubject`, `FailureReason`, IP, User-Agent, time |
-| Successful / failed API key auth | `OnApiKeyAuthAsync(httpContext, ApiKeyAuthResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedClientId`, `FailureReason`, IP, User-Agent, time |
+| Successful / failed username+password login, and a request that carried no credentials (`MissingCredentials`) | `OnLoginAsync(httpContext, LoginResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedSubject`, `FailureReason`, IP, User-Agent, time |
+| Successful / failed API key auth, and a request that carried no key (`MissingKey`) | `OnApiKeyAuthAsync(httpContext, ApiKeyAuthResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedClientId`, `FailureReason`, IP, User-Agent, time |
 | Successful / failed external identity-provider sign-in (e.g. Google) | `OnExternalAuthAsync(httpContext, ExternalAuthResult)` | ISO 27001 A.12.4.1 | outcome, `Provider`, `AttemptedSubject`, `FailureReason`, IP, User-Agent, time |
 | Refresh (incl. `TheftDetected`, `DeniedByResolver`, `ResolverError`) | `OnRefreshAsync(httpContext, RefreshResult)` | ISO 27001 A.12.4.1 | outcome, `Subject`, `FamilyId`, `FailureReason`, IP, time |
 | Logout | `OnLogoutAsync(httpContext, LogoutResult)` | ISO 27001 A.9.2.6 | `WasKnown`, `Subject`, `FamilyId`, IP, time |
@@ -624,6 +627,8 @@ Every authentication event the library surfaces — success or failure — is re
 | Targeted session supersession on re-issue (`RetireFamilyAsync`) | `OnSessionSupersededAsync(httpContext, FamilyRetirementResult)` | ISO 27001 A.9.2.6 | `FamilyId`, `Subject`, IP, time |
 
 All methods have default no-op implementations — implement only the events you care about. The result objects deliberately never carry a raw password or a raw API key, so failure records are safe to serialise to your log store.
+
+⚠️ **One reported event is not an authentication attempt.** A request that carries no credentials at all is answered with a `400` (see Section 3), and `OnLoginAsync` / `OnApiKeyAuthAsync` still fire once for it so the attempt stays attributable — with `LoginFailureReason.MissingCredentials` / `ApiKeyAuthFailureReason.MissingKey`, and `Success == false` like any other failure. **A consumer counting failed attempts per account must exclude those two reasons**, or anyone can lock any account they can name without ever guessing a credential. `AttemptedSubject` / `AttemptedClientId` is populated when the request supplied an identifier and `null` when the identifier is what was missing.
 
 ⚠️ **Do not serialise the whole result object on the success path.** `LoginResult`, `ApiKeyAuthResult`, and `ExternalAuthResult` embed an `AuthResponse` that carries the issued JWT access token and (when refresh tokens are enabled) the raw refresh token — both are bearer credentials. Log **metadata** from the result (`Success`, `AttemptedSubject` / `AttemptedClientId`, `FailureReason`) — never log `result.AuthResponse` with a structured logger's destructuring syntax (e.g. Serilog `{@result}`) or `JsonSerializer.Serialize(result)`. The example below follows the right pattern.
 
@@ -928,6 +933,28 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.4.0
+
+Version 5.5.0 changes wire behaviour in two places: the two built-in credential endpoints answer a request that carries no credentials with a `400`, and the progressive-delay middleware no longer treats every non-401 response as a reason to forget an IP's accumulated failures. No API was removed or resigned; the one source-level change to watch is the new enum members, below.
+
+### Changed: a credential-less request is a 400, not a 401
+- **`POST /api/auth/login`** answers `400 Bad Request` with a validation problem when `username` or `password` is absent or empty, and **`POST /api/auth/apikey`** does the same when `apiKey` is absent or empty. Previously the null bound straight through to `IAuthRequestValidationService`, which looked it up, found nothing, and the endpoint wrote a bare 401 — naming wrong credentials as the cause of a request that never became an authentication attempt.
+- **`IAuthRequestValidationService` is not called on that path**, so a validation service no longer receives a request whose non-nullable `Username` / `Password` / `ApiKey` is null at runtime. A consumer that counts failed attempts *inside* its validation service therefore stops counting these requests with no change on its part. **A consumer that counts them in its `IAuthAuditLogger` must exclude the two new failure reasons itself** — the hook still fires, with `Success == false`. See Section 10.
+- **The `errors` keys are the wire field names** (`username`, `password`, `apiKey`) — the names the endpoint publishes, now pinned on the request models with `[JsonPropertyName]` so they cannot drift from a property rename. `Cache-Control: no-store` is on the 400 as it is on the 401.
+- **Only the emptiness of the field changed meaning.** A whitespace-only value is a value the caller supplied: it still goes on to the validation service and takes the ordinary 401. An unknown user, a wrong password and a locked account all keep the same reasonless 401, indistinguishable from each other.
+- **The request models are unchanged.** `Username`, `Password` and `ApiKey` stay non-nullable, and the endpoint refusing the null is what makes those declarations true downstream.
+
+### New: a failure reason for the credential-less request
+- **`LoginFailureReason.MissingCredentials`** and **`ApiKeyAuthFailureReason.MissingKey`** flow to `IAuthAuditLogger.OnLoginAsync` / `OnApiKeyAuthAsync` on the 400 path, which still fires exactly once so the audit trail keeps a row for the attempt. The result carries the attempted identifier when the request supplied one (a login missing only its password reports the username) and `null` when the identifier is what was missing.
+- **A consumer mapping these enums exhaustively needs a new arm.** A `switch` *statement* with a `default`, or a `switch` *expression* with a `_` arm, keeps compiling untouched. A `switch` expression without one now warns `CS8509` — which is an error under `TreatWarningsAsErrors`. Both members are appended after `Other`, so the numeric value of every existing member is unchanged.
+
+### Changed: only a success clears the progressive-delay failure count
+- **`ProgressiveDelayMiddleware` now clears an IP's accumulated failure count on a 2xx response only.** It previously cleared on any response that was not a 401, which let an attacker reset the delay between guesses with a request that is free to make and cannot succeed — a 404, or (once the change above landed) a credential-less request to the login endpoint. A 401 still increments the count; every other outcome now leaves it as it stands.
+- **Nothing to configure.** `ProgressiveDelayOptions` is unchanged. A consumer whose legitimate traffic interleaves non-2xx responses (say, a 304 or a 404) between logins will see the delay persist where it used to reset — which is the intended behaviour, since only a successful authentication proves the caller is not guessing.
+
+### New: the 400 is in the OpenAPI document
+- **The two credential endpoints declare their `200`, `400` and `401` responses**, so consumers generating a client from the spec see the validation problem. The refresh and logout endpoints are unannotated as before.
 
 ## Migration from 5.1.0
 

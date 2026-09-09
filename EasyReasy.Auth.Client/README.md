@@ -264,11 +264,13 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
     }
     catch (UnauthorizedAccessException)
     {
-        // Handle authentication errors
+        // Handle credentials the server rejected (the auth endpoint answered 401)
     }
     catch (HttpRequestException)
     {
-        // Handle network/server errors
+        // Handle network/server errors — and any other failed auth response, such as the
+        // 400 an EasyReasy.Auth credential endpoint returns for a request carrying no
+        // credentials. Only a 401 surfaces as UnauthorizedAccessException.
     }
 }
 ```

@@ -12,6 +12,55 @@ namespace EasyReasy.Auth
         private const string NoCacheHeaderValue = "no-store";
 
         /// <summary>
+        /// Builds the <c>errors</c> messages for one field that a credential-less request left unset.
+        /// </summary>
+        /// <param name="fieldName">The wire (JSON) name of the field, as the caller spells it.</param>
+        /// <returns>The messages to report under that field.</returns>
+        private static string[] RequiredFieldMessages(string fieldName)
+        {
+            return new string[] { $"The {fieldName} field is required." };
+        }
+
+        /// <summary>
+        /// Collects the wire names of the credential fields a login request left unset, keyed for the
+        /// <c>errors</c> object of a validation problem. Empty when the request carries both credentials.
+        /// </summary>
+        /// <param name="request">The bound login request.</param>
+        /// <returns>One entry per missing field, keyed by the wire (JSON) field name.</returns>
+        private static Dictionary<string, string[]> CollectMissingLoginFields(LoginAuthRequest request)
+        {
+            Dictionary<string, string[]> missingFields = new Dictionary<string, string[]>();
+
+            if (string.IsNullOrEmpty(request.Username))
+            {
+                missingFields[LoginAuthRequest.UsernameFieldName] = RequiredFieldMessages(LoginAuthRequest.UsernameFieldName);
+            }
+
+            if (string.IsNullOrEmpty(request.Password))
+            {
+                missingFields[LoginAuthRequest.PasswordFieldName] = RequiredFieldMessages(LoginAuthRequest.PasswordFieldName);
+            }
+
+            return missingFields;
+        }
+
+        /// <summary>
+        /// Returns the value unless it is null or empty, in which case <c>null</c>.
+        /// </summary>
+        /// <remarks>
+        /// An identifier the endpoint treats as missing is reported to the audit hook as no identifier at all,
+        /// rather than as an empty string, so that an audit row either names a subject the caller actually
+        /// supplied or names none. Pinned by the tests that assert a null <c>AttemptedSubject</c> /
+        /// <c>AttemptedClientId</c> for an empty identifier.
+        /// </remarks>
+        /// <param name="value">The value to normalise.</param>
+        /// <returns>The value, or <c>null</c> when it is null or empty.</returns>
+        private static string? NullIfEmpty(string? value)
+        {
+            return string.IsNullOrEmpty(value) ? null : value;
+        }
+
+        /// <summary>
         /// Resolves <see cref="IAuthAuditLogger"/> from the request scope (if registered) and invokes the supplied hook.
         /// No-op when no logger is registered. Used by the endpoint-driven hooks (<see cref="IAuthAuditLogger.OnLoginAsync"/>
         /// and <see cref="IAuthAuditLogger.OnApiKeyAuthAsync"/>); the service-driven hooks (<c>OnRefreshAsync</c>,
@@ -71,6 +120,12 @@ namespace EasyReasy.Auth
         /// If <see cref="IAuthAuditLogger"/> is registered, <see cref="IAuthAuditLogger.OnApiKeyAuthAsync"/>
         /// is invoked after validation (for both success and failure) before the response is written.
         /// An exception thrown by the audit logger will propagate out of the endpoint as a 500.
+        /// <para>
+        /// A request whose <c>apiKey</c> is absent or empty never becomes an authentication attempt:
+        /// the validation service is not called and the response is a <c>400 Bad Request</c> validation problem
+        /// keyed by the wire field name, not a <c>401 Unauthorized</c>. The audit hook still fires exactly once,
+        /// with <see cref="ApiKeyAuthFailureReason.MissingKey"/>.
+        /// </para>
         /// </remarks>
         /// <param name="app">The web application.</param>
         /// <returns>The web application for chaining.</returns>
@@ -79,6 +134,21 @@ namespace EasyReasy.Auth
             app.MapPost("/api/auth/apikey", async (ApiKeyAuthRequest request, IAuthRequestValidationService validationService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
                 httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
+
+                if (string.IsNullOrEmpty(request.ApiKey))
+                {
+                    ApiKeyAuthResult missingKeyResult = ApiKeyAuthResult.Failed(
+                        ApiKeyAuthFailureReason.MissingKey,
+                        attemptedClientId: NullIfEmpty(request.ClientId));
+
+                    await InvokeAuditHookAsync(httpContext, (logger, ctx) => logger.OnApiKeyAuthAsync(ctx, missingKeyResult));
+
+                    return Results.ValidationProblem(new Dictionary<string, string[]>
+                    {
+                        [ApiKeyAuthRequest.ApiKeyFieldName] = RequiredFieldMessages(ApiKeyAuthRequest.ApiKeyFieldName),
+                    });
+                }
+
                 ApiKeyAuthResult result = await validationService.ValidateApiKeyRequestAsync(request, jwtTokenService, httpContext);
 
                 await InvokeAuditHookAsync(httpContext, (logger, ctx) => logger.OnApiKeyAuthAsync(ctx, result));
@@ -86,7 +156,14 @@ namespace EasyReasy.Auth
                 return result.Success && result.AuthResponse != null
                     ? Results.Ok(result.AuthResponse)
                     : Results.Unauthorized();
-            }).AllowAnonymous();
+            })
+                .AllowAnonymous()
+                // Only the two credential endpoints declare their responses: the 400 is the one thing a
+                // generated client cannot otherwise see. The refresh and logout endpoints are left as they
+                // were rather than annotated in passing.
+                .Produces<AuthResponse>(StatusCodes.Status200OK)
+                .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+                .Produces(StatusCodes.Status401Unauthorized);
 
             return app;
         }
@@ -99,6 +176,15 @@ namespace EasyReasy.Auth
         /// If <see cref="IAuthAuditLogger"/> is registered, <see cref="IAuthAuditLogger.OnLoginAsync"/>
         /// is invoked after validation (for both success and failure) before the response is written.
         /// An exception thrown by the audit logger will propagate out of the endpoint as a 500.
+        /// <para>
+        /// A request whose <c>username</c> or <c>password</c> is absent or empty never becomes an authentication
+        /// attempt: the validation service is not called and the response is a <c>400 Bad Request</c> validation
+        /// problem with one entry per missing field, keyed by the wire field name rather than the CLR property name,
+        /// not a <c>401 Unauthorized</c>. The audit hook still fires exactly once, with
+        /// <see cref="LoginFailureReason.MissingCredentials"/> and the attempted subject where the request supplied one.
+        /// A whitespace-only value is a value the caller supplied, so it goes on to the validation service and takes
+        /// the ordinary 401.
+        /// </para>
         /// </remarks>
         /// <param name="app">The web application.</param>
         /// <returns>The web application for chaining.</returns>
@@ -107,6 +193,20 @@ namespace EasyReasy.Auth
             app.MapPost("/api/auth/login", async (LoginAuthRequest request, IAuthRequestValidationService validationService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
                 httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
+
+                Dictionary<string, string[]> missingFields = CollectMissingLoginFields(request);
+
+                if (missingFields.Count > 0)
+                {
+                    LoginResult missingCredentialsResult = LoginResult.Failed(
+                        LoginFailureReason.MissingCredentials,
+                        attemptedSubject: NullIfEmpty(request.Username));
+
+                    await InvokeAuditHookAsync(httpContext, (logger, ctx) => logger.OnLoginAsync(ctx, missingCredentialsResult));
+
+                    return Results.ValidationProblem(missingFields);
+                }
+
                 LoginResult result = await validationService.ValidateLoginRequestAsync(request, jwtTokenService, httpContext);
 
                 await InvokeAuditHookAsync(httpContext, (logger, ctx) => logger.OnLoginAsync(ctx, result));
@@ -114,7 +214,11 @@ namespace EasyReasy.Auth
                 return result.Success && result.AuthResponse != null
                     ? Results.Ok(result.AuthResponse)
                     : Results.Unauthorized();
-            }).AllowAnonymous();
+            })
+                .AllowAnonymous()
+                .Produces<AuthResponse>(StatusCodes.Status200OK)
+                .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+                .Produces(StatusCodes.Status401Unauthorized);
 
             return app;
         }

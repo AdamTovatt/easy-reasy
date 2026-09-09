@@ -104,10 +104,12 @@ Either way, the verification state is exposed on `GoogleUserInfo.EmailVerified` 
 
 ## Endpoint Behavior
 
-`AddGoogleAuthEndpoint` maps `POST /api/auth/google` with the same hardening as the built-in EasyReasy.Auth endpoints:
+`AddGoogleAuthEndpoint` maps `POST /api/auth/google`, sharing two properties with the built-in EasyReasy.Auth endpoints:
 
 - It is **anonymous**, so it stays reachable even when the application applies a global authorization policy.
 - It sets **`Cache-Control: no-store`**, so the issued token is never cached by browsers or proxies.
+
+Beyond those two, read each endpoint's own contract rather than assuming parity — the credential endpoints in EasyReasy.Auth answer a body carrying no credentials with a `400`, and this endpoint passes the supplied `idToken` to the validator as it stands.
 
 ## Audit Logging
 
