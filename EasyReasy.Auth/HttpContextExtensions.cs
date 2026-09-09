@@ -112,5 +112,36 @@ namespace EasyReasy.Auth
                     return null;
             }
         }
+
+        /// <summary>
+        /// The <see cref="HttpContext.Items"/> key under which an endpoint records that it authenticated the caller.
+        /// </summary>
+        private const string AuthenticationSucceededKey = "EasyReasy.Auth.AuthenticationSucceeded";
+
+        /// <summary>
+        /// Records that this request authenticated the caller and issued a token.
+        /// </summary>
+        /// <remarks>
+        /// Call this from any endpoint that issues a token, including one outside this package.
+        /// <see cref="ProgressiveDelayMiddleware"/> clears an IP's accumulated failure count only for a request
+        /// marked this way, so an endpoint that cannot authenticate anyone — the logout endpoint, a 404, a
+        /// credential-less request — cannot be used to reset the delay between guesses.
+        /// </remarks>
+        /// <param name="context">The HTTP context of the request that authenticated the caller.</param>
+        public static void MarkAuthenticationSucceeded(this HttpContext context)
+        {
+            context.Items[AuthenticationSucceededKey] = true;
+        }
+
+        /// <summary>
+        /// Whether this request authenticated the caller, as recorded by
+        /// <see cref="MarkAuthenticationSucceeded"/>.
+        /// </summary>
+        /// <param name="context">The HTTP context to inspect.</param>
+        /// <returns><c>true</c> when an endpoint marked this request as having authenticated the caller.</returns>
+        public static bool HasAuthenticationSucceeded(this HttpContext context)
+        {
+            return context.Items.TryGetValue(AuthenticationSucceededKey, out object? succeeded) && succeeded is true;
+        }
     }
 }

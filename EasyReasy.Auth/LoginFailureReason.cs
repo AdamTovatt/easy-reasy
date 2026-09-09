@@ -39,9 +39,9 @@ namespace EasyReasy.Auth
         /// the caller receives a <c>400 Bad Request</c> rather than a <c>401 Unauthorized</c>.
         /// </summary>
         /// <remarks>
-        /// This is the one member that does not represent an authentication attempt. A consumer counting failed
-        /// attempts per account — for lockout, or for an A.12.4.1 failure rate — should exclude it, or anyone
-        /// could lock any account they can name without ever guessing a credential.
+        /// This member does not represent an authentication attempt: nothing was tried. A consumer counting
+        /// failed attempts per account — for lockout, or for an A.12.4.1 failure rate — should exclude it, or
+        /// anyone could lock any account they can name without ever guessing a credential.
         /// </remarks>
         MissingCredentials,
     }

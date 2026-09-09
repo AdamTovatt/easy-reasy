@@ -52,9 +52,15 @@ namespace EasyReasy.Auth.Google
                     await auditLogger.OnExternalAuthAsync(httpContext, result);
                 }
 
-                return result.Success && result.AuthResponse != null
-                    ? Results.Ok(result.AuthResponse)
-                    : Results.Unauthorized();
+                if (result.Success && result.AuthResponse != null)
+                {
+                    // Reports the sign-in to ProgressiveDelayMiddleware, which clears an IP's accumulated
+                    // failure count only for a request that authenticated someone.
+                    httpContext.MarkAuthenticationSucceeded();
+                    return Results.Ok(result.AuthResponse);
+                }
+
+                return Results.Unauthorized();
             }).AllowAnonymous();
 
             return app;

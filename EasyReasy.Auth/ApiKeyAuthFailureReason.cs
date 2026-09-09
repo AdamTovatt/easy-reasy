@@ -33,8 +33,8 @@ namespace EasyReasy.Auth
         /// the caller receives a <c>400 Bad Request</c> rather than a <c>401 Unauthorized</c>.
         /// </summary>
         /// <remarks>
-        /// This is the one member that does not represent an authentication attempt. A consumer counting failed
-        /// attempts should exclude it — no key was presented, so nothing was tried.
+        /// This member does not represent an authentication attempt: no key was presented, so nothing was
+        /// tried. A consumer counting failed attempts should exclude it.
         /// </remarks>
         MissingKey,
     }

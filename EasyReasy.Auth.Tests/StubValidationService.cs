@@ -45,7 +45,8 @@ namespace EasyReasy.Auth.Tests
                 return Task.FromResult(ApiKeyAuthResult.Succeeded(new AuthResponse(token, expiresAt.ToString("o")), "test-client"));
             }
 
-            return Task.FromResult(ApiKeyAuthResult.Failed(_apiKeyFailureReason, attemptedClientId: request.ApiKey));
+            // The client id, never the key itself: a result object must not carry a raw credential.
+            return Task.FromResult(ApiKeyAuthResult.Failed(_apiKeyFailureReason, attemptedClientId: request.ClientId));
         }
 
         public Task<LoginResult> ValidateLoginRequestAsync(LoginAuthRequest request, IJwtTokenService jwtTokenService, HttpContext? httpContext = null)

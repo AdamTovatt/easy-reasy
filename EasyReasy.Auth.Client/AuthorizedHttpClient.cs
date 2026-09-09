@@ -36,7 +36,6 @@ namespace EasyReasy.Auth.Client
         /// </summary>
         private readonly IAuthCredentials? _credentials;
 
-        private readonly string _authEndpoint;
         private readonly string _refreshEndpoint;
         private readonly string _logoutEndpoint;
         private readonly Action<AuthResponse>? _onAuthResponseChanged;
@@ -72,9 +71,9 @@ namespace EasyReasy.Auth.Client
             ArgumentNullException.ThrowIfNull(httpClient);
             ArgumentException.ThrowIfNullOrEmpty(apiKey);
 
-            _httpClient = NormalizeBaseAddress(httpClient);
-            _credentials = new ApiKeyCredentials(apiKey);
-            _authEndpoint = authEndpoint ?? "api/auth/apikey";
+            _httpClient = httpClient;
+            NormalizeBaseAddress(_httpClient);
+            _credentials = new ApiKeyCredentials(apiKey, authEndpoint ?? "api/auth/apikey");
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
             _onAuthResponseChanged = onAuthResponseChanged;
@@ -110,9 +109,9 @@ namespace EasyReasy.Auth.Client
             ArgumentException.ThrowIfNullOrEmpty(username);
             ArgumentException.ThrowIfNullOrEmpty(password);
 
-            _httpClient = NormalizeBaseAddress(httpClient);
-            _credentials = new UsernamePasswordCredentials(username, password);
-            _authEndpoint = authEndpoint ?? "api/auth/login";
+            _httpClient = httpClient;
+            NormalizeBaseAddress(_httpClient);
+            _credentials = new UsernamePasswordCredentials(username, password, authEndpoint ?? "api/auth/login");
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
             _onAuthResponseChanged = onAuthResponseChanged;
@@ -137,29 +136,13 @@ namespace EasyReasy.Auth.Client
             ArgumentNullException.ThrowIfNull(httpClient);
             ArgumentNullException.ThrowIfNull(authResponse);
 
-            _httpClient = NormalizeBaseAddress(httpClient);
-            _authEndpoint = string.Empty;
+            _httpClient = httpClient;
+            NormalizeBaseAddress(_httpClient);
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
             _onAuthResponseChanged = onAuthResponseChanged;
 
             ApplyAuthResponse(authResponse);
-        }
-
-        /// <summary>
-        /// Ensures the client's base address ends in a slash, so that the relative endpoint paths this class
-        /// builds resolve beneath it rather than replacing its last path segment.
-        /// </summary>
-        /// <param name="httpClient">The client to normalize. Mutated in place.</param>
-        /// <returns>The same client, for assignment.</returns>
-        private static HttpClient NormalizeBaseAddress(HttpClient httpClient)
-        {
-            if (httpClient.BaseAddress?.ToString().LastOrDefault() is char lastCharacter && lastCharacter != '/')
-            {
-                httpClient.BaseAddress = new Uri(httpClient.BaseAddress.ToString() + "/");
-            }
-
-            return httpClient;
         }
 
         /// <summary>
@@ -367,7 +350,7 @@ namespace EasyReasy.Auth.Client
 
             StringContent content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-            HttpResponseMessage response = await _httpClient.PostAsync(_authEndpoint, content, cancellationToken);
+            HttpResponseMessage response = await _httpClient.PostAsync(_credentials.AuthEndpoint, content, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -385,6 +368,19 @@ namespace EasyReasy.Auth.Client
             AuthResponse authResponse = AuthResponse.FromJson(responseJson);
 
             ApplyAuthResponse(authResponse);
+        }
+
+        /// <summary>
+        /// Ensures the client's base address ends in a slash, so that the relative endpoint paths this class
+        /// builds resolve beneath it rather than replacing its last path segment.
+        /// </summary>
+        /// <param name="httpClient">The client whose base address to normalize.</param>
+        private static void NormalizeBaseAddress(HttpClient httpClient)
+        {
+            if (httpClient.BaseAddress?.ToString().LastOrDefault() is char lastCharacter && lastCharacter != '/')
+            {
+                httpClient.BaseAddress = new Uri(httpClient.BaseAddress.ToString() + "/");
+            }
         }
 
         /// <summary>
@@ -532,6 +528,11 @@ namespace EasyReasy.Auth.Client
             AuthType Type { get; }
 
             /// <summary>
+            /// The endpoint path these credentials are posted to, relative to the client's base address.
+            /// </summary>
+            string AuthEndpoint { get; }
+
+            /// <summary>
             /// Builds the JSON body of the authentication request for these credentials.
             /// </summary>
             /// <param name="clientId">
@@ -550,12 +551,15 @@ namespace EasyReasy.Auth.Client
         {
             private readonly string _apiKey;
 
-            public ApiKeyCredentials(string apiKey)
+            public ApiKeyCredentials(string apiKey, string authEndpoint)
             {
                 _apiKey = apiKey;
+                AuthEndpoint = authEndpoint;
             }
 
             public AuthType Type => AuthType.ApiKey;
+
+            public string AuthEndpoint { get; }
 
             public string CreateAuthRequestJson(string? clientId)
             {
@@ -571,13 +575,16 @@ namespace EasyReasy.Auth.Client
             private readonly string _username;
             private readonly string _password;
 
-            public UsernamePasswordCredentials(string username, string password)
+            public UsernamePasswordCredentials(string username, string password, string authEndpoint)
             {
                 _username = username;
                 _password = password;
+                AuthEndpoint = authEndpoint;
             }
 
             public AuthType Type => AuthType.UsernamePassword;
+
+            public string AuthEndpoint { get; }
 
             public string CreateAuthRequestJson(string? clientId)
             {
