@@ -8,8 +8,10 @@ namespace EasyReasy.Auth
     /// The first <see cref="ProgressiveDelayOptions.FreeFailures"/> failed requests have no delay,
     /// then the delay increases by <see cref="ProgressiveDelayOptions.DelayIncrement"/> per additional failure,
     /// up to <see cref="ProgressiveDelayOptions.MaxDelay"/>.
-    /// A 401 increments an IP's failure count and a successful (2xx) response clears it; any other outcome
-    /// leaves the count as it stands, so a request that cannot succeed cannot be used to reset the delay.
+    /// A 401 increments an IP's failure count and a successful authentication clears it; any other outcome
+    /// leaves the count as it stands, so a request that cannot authenticate anyone cannot be used to reset
+    /// the delay. Endpoints report an authentication with
+    /// <see cref="HttpContextExtensions.MarkAuthenticationSucceeded"/>.
     /// Stale failure entries are evicted after <see cref="ProgressiveDelayOptions.FailureEntryLifetime"/>.
     /// </summary>
     public class ProgressiveDelayMiddleware
@@ -82,26 +84,16 @@ namespace EasyReasy.Auth
                     _ => new FailureEntry(1, now),
                     (_, existing) => new FailureEntry(existing.Count + 1, now));
             }
-            else if (IsSuccess(context.Response.StatusCode))
+            else if (context.HasAuthenticationSucceeded())
             {
-                // Only a success clears the count. Clearing on *any* non-401 would let an attacker reset
-                // the delay between guesses with a request that is free to make and cannot succeed —
-                // a 404, or a credential-less request to the login endpoint, which is a 400 by design.
+                // Only an authentication clears the count. Clearing on any non-401 — or on any 2xx — would let
+                // an attacker reset the delay between guesses with a request that is free to make and cannot
+                // authenticate anyone: a 404, a credential-less 400, or a call to the anonymous logout
+                // endpoint, which this library maps by default and which always answers 204.
                 _failures.TryRemove(ip, out _);
             }
 
             SweepStaleEntriesIfNeeded(now);
-        }
-
-        /// <summary>
-        /// Whether the status code represents a successful response (2xx), the only outcome that clears
-        /// an IP's accumulated failure count.
-        /// </summary>
-        /// <param name="statusCode">The response status code.</param>
-        /// <returns><c>true</c> when the status code is in the 2xx range.</returns>
-        private static bool IsSuccess(int statusCode)
-        {
-            return statusCode >= 200 && statusCode <= 299;
         }
 
         /// <summary>

@@ -280,12 +280,12 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
 
 Note that construction itself throws when a credential carries nothing — `ArgumentNullException` for `null`, `ArgumentException` for an empty string. If your credentials come from configuration that may be unset, validate them before constructing the client, or the throw lands on the constructor line rather than inside the `try` above.
 
-## Version History
-
-### 1.7.0
+## Migration from 1.6.0
 
 **Both credential constructors now reject an empty credential.** `new AuthorizedHttpClient(httpClient, "")` and `new AuthorizedHttpClient(httpClient, "", "")` previously constructed successfully and failed later, at the first request; they now throw `ArgumentException` at construction. `null` continues to throw `ArgumentNullException`, and a whitespace-only credential is still sent to the server unchanged.
 
 If you were relying on the old behaviour to defer credential validation to the server, move that check ahead of the constructor.
 
 **The username/password constructor now normalizes the base address.** It previously skipped the trailing-slash normalization the other two constructors perform, so a base address carrying a path prefix (`https://api.example.com/myapp`) lost that prefix when the auth endpoint was appended — the login POST went to `https://api.example.com/api/auth/login`. If you worked around this by passing an absolute `authEndpoint`, or by adding the trailing slash yourself, that workaround is no longer needed (and remains harmless).
+
+**The request models now pin their wire field names.** `LoginAuthRequest` and `ApiKeyAuthRequest` carry `[JsonPropertyName]` attributes and expose the names as constants (`UsernameFieldName`, `PasswordFieldName`, `ApiKeyFieldName`, `ClientIdFieldName`), matching the server-side models. The body this client sends is unchanged; it can no longer drift if a property is renamed or if `JsonSerializerSettings.CurrentOptions` is assigned a different naming policy.

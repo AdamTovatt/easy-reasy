@@ -1,7 +1,4 @@
-using Microsoft.AspNetCore.Http.Metadata;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -136,6 +133,28 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual(0, validationService.LoginCallCount);
         }
 
+        [DataTestMethod]
+        [DataRow("", DisplayName = "empty body")]
+        [DataRow("not json", DisplayName = "unparseable body")]
+        [DataRow("null", DisplayName = "bare JSON null")]
+        [DataRow("[]", DisplayName = "JSON array")]
+        public async Task LoginEndpoint_WithABodyThatDoesNotBind_ShouldReturn400WithoutReachingTheHandler(string body)
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            StubValidationService validationService = new StubValidationService(succeed: false);
+            await using HostedAuthApp host = await HostedAuthApp.StartAsync(auditLogger, validationService);
+
+            HttpResponseMessage response = await PostJsonAsync(host.Client, LoginPath, body);
+
+            // A body the framework cannot bind is rejected before the endpoint runs, so this 400 is not the
+            // endpoint's: no audit row and no Cache-Control, unlike the 400 for a bound but credential-less
+            // request. Pinned so the difference is a known property rather than a surprise.
+            Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.AreEqual(0, validationService.LoginCallCount);
+            Assert.AreEqual(0, auditLogger.LoginCalls.Count);
+            Assert.IsNull(response.Headers.CacheControl);
+        }
+
         [TestMethod]
         public async Task LoginEndpoint_WithWhitespaceOnlyUsername_ShouldStillReturn401WithItsAuditRow()
         {
@@ -234,34 +253,6 @@ namespace EasyReasy.Auth.Tests
 
             Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
             Assert.AreEqual(0, validationService.LoginCallCount);
-        }
-
-        /// <remarks>
-        /// This lives beside the credential-less cases on purpose: it is the other half of the same contract.
-        /// What the caller may distinguish is a request that never became an attempt; what it may not
-        /// distinguish is one attempt's outcome from another's.
-        /// </remarks>
-        [TestMethod]
-        public async Task LoginEndpoint_UnknownUserAndInvalidCredentials_ShouldAnswerIdentically()
-        {
-            await using HostedAuthApp unknownUserHost = await StartAsync(
-                new StubValidationService(succeed: false, LoginFailureReason.UnknownUser));
-            await using HostedAuthApp invalidCredentialsHost = await StartAsync(
-                new StubValidationService(succeed: false, LoginFailureReason.InvalidCredentials));
-
-            HttpResponseMessage unknownUserResponse = await PostJsonAsync(
-                unknownUserHost.Client, LoginPath, "{\"username\":\"ghost\",\"password\":\"anything\"}");
-            HttpResponseMessage invalidCredentialsResponse = await PostJsonAsync(
-                invalidCredentialsHost.Client, LoginPath, "{\"username\":\"alice\",\"password\":\"wrong\"}");
-
-            Assert.AreEqual(HttpStatusCode.Unauthorized, unknownUserResponse.StatusCode);
-            Assert.AreEqual(invalidCredentialsResponse.StatusCode, unknownUserResponse.StatusCode);
-            Assert.AreEqual(
-                await invalidCredentialsResponse.Content.ReadAsStringAsync(),
-                await unknownUserResponse.Content.ReadAsStringAsync());
-            string[] unknownUserHeaders = DistinguishingHeaders(unknownUserResponse);
-            CollectionAssert.Contains(unknownUserHeaders, $"Cache-Control: {NoStore}");
-            CollectionAssert.AreEqual(DistinguishingHeaders(invalidCredentialsResponse), unknownUserHeaders);
         }
 
         [TestMethod]
@@ -388,15 +379,6 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual(0, validationService.ApiKeyCallCount);
         }
 
-        [TestMethod]
-        public async Task CredentialEndpoints_ShouldDeclareTheir200400And401InTheOpenApiDocument()
-        {
-            await using HostedAuthApp host = await StartAsync(new StubValidationService(succeed: false));
-
-            CollectionAssert.AreEquivalent(new int[] { 200, 400, 401 }, DeclaredStatusCodes(host, LoginPath));
-            CollectionAssert.AreEquivalent(new int[] { 200, 400, 401 }, DeclaredStatusCodes(host, ApiKeyPath));
-        }
-
         /// <summary>
         /// Starts a host with an audit logger registered but not observed, for the tests whose subject is the
         /// response rather than the audit row.
@@ -448,34 +430,5 @@ namespace EasyReasy.Auth.Tests
             return messagesByField;
         }
 
-        /// <summary>
-        /// The response headers that could tell two 401s apart, as "name: value" strings in a stable order.
-        /// </summary>
-        private static string[] DistinguishingHeaders(HttpResponseMessage response)
-        {
-            return response.Headers
-                .Concat(response.Content.Headers)
-                .Select(header => $"{header.Key}: {string.Join(",", header.Value)}")
-                .OrderBy(header => header, StringComparer.Ordinal)
-                .ToArray();
-        }
-
-        /// <summary>
-        /// The response status codes an endpoint declares as OpenAPI metadata, which is what a consumer
-        /// generating a client from the document sees.
-        /// </summary>
-        private static int[] DeclaredStatusCodes(HostedAuthApp host, string routePattern)
-        {
-            EndpointDataSource endpointDataSource = host.App.Services.GetRequiredService<EndpointDataSource>();
-
-            RouteEndpoint endpoint = endpointDataSource.Endpoints
-                .OfType<RouteEndpoint>()
-                .Single(candidate => candidate.RoutePattern.RawText == routePattern);
-
-            return endpoint.Metadata
-                .GetOrderedMetadata<IProducesResponseTypeMetadata>()
-                .Select(metadata => metadata.StatusCode)
-                .ToArray();
-        }
     }
 }

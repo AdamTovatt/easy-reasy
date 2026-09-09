@@ -9,13 +9,27 @@ namespace EasyReasy.Auth.Client
     public class ApiKeyAuthRequest
     {
         /// <summary>
+        /// The wire (JSON) name of <see cref="ApiKey"/>. Pinned by the <see cref="JsonPropertyNameAttribute"/>
+        /// on the property, so neither renaming the property nor a consumer changing
+        /// <see cref="JsonSerializerSettings.CurrentOptions"/> can silently change the body this client sends.
+        /// </summary>
+        public const string ApiKeyFieldName = "apiKey";
+
+        /// <summary>
+        /// The wire (JSON) name of <see cref="ClientId"/>. See <see cref="ApiKeyFieldName"/>.
+        /// </summary>
+        public const string ClientIdFieldName = "clientId";
+
+        /// <summary>
         /// Gets the API key for authentication.
         /// </summary>
+        [JsonPropertyName(ApiKeyFieldName)]
         public string ApiKey { get; }
 
         /// <summary>
         /// Gets the optional client identifier associated with this API key.
         /// </summary>
+        [JsonPropertyName(ClientIdFieldName)]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? ClientId { get; }
 

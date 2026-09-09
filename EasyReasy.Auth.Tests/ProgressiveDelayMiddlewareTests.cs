@@ -197,7 +197,7 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public async Task InvokeAsync_WithSuccessResponse_ShouldResetFailures()
+        public async Task InvokeAsync_WithSuccessfulAuthentication_ShouldResetFailures()
         {
             int callCount = 0;
             ProgressiveDelayMiddleware middleware = new ProgressiveDelayMiddleware(
@@ -210,7 +210,9 @@ namespace EasyReasy.Auth.Tests
                     }
                     else if (callCount == 16)
                     {
+                        // What an auth endpoint does when it issues a token.
                         ctx.Response.StatusCode = StatusCodes.Status200OK;
+                        ctx.MarkAuthenticationSucceeded();
                     }
                     else
                     {
@@ -247,11 +249,20 @@ namespace EasyReasy.Auth.Tests
             Assert.IsTrue(elapsed.TotalMilliseconds < 1000);
         }
 
-        [TestMethod]
-        public async Task InvokeAsync_WithNonSuccessNonUnauthorizedResponse_ShouldNotResetFailures()
+        [DataTestMethod]
+        [DataRow(StatusCodes.Status200OK)]
+        [DataRow(StatusCodes.Status201Created)]
+        [DataRow(StatusCodes.Status204NoContent)]
+        [DataRow(StatusCodes.Status304NotModified)]
+        [DataRow(StatusCodes.Status400BadRequest)]
+        [DataRow(StatusCodes.Status404NotFound)]
+        public async Task InvokeAsync_WithoutASuccessfulAuthentication_ShouldNotResetFailures(int interleavedStatusCode)
         {
-            // A request that cannot succeed must not be usable to reset the delay between guesses — a 404, or
-            // the 400 the login endpoint returns for a body carrying no credentials.
+            // No status code on its own clears the count — only an endpoint reporting that it authenticated
+            // the caller does. 204 matters most: this library maps an anonymous logout endpoint by default
+            // that always answers 204, so a status-only rule would hand an attacker a free counter reset
+            // between guesses. 200 and 201 are here because a success that authenticated nobody is still not
+            // an authentication.
             ProgressiveDelayOptions options = new ProgressiveDelayOptions
             {
                 FreeFailures = 1,
@@ -262,7 +273,7 @@ namespace EasyReasy.Auth.Tests
             {
                 StatusCodes.Status401Unauthorized,
                 StatusCodes.Status401Unauthorized,
-                StatusCodes.Status400BadRequest,
+                interleavedStatusCode,
                 StatusCodes.Status401Unauthorized,
             };
 

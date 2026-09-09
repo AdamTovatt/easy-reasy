@@ -109,7 +109,7 @@ Either way, the verification state is exposed on `GoogleUserInfo.EmailVerified` 
 - It is **anonymous**, so it stays reachable even when the application applies a global authorization policy.
 - It sets **`Cache-Control: no-store`**, so the issued token is never cached by browsers or proxies.
 
-Beyond those two, read each endpoint's own contract rather than assuming parity — the credential endpoints in EasyReasy.Auth answer a body carrying no credentials with a `400`, and this endpoint passes the supplied `idToken` to the validator as it stands.
+Beyond those two, read each endpoint's own contract rather than assuming parity: this endpoint passes the supplied `idToken` to the validator as it stands, and the EasyReasy.Auth credential endpoints document their own request handling in [that package's README](../EasyReasy.Auth/README.md).
 
 ## Audit Logging
 

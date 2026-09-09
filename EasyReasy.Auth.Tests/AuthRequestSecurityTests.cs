@@ -273,5 +273,38 @@ namespace EasyReasy.Auth.Tests
             // Assert
             Assert.IsFalse(result.Contains("refreshToken"));
         }
+
+        [TestMethod]
+        public void LoginAuthRequest_SerializedWithoutACamelCasePolicy_ShouldStillUseTheWireFieldNames()
+        {
+            // Arrange — bare options, so the CLR property names would be emitted if nothing pinned them.
+            // This is what makes the [JsonPropertyName] attributes load-bearing rather than decorative:
+            // asserting under the library's own camel-case options would pass with them removed.
+            LoginAuthRequest request = new LoginAuthRequest("alice", "correct-horse");
+
+            // Act
+            string json = System.Text.Json.JsonSerializer.Serialize(request, new System.Text.Json.JsonSerializerOptions());
+
+            // Assert
+            using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(json);
+            Assert.AreEqual("alice", document.RootElement.GetProperty(LoginAuthRequest.UsernameFieldName).GetString());
+            Assert.AreEqual("correct-horse", document.RootElement.GetProperty(LoginAuthRequest.PasswordFieldName).GetString());
+            Assert.AreEqual(2, document.RootElement.EnumerateObject().Count());
+        }
+
+        [TestMethod]
+        public void ApiKeyAuthRequest_SerializedWithoutACamelCasePolicy_ShouldStillUseTheWireFieldNames()
+        {
+            // Arrange
+            ApiKeyAuthRequest request = new ApiKeyAuthRequest("my-api-key", "client-x");
+
+            // Act
+            string json = System.Text.Json.JsonSerializer.Serialize(request, new System.Text.Json.JsonSerializerOptions());
+
+            // Assert
+            using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(json);
+            Assert.AreEqual("my-api-key", document.RootElement.GetProperty(ApiKeyAuthRequest.ApiKeyFieldName).GetString());
+            Assert.AreEqual("client-x", document.RootElement.GetProperty(ApiKeyAuthRequest.ClientIdFieldName).GetString());
+        }
     }
 }

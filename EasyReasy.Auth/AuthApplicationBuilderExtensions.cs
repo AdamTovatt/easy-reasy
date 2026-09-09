@@ -45,14 +45,27 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
-        /// Returns the value unless it is null or empty, in which case <c>null</c>.
+        /// Collects the wire names of the credential fields an API key request left unset, keyed for the
+        /// <c>errors</c> object of a validation problem. Empty when the request carries a key.
         /// </summary>
-        /// <remarks>
-        /// An identifier the endpoint treats as missing is reported to the audit hook as no identifier at all,
-        /// rather than as an empty string, so that an audit row either names a subject the caller actually
-        /// supplied or names none. Pinned by the tests that assert a null <c>AttemptedSubject</c> /
-        /// <c>AttemptedClientId</c> for an empty identifier.
-        /// </remarks>
+        /// <param name="request">The bound API key request.</param>
+        /// <returns>One entry per missing field, keyed by the wire (JSON) field name.</returns>
+        private static Dictionary<string, string[]> CollectMissingApiKeyFields(ApiKeyAuthRequest request)
+        {
+            Dictionary<string, string[]> missingFields = new Dictionary<string, string[]>();
+
+            if (string.IsNullOrEmpty(request.ApiKey))
+            {
+                missingFields[ApiKeyAuthRequest.ApiKeyFieldName] = RequiredFieldMessages(ApiKeyAuthRequest.ApiKeyFieldName);
+            }
+
+            return missingFields;
+        }
+
+        /// <summary>
+        /// Returns the value unless it is null or empty, in which case <c>null</c>, so that an audit row
+        /// either names an identifier the caller supplied or names none.
+        /// </summary>
         /// <param name="value">The value to normalise.</param>
         /// <returns>The value, or <c>null</c> when it is null or empty.</returns>
         private static string? NullIfEmpty(string? value)
@@ -135,7 +148,9 @@ namespace EasyReasy.Auth
             {
                 httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
 
-                if (string.IsNullOrEmpty(request.ApiKey))
+                Dictionary<string, string[]> missingFields = CollectMissingApiKeyFields(request);
+
+                if (missingFields.Count > 0)
                 {
                     ApiKeyAuthResult missingKeyResult = ApiKeyAuthResult.Failed(
                         ApiKeyAuthFailureReason.MissingKey,
@@ -143,24 +158,22 @@ namespace EasyReasy.Auth
 
                     await InvokeAuditHookAsync(httpContext, (logger, ctx) => logger.OnApiKeyAuthAsync(ctx, missingKeyResult));
 
-                    return Results.ValidationProblem(new Dictionary<string, string[]>
-                    {
-                        [ApiKeyAuthRequest.ApiKeyFieldName] = RequiredFieldMessages(ApiKeyAuthRequest.ApiKeyFieldName),
-                    });
+                    return Results.ValidationProblem(missingFields);
                 }
 
                 ApiKeyAuthResult result = await validationService.ValidateApiKeyRequestAsync(request, jwtTokenService, httpContext);
 
                 await InvokeAuditHookAsync(httpContext, (logger, ctx) => logger.OnApiKeyAuthAsync(ctx, result));
 
-                return result.Success && result.AuthResponse != null
-                    ? Results.Ok(result.AuthResponse)
-                    : Results.Unauthorized();
+                if (result.Success && result.AuthResponse != null)
+                {
+                    httpContext.MarkAuthenticationSucceeded();
+                    return Results.Ok(result.AuthResponse);
+                }
+
+                return Results.Unauthorized();
             })
                 .AllowAnonymous()
-                // Only the two credential endpoints declare their responses: the 400 is the one thing a
-                // generated client cannot otherwise see. The refresh and logout endpoints are left as they
-                // were rather than annotated in passing.
                 .Produces<AuthResponse>(StatusCodes.Status200OK)
                 .ProducesValidationProblem(StatusCodes.Status400BadRequest)
                 .Produces(StatusCodes.Status401Unauthorized);
@@ -211,9 +224,13 @@ namespace EasyReasy.Auth
 
                 await InvokeAuditHookAsync(httpContext, (logger, ctx) => logger.OnLoginAsync(ctx, result));
 
-                return result.Success && result.AuthResponse != null
-                    ? Results.Ok(result.AuthResponse)
-                    : Results.Unauthorized();
+                if (result.Success && result.AuthResponse != null)
+                {
+                    httpContext.MarkAuthenticationSucceeded();
+                    return Results.Ok(result.AuthResponse);
+                }
+
+                return Results.Unauthorized();
             })
                 .AllowAnonymous()
                 .Produces<AuthResponse>(StatusCodes.Status200OK)
@@ -242,6 +259,7 @@ namespace EasyReasy.Auth
 
                 if (result.Success)
                 {
+                    httpContext.MarkAuthenticationSucceeded();
                     return Results.Ok(result.AuthResponse);
                 }
 

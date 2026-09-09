@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace EasyReasy.Auth.Client
 {
@@ -8,13 +9,27 @@ namespace EasyReasy.Auth.Client
     public class LoginAuthRequest
     {
         /// <summary>
+        /// The wire (JSON) name of <see cref="Username"/>. Pinned by the <see cref="JsonPropertyNameAttribute"/>
+        /// on the property, so neither renaming the property nor a consumer changing
+        /// <see cref="JsonSerializerSettings.CurrentOptions"/> can silently change the body this client sends.
+        /// </summary>
+        public const string UsernameFieldName = "username";
+
+        /// <summary>
+        /// The wire (JSON) name of <see cref="Password"/>. See <see cref="UsernameFieldName"/>.
+        /// </summary>
+        public const string PasswordFieldName = "password";
+
+        /// <summary>
         /// Gets the username or email address that identifies the user.
         /// </summary>
+        [JsonPropertyName(UsernameFieldName)]
         public string Username { get; }
 
         /// <summary>
         /// Gets the password for authentication.
         /// </summary>
+        [JsonPropertyName(PasswordFieldName)]
         public string Password { get; }
 
         /// <summary>
