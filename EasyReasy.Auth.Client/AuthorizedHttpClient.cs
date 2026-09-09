@@ -77,7 +77,7 @@ namespace EasyReasy.Auth.Client
         /// Initializes a new instance of the <see cref="AuthorizedHttpClient"/> class with username/password authentication.
         /// </summary>
         /// <param name="httpClient">The HTTP client to use for requests.</param>
-        /// <param name="username">The username for authentication.</param>
+        /// <param name="username">The username or email address that identifies the user.</param>
         /// <param name="password">The password for authentication.</param>
         /// <param name="authEndpoint">The authentication endpoint path. If not specified, defaults to "/api/auth/login".</param>
         /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>

@@ -8,7 +8,7 @@ namespace EasyReasy.Auth
     public class LoginAuthRequest
     {
         /// <summary>
-        /// Gets the username for authentication.
+        /// Gets the username or email address that identifies the user.
         /// </summary>
         public string Username { get; }
 
@@ -20,7 +20,7 @@ namespace EasyReasy.Auth
         /// <summary>
         /// Initializes a new instance of the <see cref="LoginAuthRequest"/> class.
         /// </summary>
-        /// <param name="username">The username for authentication.</param>
+        /// <param name="username">The username or email address that identifies the user.</param>
         /// <param name="password">The password for authentication.</param>
         public LoginAuthRequest(string username, string password)
         {
