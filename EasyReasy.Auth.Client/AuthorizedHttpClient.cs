@@ -48,10 +48,16 @@ namespace EasyReasy.Auth.Client
         /// </summary>
         /// <param name="httpClient">The HTTP client to use for requests.</param>
         /// <param name="apiKey">The API key for authentication.</param>
-        /// <param name="authEndpoint">The authentication endpoint path. If not specified, defaults to "/api/auth/apikey".</param>
-        /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
-        /// <param name="logoutEndpoint">The logout endpoint path. If not specified, defaults to "/api/auth/logout".</param>
+        /// <param name="authEndpoint">The authentication endpoint path, relative to the client's base address. If not specified, defaults to "api/auth/apikey".</param>
+        /// <param name="refreshEndpoint">The refresh token endpoint path, relative to the client's base address. If not specified, defaults to "api/auth/refresh".</param>
+        /// <param name="logoutEndpoint">The logout endpoint path, relative to the client's base address. If not specified, defaults to "api/auth/logout".</param>
         /// <param name="onAuthResponseChanged">An optional callback invoked whenever the auth state changes (initial auth, token refresh, or re-auth).</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="httpClient"/> or <paramref name="apiKey"/> is <c>null</c>.</exception>
+        /// <exception cref="ArgumentException">
+        /// Thrown when <paramref name="apiKey"/> is empty. An empty credential carries nothing to authenticate
+        /// with, so it is refused here rather than sent. A whitespace-only credential is a value you supplied and
+        /// is sent as given — the client does not decide what the server will accept.
+        /// </exception>
         public AuthorizedHttpClient(
             HttpClient httpClient,
             string apiKey,
@@ -60,12 +66,11 @@ namespace EasyReasy.Auth.Client
             string? logoutEndpoint = null,
             Action<AuthResponse>? onAuthResponseChanged = null)
         {
-            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            ArgumentNullException.ThrowIfNull(httpClient);
+            ArgumentException.ThrowIfNullOrEmpty(apiKey);
 
-            if (_httpClient.BaseAddress?.ToString().LastOrDefault() is char lastCharacter && lastCharacter != '/')
-                _httpClient.BaseAddress = new Uri(_httpClient.BaseAddress.ToString() + "/");
-
-            _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
+            _httpClient = NormalizeBaseAddress(httpClient);
+            _apiKey = apiKey;
             _authEndpoint = authEndpoint ?? "api/auth/apikey";
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
@@ -79,10 +84,17 @@ namespace EasyReasy.Auth.Client
         /// <param name="httpClient">The HTTP client to use for requests.</param>
         /// <param name="username">The username or email address that identifies the user.</param>
         /// <param name="password">The password for authentication.</param>
-        /// <param name="authEndpoint">The authentication endpoint path. If not specified, defaults to "/api/auth/login".</param>
-        /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
-        /// <param name="logoutEndpoint">The logout endpoint path. If not specified, defaults to "/api/auth/logout".</param>
+        /// <param name="authEndpoint">The authentication endpoint path, relative to the client's base address. If not specified, defaults to "api/auth/login".</param>
+        /// <param name="refreshEndpoint">The refresh token endpoint path, relative to the client's base address. If not specified, defaults to "api/auth/refresh".</param>
+        /// <param name="logoutEndpoint">The logout endpoint path, relative to the client's base address. If not specified, defaults to "api/auth/logout".</param>
         /// <param name="onAuthResponseChanged">An optional callback invoked whenever the auth state changes (initial auth, token refresh, or re-auth).</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="httpClient"/>, <paramref name="username"/> or <paramref name="password"/> is <c>null</c>.</exception>
+        /// <exception cref="ArgumentException">
+        /// Thrown when <paramref name="username"/> or <paramref name="password"/> is empty. An empty credential
+        /// carries nothing to authenticate with, so it is refused here rather than sent. A whitespace-only
+        /// credential is a value you supplied and is sent as given — the client does not decide what the server
+        /// will accept. When both are empty the exception names <paramref name="username"/>, the first checked.
+        /// </exception>
         public AuthorizedHttpClient(
             HttpClient httpClient,
             string username,
@@ -92,9 +104,13 @@ namespace EasyReasy.Auth.Client
             string? logoutEndpoint = null,
             Action<AuthResponse>? onAuthResponseChanged = null)
         {
-            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-            _username = username ?? throw new ArgumentNullException(nameof(username));
-            _password = password ?? throw new ArgumentNullException(nameof(password));
+            ArgumentNullException.ThrowIfNull(httpClient);
+            ArgumentException.ThrowIfNullOrEmpty(username);
+            ArgumentException.ThrowIfNullOrEmpty(password);
+
+            _httpClient = NormalizeBaseAddress(httpClient);
+            _username = username;
+            _password = password;
             _authEndpoint = authEndpoint ?? "api/auth/login";
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
@@ -108,8 +124,8 @@ namespace EasyReasy.Auth.Client
         /// </summary>
         /// <param name="httpClient">The HTTP client to use for requests.</param>
         /// <param name="authResponse">The authentication response containing the token, expiration, and optional refresh token.</param>
-        /// <param name="refreshEndpoint">The refresh token endpoint path. If not specified, defaults to "/api/auth/refresh".</param>
-        /// <param name="logoutEndpoint">The logout endpoint path. If not specified, defaults to "/api/auth/logout".</param>
+        /// <param name="refreshEndpoint">The refresh token endpoint path, relative to the client's base address. If not specified, defaults to "api/auth/refresh".</param>
+        /// <param name="logoutEndpoint">The logout endpoint path, relative to the client's base address. If not specified, defaults to "api/auth/logout".</param>
         /// <param name="onAuthResponseChanged">An optional callback invoked whenever the auth state changes (initial auth, token refresh, or re-auth).</param>
         public AuthorizedHttpClient(
             HttpClient httpClient,
@@ -118,12 +134,10 @@ namespace EasyReasy.Auth.Client
             string? logoutEndpoint = null,
             Action<AuthResponse>? onAuthResponseChanged = null)
         {
-            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-
-            if (_httpClient.BaseAddress?.ToString().LastOrDefault() is char lastCharacter && lastCharacter != '/')
-                _httpClient.BaseAddress = new Uri(_httpClient.BaseAddress.ToString() + "/");
-
+            ArgumentNullException.ThrowIfNull(httpClient);
             ArgumentNullException.ThrowIfNull(authResponse);
+
+            _httpClient = NormalizeBaseAddress(httpClient);
             _authEndpoint = string.Empty;
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
@@ -131,6 +145,22 @@ namespace EasyReasy.Auth.Client
             _onAuthResponseChanged = onAuthResponseChanged;
 
             ApplyAuthResponse(authResponse);
+        }
+
+        /// <summary>
+        /// Ensures the client's base address ends in a slash, so that the relative endpoint paths this class
+        /// builds resolve beneath it rather than replacing its last path segment.
+        /// </summary>
+        /// <param name="httpClient">The client to normalize. Mutated in place.</param>
+        /// <returns>The same client, for assignment.</returns>
+        private static HttpClient NormalizeBaseAddress(HttpClient httpClient)
+        {
+            if (httpClient.BaseAddress?.ToString().LastOrDefault() is char lastCharacter && lastCharacter != '/')
+            {
+                httpClient.BaseAddress = new Uri(httpClient.BaseAddress.ToString() + "/");
+            }
+
+            return httpClient;
         }
 
         /// <summary>
@@ -304,7 +334,16 @@ namespace EasyReasy.Auth.Client
         /// If a refresh token is available, attempts to refresh first before falling back to full re-authentication.
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
-        /// <exception cref="UnauthorizedAccessException">Thrown when authentication fails.</exception>
+        /// <exception cref="UnauthorizedAccessException">
+        /// Thrown when the auth endpoint rejects the credentials with a <c>401 Unauthorized</c>.
+        /// </exception>
+        /// <exception cref="HttpRequestException">
+        /// Thrown when the auth endpoint answers with any other unsuccessful status.
+        /// </exception>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when the client was constructed pre-authorized and its token has expired with no refresh token
+        /// left to redeem, so there are no credentials to re-authenticate with.
+        /// </exception>
         private async Task AuthorizeAsync(CancellationToken cancellationToken = default)
         {
             // Try refresh token first if available
