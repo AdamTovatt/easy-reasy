@@ -9,13 +9,27 @@ namespace EasyReasy.Auth
     public class ApiKeyAuthRequest
     {
         /// <summary>
+        /// The wire (JSON) name of <see cref="ApiKey"/>. Pinned by the <see cref="JsonPropertyNameAttribute"/>
+        /// on the property, so renaming the property cannot silently change the published contract, and used
+        /// wherever the endpoint has to name the field back to the caller.
+        /// </summary>
+        public const string ApiKeyFieldName = "apiKey";
+
+        /// <summary>
+        /// The wire (JSON) name of <see cref="ClientId"/>. See <see cref="ApiKeyFieldName"/>.
+        /// </summary>
+        public const string ClientIdFieldName = "clientId";
+
+        /// <summary>
         /// Gets the API key for authentication.
         /// </summary>
+        [JsonPropertyName(ApiKeyFieldName)]
         public string ApiKey { get; }
 
         /// <summary>
         /// Gets the optional client identifier associated with this API key.
         /// </summary>
+        [JsonPropertyName(ClientIdFieldName)]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? ClientId { get; }
 
@@ -46,8 +60,8 @@ namespace EasyReasy.Auth
         /// <returns>A string representation with the API key replaced by "[REDACTED]".</returns>
         public override string ToString()
         {
-            string clientIdPart = ClientId != null ? $",\"clientId\":{JsonSerializer.Serialize(ClientId)}" : "";
-            return $"{{\"apiKey\":\"[REDACTED]\"{clientIdPart}}}";
+            string clientIdPart = ClientId != null ? $",\"{ClientIdFieldName}\":{JsonSerializer.Serialize(ClientId)}" : "";
+            return $"{{\"{ApiKeyFieldName}\":\"[REDACTED]\"{clientIdPart}}}";
         }
 
         /// <summary>

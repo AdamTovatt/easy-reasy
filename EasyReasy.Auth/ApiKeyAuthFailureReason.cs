@@ -26,5 +26,16 @@ namespace EasyReasy.Auth
         /// The API key authentication failed for a consumer-specific reason that does not fit the other categories.
         /// </summary>
         Other,
+
+        /// <summary>
+        /// The request did not carry an API key — the value was absent or empty, so no key was ever looked up.
+        /// Emitted by the built-in API key endpoint before <see cref="IAuthRequestValidationService"/> is called;
+        /// the caller receives a <c>400 Bad Request</c> rather than a <c>401 Unauthorized</c>.
+        /// </summary>
+        /// <remarks>
+        /// This is the one member that does not represent an authentication attempt. A consumer counting failed
+        /// attempts should exclude it — no key was presented, so nothing was tried.
+        /// </remarks>
+        MissingKey,
     }
 }

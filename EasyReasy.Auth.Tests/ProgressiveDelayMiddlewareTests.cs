@@ -248,6 +248,57 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public async Task InvokeAsync_WithNonSuccessNonUnauthorizedResponse_ShouldNotResetFailures()
+        {
+            // A request that cannot succeed must not be usable to reset the delay between guesses — a 404, or
+            // the 400 the login endpoint returns for a body carrying no credentials.
+            ProgressiveDelayOptions options = new ProgressiveDelayOptions
+            {
+                FreeFailures = 1,
+                DelayIncrement = TimeSpan.FromMilliseconds(300),
+            };
+
+            int[] statusCodes = new int[]
+            {
+                StatusCodes.Status401Unauthorized,
+                StatusCodes.Status401Unauthorized,
+                StatusCodes.Status400BadRequest,
+                StatusCodes.Status401Unauthorized,
+            };
+
+            int callCount = 0;
+            ProgressiveDelayMiddleware middleware = new ProgressiveDelayMiddleware(
+                next: ctx =>
+                {
+                    ctx.Response.StatusCode = statusCodes[callCount];
+                    callCount++;
+                    return Task.CompletedTask;
+                },
+                options: options);
+
+            IPAddress clientIp = IPAddress.Parse("10.0.0.1");
+
+            // Two failures, then the request that must not clear them.
+            for (int i = 0; i < 3; i++)
+            {
+                DefaultHttpContext context = new DefaultHttpContext();
+                context.Connection.RemoteIpAddress = clientIp;
+                await middleware.InvokeAsync(context);
+            }
+
+            DefaultHttpContext nextFailContext = new DefaultHttpContext();
+            nextFailContext.Connection.RemoteIpAddress = clientIp;
+
+            DateTime before = DateTime.UtcNow;
+            await middleware.InvokeAsync(nextFailContext);
+            TimeSpan elapsed = DateTime.UtcNow - before;
+
+            Assert.IsTrue(
+                elapsed.TotalMilliseconds >= 250,
+                $"The accumulated failures should still be delaying the next attempt, but it took {elapsed.TotalMilliseconds} ms.");
+        }
+
+        [TestMethod]
         public async Task InvokeAsync_WithStaleEntry_ShouldIgnoreOldFailures()
         {
             FakeTimeProvider timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
