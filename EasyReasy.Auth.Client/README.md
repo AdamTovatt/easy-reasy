@@ -30,6 +30,8 @@ dotnet add package EasyReasy.Auth.Client
 
 ### 2. Create an authorized client
 
+**Credentials must carry something.** Both credential constructors reject a `null` credential with `ArgumentNullException` and an empty one with `ArgumentException`: an empty credential carries nothing to authenticate with, so it is refused rather than sent. A whitespace-only credential is a value you supplied and is sent as given — the client does not decide what the server will accept.
+
 #### API Key Authentication
 ```csharp
 using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://api.example.com/"))
@@ -80,9 +82,11 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
 
 ### Custom Auth Endpoints
 
-By default, the client uses standard EasyReasy.Auth endpoints:
-- API Key: `/api/auth/apikey`
-- Username/Password: `/api/auth/login`
+By default, the client uses the standard EasyReasy.Auth endpoints, as paths relative to the client's base address:
+- API Key: `api/auth/apikey`
+- Username/Password: `api/auth/login`
+
+Keep your own endpoints relative too. A leading slash makes the path absolute against the host, discarding any path prefix in the base address — `https://api.example.com/myapp` plus `/api/auth/login` resolves to `https://api.example.com/api/auth/login`.
 
 You can customize these endpoints:
 
@@ -268,9 +272,20 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
     }
     catch (HttpRequestException)
     {
-        // Handle network/server errors — and any other failed auth response, such as the
-        // 400 an EasyReasy.Auth credential endpoint returns for a request carrying no
-        // credentials. Only a 401 surfaces as UnauthorizedAccessException.
+        // Handle network/server errors. Only a 401 from the auth endpoint surfaces as
+        // UnauthorizedAccessException; any other unsuccessful status lands here.
     }
 }
 ```
+
+Note that construction itself throws when a credential carries nothing — `ArgumentNullException` for `null`, `ArgumentException` for an empty string. If your credentials come from configuration that may be unset, validate them before constructing the client, or the throw lands on the constructor line rather than inside the `try` above.
+
+## Version History
+
+### 1.7.0
+
+**Both credential constructors now reject an empty credential.** `new AuthorizedHttpClient(httpClient, "")` and `new AuthorizedHttpClient(httpClient, "", "")` previously constructed successfully and failed later, at the first request; they now throw `ArgumentException` at construction. `null` continues to throw `ArgumentNullException`, and a whitespace-only credential is still sent to the server unchanged.
+
+If you were relying on the old behaviour to defer credential validation to the server, move that check ahead of the constructor.
+
+**The username/password constructor now normalizes the base address.** It previously skipped the trailing-slash normalization the other two constructors perform, so a base address carrying a path prefix (`https://api.example.com/myapp`) lost that prefix when the auth endpoint was appended — the login POST went to `https://api.example.com/api/auth/login`. If you worked around this by passing an absolute `authEndpoint`, or by adding the trailing slash yourself, that workaround is no longer needed (and remains harmless).

@@ -287,9 +287,152 @@ namespace EasyReasy.Auth.Client.Tests
                 () => client.GetAsync("api/test"));
         }
 
+        [DataTestMethod]
+        [DataRow(null, "pass", "username", typeof(ArgumentNullException))]
+        [DataRow("", "pass", "username", typeof(ArgumentException))]
+        [DataRow("user", null, "password", typeof(ArgumentNullException))]
+        [DataRow("user", "", "password", typeof(ArgumentException))]
+        [DataRow("", "", "username", typeof(ArgumentException))]
+        public void Constructor_UsernamePassword_CredentialCarriesNothing_Throws(
+            string? username,
+            string? password,
+            string expectedParameterName,
+            Type expectedExceptionType)
+        {
+            // Arrange
+            HttpClient httpClient = new HttpClient() { BaseAddress = new Uri("https://example.com/") };
+
+            // Act & Assert — ArgumentNullException derives from ArgumentException, so the exact type is asserted.
+            // With both credentials empty the exception names the username, the first one checked.
+            try
+            {
+                new AuthorizedHttpClient(httpClient, username: username!, password: password!);
+                Assert.Fail("Expected the constructor to reject the credential.");
+            }
+            catch (ArgumentException exception)
+            {
+                Assert.AreEqual(expectedExceptionType, exception.GetType());
+                Assert.AreEqual(expectedParameterName, exception.ParamName);
+            }
+        }
+
+        [TestMethod]
+        public async Task GetAsync_UsernamePassword_WhitespaceCredentials_AreSentToTheServerUnchanged()
+        {
+            // Arrange — whitespace is a value the caller supplied, so the client sends it and the server decides.
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent("Invalid credentials"),
+            });
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(
+                httpClient, username: "   ", password: "   ");
+
+            // Act
+            UnauthorizedAccessException exception = await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                () => client.GetAsync("api/test"));
+
+            // Assert — the whitespace must reach the wire as given, not trimmed away into an empty credential.
+            Assert.AreEqual(1, handler.SentRequests.Count);
+            Assert.AreEqual("https://example.com/api/auth/login", handler.SentRequests[0].RequestUri?.ToString());
+
+            string authBody = await handler.SentRequests[0].Content!.ReadAsStringAsync();
+            Assert.AreEqual("{\"username\":\"   \",\"password\":\"   \"}", authBody);
+            Assert.IsTrue(exception.Message.Contains("Invalid credentials"));
+        }
+
+        [TestMethod]
+        public async Task Constructor_UsernamePassword_BaseAddressWithoutTrailingSlash_KeepsThePathPrefix()
+        {
+            // Arrange — a base address with a path prefix must not lose it when the endpoint is appended.
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueJsonResponse(CreateAuthResponseJson());
+            handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/myapp") };
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(
+                httpClient, username: "user", password: "pass");
+
+            // Act
+            await client.GetAsync("api/test");
+
+            // Assert
+            Assert.AreEqual("https://example.com/myapp/api/auth/login", handler.SentRequests[0].RequestUri?.ToString());
+        }
+
         #endregion
 
         #region ApiKey Constructor (existing behavior)
+
+        [DataTestMethod]
+        [DataRow(null, typeof(ArgumentNullException))]
+        [DataRow("", typeof(ArgumentException))]
+        public void Constructor_ApiKey_CredentialCarriesNothing_Throws(string? apiKey, Type expectedExceptionType)
+        {
+            // Arrange
+            HttpClient httpClient = new HttpClient() { BaseAddress = new Uri("https://example.com/") };
+
+            // Act & Assert
+            try
+            {
+                new AuthorizedHttpClient(httpClient, apiKey: apiKey!);
+                Assert.Fail("Expected the constructor to reject the credential.");
+            }
+            catch (ArgumentException exception)
+            {
+                Assert.AreEqual(expectedExceptionType, exception.GetType());
+                Assert.AreEqual("apiKey", exception.ParamName);
+            }
+        }
+
+        [TestMethod]
+        public async Task GetAsync_ApiKey_WhitespaceApiKey_IsSentToTheServerUnchanged()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent("Unknown key"),
+            });
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "   ");
+
+            // Act
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                () => client.GetAsync("api/test"));
+
+            // Assert — the whitespace must reach the wire as given, not trimmed away into an empty credential.
+            Assert.AreEqual(1, handler.SentRequests.Count);
+            Assert.AreEqual("https://example.com/api/auth/apikey", handler.SentRequests[0].RequestUri?.ToString());
+
+            string authBody = await handler.SentRequests[0].Content!.ReadAsStringAsync();
+            Assert.AreEqual("{\"apiKey\":\"   \"}", authBody);
+        }
+
+        [TestMethod]
+        public async Task Constructor_ApiKey_BaseAddressWithoutTrailingSlash_KeepsThePathPrefix()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueJsonResponse(CreateAuthResponseJson());
+            handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
+
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/myapp") };
+
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "my-api-key");
+
+            // Act
+            await client.GetAsync("api/test");
+
+            // Assert
+            Assert.AreEqual("https://example.com/myapp/api/auth/apikey", handler.SentRequests[0].RequestUri?.ToString());
+        }
 
         [TestMethod]
         public async Task GetAsync_ApiKey_AuthenticatesBeforeRequest()
