@@ -29,10 +29,13 @@ namespace EasyReasy.Auth.Client
         }
 
         private readonly HttpClient _httpClient;
-        private readonly string? _apiKey;
-        private readonly string? _username;
-        private readonly string? _password;
-        private readonly AuthType _authType;
+
+        /// <summary>
+        /// The credentials to re-authenticate with, or <c>null</c> when the client was constructed
+        /// pre-authorized and so has none.
+        /// </summary>
+        private readonly IAuthCredentials? _credentials;
+
         private readonly string _authEndpoint;
         private readonly string _refreshEndpoint;
         private readonly string _logoutEndpoint;
@@ -70,11 +73,10 @@ namespace EasyReasy.Auth.Client
             ArgumentException.ThrowIfNullOrEmpty(apiKey);
 
             _httpClient = NormalizeBaseAddress(httpClient);
-            _apiKey = apiKey;
+            _credentials = new ApiKeyCredentials(apiKey);
             _authEndpoint = authEndpoint ?? "api/auth/apikey";
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
-            _authType = AuthType.ApiKey;
             _onAuthResponseChanged = onAuthResponseChanged;
         }
 
@@ -109,12 +111,10 @@ namespace EasyReasy.Auth.Client
             ArgumentException.ThrowIfNullOrEmpty(password);
 
             _httpClient = NormalizeBaseAddress(httpClient);
-            _username = username;
-            _password = password;
+            _credentials = new UsernamePasswordCredentials(username, password);
             _authEndpoint = authEndpoint ?? "api/auth/login";
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
-            _authType = AuthType.UsernamePassword;
             _onAuthResponseChanged = onAuthResponseChanged;
         }
 
@@ -141,7 +141,6 @@ namespace EasyReasy.Auth.Client
             _authEndpoint = string.Empty;
             _refreshEndpoint = refreshEndpoint ?? "api/auth/refresh";
             _logoutEndpoint = logoutEndpoint ?? "api/auth/logout";
-            _authType = AuthType.PreAuthorized;
             _onAuthResponseChanged = onAuthResponseChanged;
 
             ApplyAuthResponse(authResponse);
@@ -171,7 +170,7 @@ namespace EasyReasy.Auth.Client
         /// <summary>
         /// Gets the type of authentication being used.
         /// </summary>
-        public AuthType AuthenticationType => _authType;
+        public AuthType AuthenticationType => _credentials?.Type ?? AuthType.PreAuthorized;
 
         /// <summary>
         /// Gets or sets the optional client identifier associated with the API key.
@@ -356,36 +355,19 @@ namespace EasyReasy.Auth.Client
                 }
             }
 
-            string json;
-            string endpoint;
-
-            switch (_authType)
+            if (_credentials == null)
             {
-                case AuthType.ApiKey:
-                    ApiKeyAuthRequest apiKeyRequest = new ApiKeyAuthRequest(_apiKey!, ClientId);
-                    json = apiKeyRequest.ToJson();
-                    endpoint = _authEndpoint;
-                    break;
-
-                case AuthType.UsernamePassword:
-                    LoginAuthRequest loginRequest = new LoginAuthRequest(_username!, _password!);
-                    json = loginRequest.ToJson();
-                    endpoint = _authEndpoint;
-                    break;
-
-                case AuthType.PreAuthorized:
-                    throw new InvalidOperationException(
-                        "Cannot re-authenticate a pre-authorized client. " +
-                        "The token has expired and no refresh token is available. " +
-                        "Create a new client with valid credentials.");
-
-                default:
-                    throw new InvalidOperationException($"Unsupported authentication type: {_authType}");
+                throw new InvalidOperationException(
+                    "Cannot re-authenticate a pre-authorized client. " +
+                    "The token has expired and no refresh token is available. " +
+                    "Create a new client with valid credentials.");
             }
+
+            string json = _credentials.CreateAuthRequestJson(ClientId);
 
             StringContent content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
-            HttpResponseMessage response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
+            HttpResponseMessage response = await _httpClient.PostAsync(_authEndpoint, content, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -530,6 +512,76 @@ namespace EasyReasy.Auth.Client
                 _authLock.Dispose();
                 // Don't dispose the HttpClient as it's managed externally
                 _disposed = true;
+            }
+        }
+
+        /// <summary>
+        /// The credentials this client re-authenticates with, and the auth request body they produce.
+        /// </summary>
+        /// <remarks>
+        /// An implementation holds every credential its kind needs and no field for a credential it does not
+        /// use, so there is no state a mode can leave unset. The <see cref="AuthorizedHttpClient"/> constructors
+        /// reject a null or empty credential before building one, so an instance always carries a value worth
+        /// sending. A client constructed pre-authorized holds no instance at all.
+        /// </remarks>
+        private interface IAuthCredentials
+        {
+            /// <summary>
+            /// The authentication mode these credentials represent.
+            /// </summary>
+            AuthType Type { get; }
+
+            /// <summary>
+            /// Builds the JSON body of the authentication request for these credentials.
+            /// </summary>
+            /// <param name="clientId">
+            /// The optional client identifier. Deliberately passed to every implementation and used only by
+            /// <see cref="ApiKeyCredentials"/>: <see cref="ClientId"/> is settable after construction, so it has
+            /// to be read at authentication time rather than captured when the credentials are built.
+            /// </param>
+            /// <returns>The JSON body to post to the auth endpoint.</returns>
+            string CreateAuthRequestJson(string? clientId);
+        }
+
+        /// <summary>
+        /// An API key, posted as an <see cref="ApiKeyAuthRequest"/>.
+        /// </summary>
+        private sealed class ApiKeyCredentials : IAuthCredentials
+        {
+            private readonly string _apiKey;
+
+            public ApiKeyCredentials(string apiKey)
+            {
+                _apiKey = apiKey;
+            }
+
+            public AuthType Type => AuthType.ApiKey;
+
+            public string CreateAuthRequestJson(string? clientId)
+            {
+                return new ApiKeyAuthRequest(_apiKey, clientId).ToJson();
+            }
+        }
+
+        /// <summary>
+        /// A username and password, posted as a <see cref="LoginAuthRequest"/>.
+        /// </summary>
+        private sealed class UsernamePasswordCredentials : IAuthCredentials
+        {
+            private readonly string _username;
+            private readonly string _password;
+
+            public UsernamePasswordCredentials(string username, string password)
+            {
+                _username = username;
+                _password = password;
+            }
+
+            public AuthType Type => AuthType.UsernamePassword;
+
+            public string CreateAuthRequestJson(string? clientId)
+            {
+                return new LoginAuthRequest(_username, _password).ToJson();
             }
         }
     }

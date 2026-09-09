@@ -162,7 +162,7 @@ namespace EasyReasy.Auth.Client.Tests
             Assert.AreEqual(2, handler.SentRequests.Count);
 
             // First request should be to refresh endpoint
-            Assert.IsTrue(handler.SentRequests[0].RequestUri?.ToString().Contains("api/auth/refresh"));
+            Assert.AreEqual("https://example.com/api/auth/refresh", handler.SentRequests[0].RequestUri?.ToString());
 
             // Second request should be the actual GET
             Assert.AreEqual("https://example.com/api/test", handler.SentRequests[1].RequestUri?.ToString());
@@ -242,6 +242,20 @@ namespace EasyReasy.Auth.Client.Tests
         #region UsernamePassword Constructor (existing behavior)
 
         [TestMethod]
+        public void Constructor_UsernamePassword_SetsAuthenticationType()
+        {
+            // Arrange
+            HttpClient httpClient = new HttpClient() { BaseAddress = new Uri("https://example.com/") };
+
+            // Act
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(
+                httpClient, username: "user", password: "pass");
+
+            // Assert
+            Assert.AreEqual(AuthorizedHttpClient.AuthType.UsernamePassword, client.AuthenticationType);
+        }
+
+        [TestMethod]
         public async Task GetAsync_UsernamePassword_AuthenticatesBeforeRequest()
         {
             // Arrange
@@ -264,7 +278,11 @@ namespace EasyReasy.Auth.Client.Tests
             // Assert
             Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
             Assert.AreEqual(2, handler.SentRequests.Count);
-            Assert.IsTrue(handler.SentRequests[0].RequestUri?.ToString().Contains("api/auth/login"));
+            Assert.AreEqual("https://example.com/api/auth/login", handler.SentRequests[0].RequestUri?.ToString());
+
+            // Distinct values, so the assertion fails if the two credentials are ever swapped.
+            string authBody = await handler.SentRequests[0].Content!.ReadAsStringAsync();
+            Assert.AreEqual("{\"username\":\"user\",\"password\":\"pass\"}", authBody);
         }
 
         [TestMethod]
@@ -368,6 +386,19 @@ namespace EasyReasy.Auth.Client.Tests
 
         #region ApiKey Constructor (existing behavior)
 
+        [TestMethod]
+        public void Constructor_ApiKey_SetsAuthenticationType()
+        {
+            // Arrange
+            HttpClient httpClient = new HttpClient() { BaseAddress = new Uri("https://example.com/") };
+
+            // Act
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "my-api-key");
+
+            // Assert
+            Assert.AreEqual(AuthorizedHttpClient.AuthType.ApiKey, client.AuthenticationType);
+        }
+
         [DataTestMethod]
         [DataRow(null, typeof(ArgumentNullException))]
         [DataRow("", typeof(ArgumentException))]
@@ -456,7 +487,7 @@ namespace EasyReasy.Auth.Client.Tests
             // Assert
             Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
             Assert.AreEqual(2, handler.SentRequests.Count);
-            Assert.IsTrue(handler.SentRequests[0].RequestUri?.ToString().Contains("api/auth/apikey"));
+            Assert.AreEqual("https://example.com/api/auth/apikey", handler.SentRequests[0].RequestUri?.ToString());
         }
 
         [TestMethod]
@@ -476,8 +507,7 @@ namespace EasyReasy.Auth.Client.Tests
 
             // Assert — the auth request body should contain the clientId
             string? authBody = await handler.SentRequests[0].Content!.ReadAsStringAsync();
-            Assert.IsTrue(authBody.Contains("my-client"));
-            Assert.IsTrue(authBody.Contains("clientId"));
+            Assert.AreEqual("{\"apiKey\":\"my-api-key\",\"clientId\":\"my-client\"}", authBody);
         }
 
         [TestMethod]
@@ -497,7 +527,7 @@ namespace EasyReasy.Auth.Client.Tests
 
             // Assert — the auth request body should not contain clientId
             string? authBody = await handler.SentRequests[0].Content!.ReadAsStringAsync();
-            Assert.IsFalse(authBody.Contains("clientId"));
+            Assert.AreEqual("{\"apiKey\":\"my-api-key\"}", authBody);
         }
 
         #endregion
@@ -669,8 +699,7 @@ namespace EasyReasy.Auth.Client.Tests
             Assert.AreEqual(1, handler.SentRequests.Count);
             Assert.AreEqual("https://example.com/api/auth/logout", handler.SentRequests[0].RequestUri?.ToString());
             string body = await handler.SentRequests[0].Content!.ReadAsStringAsync();
-            Assert.IsTrue(body.Contains("the-refresh-token"));
-            Assert.IsTrue(body.Contains("refreshToken"));
+            Assert.AreEqual("{\"refreshToken\":\"the-refresh-token\"}", body);
         }
 
         [TestMethod]
@@ -761,8 +790,8 @@ namespace EasyReasy.Auth.Client.Tests
 
             // Assert — expect 5 requests total: auth, get, logout, auth, get
             Assert.AreEqual(5, handler.SentRequests.Count);
-            Assert.IsTrue(handler.SentRequests[2].RequestUri?.ToString().Contains("api/auth/logout"));
-            Assert.IsTrue(handler.SentRequests[3].RequestUri?.ToString().Contains("api/auth/apikey"));
+            Assert.AreEqual("https://example.com/api/auth/logout", handler.SentRequests[2].RequestUri?.ToString());
+            Assert.AreEqual("https://example.com/api/auth/apikey", handler.SentRequests[3].RequestUri?.ToString());
         }
 
         [TestMethod]
