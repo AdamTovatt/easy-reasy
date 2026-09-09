@@ -39,9 +39,19 @@ namespace EasyReasy.Auth
         /// the caller receives a <c>400 Bad Request</c> rather than a <c>401 Unauthorized</c>.
         /// </summary>
         /// <remarks>
+        /// <para>
         /// This member does not represent an authentication attempt: nothing was tried. A consumer counting
         /// failed attempts per account — for lockout, or for an A.12.4.1 failure rate — should exclude it, or
         /// anyone could lock any account they can name without ever guessing a credential.
+        /// </para>
+        /// <para>
+        /// One member covers both fields deliberately. The audit record already separates the two cases:
+        /// <see cref="LoginResult.AttemptedSubject"/> is <c>null</c> exactly when the identifier is what was
+        /// missing, and carries the supplied username when the password was. The caller, in turn, is told the
+        /// field names in the <c>errors</c> keys of the 400. A member per field would move that same detail
+        /// into public enum surface, where extending it later breaks a consumer that switches exhaustively
+        /// over this type.
+        /// </para>
         /// </remarks>
         MissingCredentials,
     }
