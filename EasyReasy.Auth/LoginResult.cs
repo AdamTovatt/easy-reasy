@@ -22,7 +22,7 @@ namespace EasyReasy.Auth
         public AuthResponse? AuthResponse { get; }
 
         /// <summary>
-        /// The subject identifier (user id or username) associated with the attempt.
+        /// The subject identifier associated with the attempt.
         /// Populated on success, and on failure when the attempted identifier is known — even if the user does not exist
         /// (<see cref="LoginFailureReason.UnknownUser"/>). Intended to support ISO 27001 A.12.4.1 audit logging.
         /// </summary>
