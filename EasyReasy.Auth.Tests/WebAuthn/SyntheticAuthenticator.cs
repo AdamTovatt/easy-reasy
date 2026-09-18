@@ -12,10 +12,11 @@ namespace EasyReasy.Auth.Tests
     internal abstract class SyntheticAuthenticator : IDisposable
     {
         /// <summary>
-        /// The model identifier a synthetic authenticator reports. A random version-4 GUID on purpose: an
-        /// AAGUID assigned to a real vendor would read as a claim about that vendor's hardware.
+        /// The model identifier a synthetic authenticator reports. Spelled so that it reads as fake at a
+        /// glance, like every other fixture here: an AAGUID that looked like a real one would read as a
+        /// claim about some vendor's hardware, which is the thing this value must never be mistaken for.
         /// </summary>
-        public static readonly Guid SyntheticAaguid = new Guid("6d1f2a4e-3c7b-4a90-9e5d-8f2c1b0a7d64");
+        public static readonly Guid SyntheticAaguid = new Guid("fa4efa4e-fa4e-4fa4-bfa4-efa4efa4efa4");
 
         private static readonly byte[] DefaultCredentialId = new byte[] { 0xC0, 0xDE, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
 

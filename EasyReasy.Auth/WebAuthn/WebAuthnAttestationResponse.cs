@@ -22,6 +22,17 @@ namespace EasyReasy.Auth
     /// </remarks>
     public sealed class WebAuthnAttestationResponse
     {
+        /// <summary>
+        /// Most transports this library will accept from one authenticator. The specification names six.
+        /// </summary>
+        public const int MaximumTransportCount = 16;
+
+        /// <summary>
+        /// Longest transport name this library will accept. The longest the specification defines,
+        /// <c>smart-card</c>, is ten characters.
+        /// </summary>
+        public const int MaximumTransportLength = 32;
+
         /// <summary>The wire (JSON) name of <see cref="ClientDataJson"/>.</summary>
         public const string ClientDataJsonFieldName = "clientDataJSON";
 
@@ -53,7 +64,10 @@ namespace EasyReasy.Auth
         /// Carried through to <see cref="WebAuthnRegisteredCredential.Transports"/> for the application to
         /// store, and read by nothing here. They appear in exactly one place — this response — so an
         /// application that does not keep them cannot recover them later. The set of legal values grows
-        /// with the spec, so an unrecognised one is kept rather than rejected.
+        /// with the spec, so an unrecognised one is kept rather than rejected — but the count and the
+        /// length of each are bounded, because "we do not know the vocabulary" is not a reason to store
+        /// whatever arrives. This is the only value in a registered credential that is not fixed-width or
+        /// bounded by its own structure, and the one an application is told to persist.
         /// </remarks>
         [JsonPropertyName(TransportsFieldName)]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -75,18 +89,64 @@ namespace EasyReasy.Auth
         /// <param name="attestationObject">The base64url-encoded attestation object.</param>
         /// <param name="transports">The transports the browser reported, or null.</param>
         /// <exception cref="ArgumentNullException"><paramref name="clientDataJson"/> or <paramref name="attestationObject"/> is null.</exception>
-        /// <exception cref="ArgumentException">Either encoded field is empty or is not base64url.</exception>
+        /// <exception cref="ArgumentException">
+        /// Either encoded field is empty or is not base64url, or the transports are too many, too long, or
+        /// contain a null.
+        /// </exception>
         public WebAuthnAttestationResponse(string clientDataJson, string attestationObject, IEnumerable<string>? transports = null)
         {
             ArgumentNullException.ThrowIfNull(clientDataJson);
             ArgumentNullException.ThrowIfNull(attestationObject);
 
-            ClientDataJsonBytes = WebAuthnResponseField.Decode(clientDataJson, nameof(clientDataJson));
-            AttestationObjectBytes = WebAuthnResponseField.Decode(attestationObject, nameof(attestationObject));
+            ClientDataJsonBytes = WebAuthnResponseReader.Decode(clientDataJson, nameof(clientDataJson));
+            AttestationObjectBytes = WebAuthnResponseReader.Decode(attestationObject, nameof(attestationObject));
 
             ClientDataJson = clientDataJson;
             AttestationObject = attestationObject;
-            Transports = transports?.ToArray();
+            Transports = CheckTransports(transports, nameof(transports));
+        }
+
+        /// <summary>
+        /// Bounds the reported transports before they become a value an application stores.
+        /// </summary>
+        /// <remarks>
+        /// Generous against reality — the specification names six, each under a dozen characters — and the
+        /// point is only that a bound exists. Without one, a response inside the 64 KB envelope can carry
+        /// thousands of transports or a single one tens of thousands of characters long, and the README
+        /// tells applications to write this straight to a database column.
+        /// </remarks>
+        private static IReadOnlyList<string>? CheckTransports(IEnumerable<string>? transports, string parameterName)
+        {
+            if (transports == null)
+            {
+                return null;
+            }
+
+            string[] reported = transports.ToArray();
+
+            if (reported.Length > MaximumTransportCount)
+            {
+                throw new ArgumentException(
+                    $"'{parameterName}' carries {reported.Length} transports; no authenticator reports more than {MaximumTransportCount}.",
+                    parameterName);
+            }
+
+            foreach (string transport in reported)
+            {
+                if (transport == null)
+                {
+                    throw new ArgumentException($"'{parameterName}' contains a null transport.", parameterName);
+                }
+
+                if (transport.Length > MaximumTransportLength)
+                {
+                    throw new ArgumentException(
+                        $"'{parameterName}' contains a transport of {transport.Length} characters; none is longer than {MaximumTransportLength}.",
+                        parameterName);
+                }
+            }
+
+            return reported;
         }
     }
 }

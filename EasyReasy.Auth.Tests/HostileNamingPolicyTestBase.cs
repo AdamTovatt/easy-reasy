@@ -10,8 +10,14 @@ namespace EasyReasy.Auth.Tests
     /// <para>
     /// This is what makes a JSON contract assertion capable of failing. Under the library's own camelCase
     /// options most names come out right whether or not they are pinned, so a test asserting them passes
-    /// against a type with no <c>JsonPropertyName</c> attributes at all. Under snake_case only the pinned
-    /// ones survive.
+    /// against a type with no <c>JsonPropertyName</c> attributes at all. Under a policy that renames
+    /// everything, only the pinned ones survive.
+    /// </para>
+    /// <para>
+    /// Upper rather than lower snake_case, and the difference matters: lower snake_case renames nothing
+    /// about a <i>single-word</i> property, so <c>Id</c>, <c>Type</c> and <c>Response</c> serialize
+    /// identically whether or not they carry an attribute, and a test asserting those names could not fail
+    /// however many pins were deleted. Uppercasing renames every name there is.
     /// </para>
     /// <para>
     /// <see cref="JsonSerializerSettings.CurrentOptions"/> is global, so a class deriving from this must
@@ -30,7 +36,7 @@ namespace EasyReasy.Auth.Tests
             _originalOptions = JsonSerializerSettings.CurrentOptions;
             JsonSerializerSettings.CurrentOptions = new JsonSerializerOptions
             {
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseUpper,
             };
         }
 

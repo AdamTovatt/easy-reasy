@@ -40,7 +40,7 @@ namespace EasyReasy.Auth.Tests
             // before it is decoded rather than after. Four characters over rather than one, because a
             // length base64url cannot have would be rejected as malformed and this would pass with no
             // bound in place at all.
-            string tooLong = new string('A', WebAuthnResponseField.MaximumEncodedFieldLength + 4);
+            string tooLong = new string('A', WebAuthnResponseReader.MaximumEncodedFieldLength + 4);
 
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
                 () => NewResponse(badField, tooLong));
@@ -55,9 +55,66 @@ namespace EasyReasy.Auth.Tests
         {
             // Pins which side of the bound is rejected. The limit is a multiple of four, so a field of
             // exactly that length is valid base64url and nothing but the bound could refuse it.
-            string atLimit = new string('A', WebAuthnResponseField.MaximumEncodedFieldLength);
+            string atLimit = new string('A', WebAuthnResponseReader.MaximumEncodedFieldLength);
 
-            Assert.IsNotNull(NewResponse(longField, atLimit));
+            WebAuthnAttestationResponse response = NewResponse(longField, atLimit);
+
+            // Asserts the value survived rather than only that nothing threw: the return is non-nullable,
+            // so a null check here could never fail whatever the constructor did with it.
+            string kept = longField == "clientDataJson" ? response.ClientDataJson : response.AttestationObject;
+            Assert.AreEqual(atLimit, kept);
+        }
+
+        [TestMethod]
+        public void Constructor_MoreTransportsThanAnyAuthenticatorReports_Throws()
+        {
+            // The one value in a registered credential with no length of its own, and the one the README
+            // tells an application to persist — so it is bounded before it becomes a database row.
+            string[] tooMany = Enumerable.Repeat("usb", WebAuthnAttestationResponse.MaximumTransportCount + 1).ToArray();
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => new WebAuthnAttestationResponse(WebAuthnResponseTestData.ClientDataJson, WebAuthnResponseTestData.AttestationObject, tooMany));
+
+            Assert.AreEqual("transports", exception.ParamName);
+        }
+
+        [TestMethod]
+        public void Constructor_TransportLongerThanAnySpecifiedName_Throws()
+        {
+            string[] oneLongOne = new[] { "usb", new string('t', WebAuthnAttestationResponse.MaximumTransportLength + 1) };
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => new WebAuthnAttestationResponse(WebAuthnResponseTestData.ClientDataJson, WebAuthnResponseTestData.AttestationObject, oneLongOne));
+
+            Assert.AreEqual("transports", exception.ParamName);
+        }
+
+        [TestMethod]
+        public void Constructor_TransportsExactlyAtTheLimits_AreAccepted()
+        {
+            // Both bounds from the accepting side, without which the two tests above would pass against
+            // limits of zero.
+            string[] atTheLimits = Enumerable.Repeat(new string('t', WebAuthnAttestationResponse.MaximumTransportLength), WebAuthnAttestationResponse.MaximumTransportCount).ToArray();
+
+            WebAuthnAttestationResponse response = new WebAuthnAttestationResponse(
+                WebAuthnResponseTestData.ClientDataJson,
+                WebAuthnResponseTestData.AttestationObject,
+                atTheLimits);
+
+            Assert.AreEqual(WebAuthnAttestationResponse.MaximumTransportCount, response.Transports!.Count);
+        }
+
+        [TestMethod]
+        public void Constructor_UnrecognisedTransport_IsKept()
+        {
+            // The vocabulary grows with the spec, so an unknown name is not an error — bounding the length
+            // and the count is a different rule from knowing the value.
+            WebAuthnAttestationResponse response = new WebAuthnAttestationResponse(
+                WebAuthnResponseTestData.ClientDataJson,
+                WebAuthnResponseTestData.AttestationObject,
+                new[] { "something-added-later" });
+
+            Assert.AreEqual("something-added-later", response.Transports!.Single());
         }
 
         [DataTestMethod]

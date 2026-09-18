@@ -115,6 +115,57 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public void Constructor_PlainHttpOriginThatIsNotLoopback_Throws()
+        {
+            // WebAuthn runs only in a secure context, so a browser never completes a ceremony at a plain
+            // http origin. Accepting it would ship a deployment that cannot work, which is the same thing
+            // the subdomain rule above exists to prevent.
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => new WebAuthnRelyingParty("example.com", "Contoso", new[] { "http://example.com" }));
+
+            StringAssert.Contains(exception.Message, "http://example.com");
+        }
+
+        [DataTestMethod]
+        [DataRow("http://localhost:3000")]
+        [DataRow("http://app.localhost:5173")]     // a subdomain of localhost is trustworthy too
+        public void Constructor_PlainHttpLoopbackOrigin_IsAccepted(string origin)
+        {
+            // The exception the platform itself makes: these are secure contexts without TLS, which is what
+            // lets a development deployment run a ceremony at all. Rejecting them would refuse an origin the
+            // browser would have accepted — the same mistake as the test above, inverted.
+            WebAuthnRelyingParty relyingParty = new WebAuthnRelyingParty("localhost", "Dev", new[] { origin });
+
+            Assert.AreEqual(1, relyingParty.Origins.Count);
+        }
+
+        [DataTestMethod]
+        [DataRow("http://127.0.0.1:5000")]
+        [DataRow("http://[::1]:5173")]
+        public void Constructor_LoopbackAddressOrigin_IsStillRejectedForItsHost(string origin)
+        {
+            // A loopback address is a secure context, so it passes the scheme rule — and is refused anyway
+            // by the rule in front of it, because an IP literal is not the relying-party id nor a subdomain
+            // of it, and an address has no registrable domain that could be one. Pinned so that a reader
+            // who sees loopback accepted for http does not conclude these work.
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => new WebAuthnRelyingParty("localhost", "Dev", new[] { origin }));
+
+            StringAssert.Contains(exception.Message, "nor a subdomain of it");
+        }
+
+        [TestMethod]
+        public void Constructor_Origins_CannotBeRewrittenThroughTheReturnedSet()
+        {
+            // Every ceremony reads this set, so a caller who downcast it back to the type it was built in
+            // could add an origin that never passed validation — permanently, and for every request.
+            WebAuthnRelyingParty relyingParty = new WebAuthnRelyingParty("example.com", "Contoso", new[] { "https://example.com" });
+
+            Assert.IsFalse(relyingParty.Origins is HashSet<string>, relyingParty.Origins.GetType().Name);
+            Assert.AreEqual(1, relyingParty.Origins.Count);
+        }
+
+        [TestMethod]
         public void Constructor_NoOrigins_Throws()
         {
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(

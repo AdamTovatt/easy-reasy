@@ -10,8 +10,9 @@ namespace EasyReasy.Auth
     public sealed class PublicKeyCredentialUserEntity
     {
         /// <summary>
-        /// Longest user handle an authenticator is required to store (WebAuthn Level 3 §5.4.3), and the
-        /// length beyond which a client may truncate the two names.
+        /// Longest user handle WebAuthn Level 3 §5.4.3 permits. Applies to the handle alone: the two names
+        /// carry no such limit, because the specification answers an oversized one by truncating rather
+        /// than by failing.
         /// </summary>
         public const int MaximumIdLength = 64;
 
@@ -42,13 +43,16 @@ namespace EasyReasy.Auth
         /// surrogate key, not an email address.
         /// </param>
         /// <param name="name">
-        /// The account identifier to show the user, at most <see cref="MaximumIdLength"/> bytes of UTF-8.
+        /// The account identifier to show the user. Not length-limited here: WebAuthn lets a client or
+        /// authenticator truncate a name it cannot store in full, so a long one is valid input and
+        /// rejecting it would refuse an enrollment the browser would have completed — a user whose email
+        /// address runs past 64 bytes could not enroll at all.
         /// </param>
-        /// <param name="displayName">The display name to show alongside it, under the same length limit.</param>
+        /// <param name="displayName">The display name to show alongside it, on the same terms.</param>
         /// <exception cref="ArgumentNullException">Any argument is null.</exception>
         /// <exception cref="ArgumentException">
-        /// <paramref name="id"/> is empty, or any of the three is longer than <see cref="MaximumIdLength"/>
-        /// bytes, or a name is empty.
+        /// <paramref name="id"/> is empty or longer than <see cref="MaximumIdLength"/> bytes, or a name is
+        /// empty.
         /// </exception>
         public PublicKeyCredentialUserEntity(byte[] id, string name, string displayName)
         {
@@ -70,21 +74,20 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
-        /// Rejects a name that is empty or longer than an authenticator is required to store. The length
-        /// bound is here rather than left to the authenticator because an oversized value fails inside
-        /// CTAP, where the application cannot tell which of the three fields was at fault.
+        /// Rejects a name that is empty, which is the only thing wrong with a name this library can know.
         /// </summary>
+        /// <remarks>
+        /// Deliberately not length-limited. A 64-byte bound looks like the handle's and is a different rule:
+        /// §5.4.3 says a user handle MUST NOT exceed 64 bytes, while a name that does not fit is truncated
+        /// by whoever cannot store it. Enforcing the handle's rule on the names would reject valid input —
+        /// an email address of 65 bytes is an ordinary one — and turn a display detail into a failed
+        /// enrollment.
+        /// </remarks>
         private static void ValidateName(string value, string parameterName, string description)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
                 throw new ArgumentException($"A {description} must be non-empty.", parameterName);
-            }
-
-            int lengthInBytes = Encoding.UTF8.GetByteCount(value);
-            if (lengthInBytes > MaximumIdLength)
-            {
-                throw new ArgumentException($"A {description} must be at most {MaximumIdLength} bytes of UTF-8; got {lengthInBytes}.", parameterName);
             }
         }
     }

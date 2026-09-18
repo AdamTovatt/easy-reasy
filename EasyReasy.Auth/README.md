@@ -626,6 +626,10 @@ Every authentication event the library surfaces — success or failure — is re
 | Bulk session revocation | `OnSessionsInvalidatedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
 | Concurrent session revoked on login (`SingleSession` policy) | `OnConcurrentSessionsRevokedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
 | Targeted session supersession on re-issue (`RetireFamilyAsync`) | `OnSessionSupersededAsync(httpContext, FamilyRetirementResult)` | ISO 27001 A.9.2.6 | `FamilyId`, `Subject`, IP, time |
+| Verified / declined WebAuthn enrollment (**you invoke this**, see below) | `OnWebAuthnRegistrationAsync(httpContext, WebAuthnRegistrationResult)` | ISO 27001 A.12.4.1 | outcome, `FailureReason`, credential id, IP, time |
+| Verified / declined WebAuthn second factor (**you invoke this**, see below) | `OnWebAuthnAuthenticationAsync(httpContext, WebAuthnAuthenticationResult)` | ISO 27001 A.12.4.1 | outcome, `FailureReason`, `SignCounterState`, credential id, IP, time |
+
+⚠️ **The two WebAuthn hooks are the exception to the sentence above this table.** Half of each ceremony runs in the browser, so this library ships no endpoint for either one and `WebAuthnVerifier` is a pure function that takes neither an `HttpContext` nor a logger — nothing fires these for you. Resolve `IAuthAuditLogger` and call the hook yourself after verifying, as [section 13](#13-webauthn--fido2-second-factor-security-keys-touch-id-face-id) shows. A second factor that was presented and rejected is the record an intrusion is most likely to appear in, and `WebAuthnAuthenticationFailureReason.SignCounterRegressed` in particular is WebAuthn's one signal of a cloned credential — worth alerting on rather than counting.
 
 All methods have default no-op implementations — implement only the events you care about. The result objects deliberately never carry a raw password or a raw API key, so failure records are safe to serialise to your log store.
 
@@ -875,7 +879,7 @@ public sealed class WebAuthnRelyingParty   // validated at construction; every e
     WebAuthnRelyingParty(string id, string name, IEnumerable<string> origins);
     string Id { get; }
     string Name { get; }
-    IReadOnlySet<string> Origins { get; }   // non-empty; each an absolute scheme://host[:port]
+    IReadOnlySet<string> Origins { get; }   // non-empty; https, or http for a loopback host
 }
 
 public sealed class WebAuthnOptionsGenerator   // what the browser is handed
@@ -927,6 +931,37 @@ public sealed class WebAuthnStoredCredential
 {
     WebAuthnStoredCredential(string credentialId, string publicKey, uint signCount);
 }
+
+public sealed class PublicKeyCredentialUserEntity
+{
+    // id is stored on the authenticator and readable back from it, so it must be a surrogate key and
+    // never personal data. It is the only one of the three with a length limit (64 bytes); a name that
+    // does not fit is truncated by whoever cannot store it, not refused.
+    PublicKeyCredentialUserEntity(byte[] id, string name, string displayName);
+}
+
+// Both results: a declined ceremony is a reason on the result, not an exception.
+public sealed class WebAuthnRegistrationResult
+{
+    bool Success { get; }
+    WebAuthnRegisteredCredential? Credential { get; }        // null unless Success
+    bool UserVerified { get; }
+    WebAuthnRegistrationFailureReason? FailureReason { get; } // null unless declined
+    string? FailureMessage { get; }                           // for logs, not for the user
+}
+
+public sealed class WebAuthnAuthenticationResult
+{
+    bool Success { get; }
+    uint SignCount { get; }                                   // write this back on every success
+    WebAuthnSignCounterState? SignCounterState { get; }       // null on a declined assertion
+    bool UserVerified { get; }
+    bool BackedUp { get; }
+    WebAuthnAuthenticationFailureReason? FailureReason { get; }
+    string? FailureMessage { get; }
+}
+
+public enum WebAuthnSignCounterState { NotSupported, Advanced }
 ```
 
 Both ceremonies answer with a result carrying a reason, never an exception — a security key that failed a check is an outcome of authentication, not an error in it. An `ArgumentException` from these methods means the *request body* was not a WebAuthn credential, or that an argument your application supplied was wrong; it never means a ceremony was declined.
@@ -1119,7 +1154,12 @@ For more details, see XML comments in the code or explore the source. This libra
 
 ## Migration from 5.6.0
 
-Version 5.7.0 is additive: a WebAuthn/FIDO2 second factor, and two audit hooks for it. No behaviour changed, nothing was removed or resigned, and no existing endpoint or wire format is touched. There is no source-level break to watch this time — every name added is prefixed `WebAuthn` or `PublicKeyCredential`.
+Version 5.7.0 is additive: a WebAuthn/FIDO2 second factor, and two audit hooks for it. No behaviour changed, nothing was removed or resigned, and no existing endpoint or wire format is touched. Most of what it adds is prefixed `WebAuthn` or `PublicKeyCredential` and cannot collide; the two names that are not are below.
+
+### Watch: `AuthenticatorSelectionCriteria` and `CoseAlgorithm` are added unprefixed
+- **Both are spec names, which is exactly what makes them collision-prone.** A consumer who already has WebAuthn scaffolding of their own likely declares an `AuthenticatorSelectionCriteria` — it is the dictionary name WebAuthn itself uses — and a project that parses COSE keys may well have a `CoseAlgorithm`.
+- **The symptom is `CS0104` (ambiguous reference)**, in any file that `using`-imports both your namespace and `EasyReasy.Auth`, the same shape as the `Base32` collision noted under 5.5.0 below. A type declared in the file's *own* namespace keeps winning silently instead, since the enclosing namespace is searched before any `using`.
+- **The fix is an alias in the affected files** — `using AuthenticatorSelectionCriteria = YourNamespace.AuthenticatorSelectionCriteria;` — or deleting yours if this package's now covers it.
 
 ### New: WebAuthn/FIDO2 ceremony verification
 - **`WebAuthnRelyingParty`, `WebAuthnOptionsGenerator` and `WebAuthnVerifier`**, covering both ceremonies end to end for a second factor: the options a browser is handed, and the verification of what it posts back. See [section 13](#13-webauthn--fido2-second-factor-security-keys-touch-id-face-id) for the whole flow and for the four obligations that stay with your application.

@@ -155,7 +155,7 @@ namespace EasyReasy.Auth
         /// <see cref="PublicKeyCredentialRequestOptions"/> the application stored against the session.
         /// </param>
         /// <param name="storedCredential">
-        /// The credential registration reported, looked up by <see cref="WebAuthnAuthenticationResponse.Id"/>.
+        /// The credential registration reported, looked up by <see cref="WebAuthnCredentialResponse.Id"/>.
         /// Which credentials it is looked up among is what ties the two factors to one person, and it is
         /// the application's step — see <see cref="WebAuthnStoredCredential"/>, which states the obligation
         /// in full.

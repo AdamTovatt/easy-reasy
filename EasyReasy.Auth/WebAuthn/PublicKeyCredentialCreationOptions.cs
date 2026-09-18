@@ -56,7 +56,7 @@ namespace EasyReasy.Auth
         public AuthenticatorSelectionCriteria AuthenticatorSelection { get; }
 
         /// <summary>
-        /// Always <see cref="AttestationObject.NoneFormat"/>. Verifying an attestation statement answers
+        /// Always <c>none</c>. Verifying an attestation statement answers
         /// "what kind of authenticator is this", which only matters under an authenticator-allowlist policy
         /// this library does not implement — and asking for one the library will not verify would collect a
         /// statement nothing reads.
