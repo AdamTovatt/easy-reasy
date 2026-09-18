@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace EasyReasy.Auth
 {
     /// <summary>
@@ -15,18 +17,25 @@ namespace EasyReasy.Auth
     /// feature whose subject is security keys.
     /// </para>
     /// </remarks>
+    [JsonConverter(typeof(JsonStringEnumConverter<WebAuthnAuthenticatorAttachment>))]
     public enum WebAuthnAuthenticatorAttachment
     {
         /// <summary>
         /// An authenticator built into the device — Touch ID, Face ID, Windows Hello. The private key
         /// lives in the device's secure hardware and cannot be moved to another device.
         /// </summary>
+        [JsonStringEnumMemberName("platform")]
         Platform,
 
         /// <summary>
         /// A removable authenticator — a USB, NFC or Bluetooth security key — that can be carried between
         /// devices.
         /// </summary>
+        /// <remarks>
+        /// The wire spelling is <c>cross-platform</c>, which no naming policy produces from the member name,
+        /// so it is pinned here.
+        /// </remarks>
+        [JsonStringEnumMemberName("cross-platform")]
         CrossPlatform,
     }
 }

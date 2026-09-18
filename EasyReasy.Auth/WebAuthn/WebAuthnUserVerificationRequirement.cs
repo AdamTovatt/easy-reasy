@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace EasyReasy.Auth
 {
     /// <summary>
@@ -10,7 +12,12 @@ namespace EasyReasy.Auth
     /// <see cref="Required"/> is enforced — under <see cref="Preferred"/> an authenticator that cannot
     /// verify the user is expected to complete the ceremony with user presence alone, so failing on the
     /// cleared flag would reject exactly the authenticators the setting means to accommodate.
+    /// <para>
+    /// The member names on the wire are fixed by WebAuthn, so they are pinned here rather than derived from
+    /// a naming policy a consumer can change.
+    /// </para>
     /// </remarks>
+    [JsonConverter(typeof(JsonStringEnumConverter<WebAuthnUserVerificationRequirement>))]
     public enum WebAuthnUserVerificationRequirement
     {
         /// <summary>
@@ -18,16 +25,19 @@ namespace EasyReasy.Auth
         /// the user-verified flag fails. This is the setting that makes the factor biometric rather than
         /// possession-only.
         /// </summary>
+        [JsonStringEnumMemberName("required")]
         Required,
 
         /// <summary>
         /// The authenticator verifies the user when it can. Verification is not enforced.
         /// </summary>
+        [JsonStringEnumMemberName("preferred")]
         Preferred,
 
         /// <summary>
         /// The authenticator is asked not to verify the user. Verification is not enforced.
         /// </summary>
+        [JsonStringEnumMemberName("discouraged")]
         Discouraged,
     }
 }
