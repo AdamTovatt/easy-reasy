@@ -5,8 +5,7 @@ namespace EasyReasy.Auth.Tests
     [TestClass]
     public class Rfc6238TotpGeneratorTests
     {
-        // RFC 6238 Appendix B uses the ASCII seed "12345678901234567890" for the SHA-1 vectors.
-        private static readonly byte[] Seed = Encoding.ASCII.GetBytes("12345678901234567890");
+        private static readonly byte[] Seed = Rfc6238TestVectors.Seed;
 
         private readonly Rfc6238TotpGenerator _generator = new Rfc6238TotpGenerator();
 
