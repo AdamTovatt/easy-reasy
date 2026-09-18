@@ -13,9 +13,10 @@ namespace EasyReasy.Auth
     /// validation story for the TOTP factor has clean provenance.
     /// </summary>
     /// <remarks>
-    /// Pure and stateless: no clock and no persistence live here. The caller supplies the time
-    /// step (so tests are deterministic) and owns replay protection via the matched step that
-    /// <see cref="TryValidate"/> reports.
+    /// Stateless: no clock and no persistence live here. The caller supplies the time step (so tests
+    /// are deterministic) and owns replay protection via the matched step that
+    /// <see cref="TryValidate"/> reports. Every member is a pure function of its arguments except
+    /// <see cref="GenerateSecret"/>, whose whole job is to draw from the system CSPRNG.
     /// </remarks>
     public sealed class Rfc6238TotpGenerator
     {
@@ -31,9 +32,9 @@ namespace EasyReasy.Auth
         /// <summary>Default time-step — 30 seconds, the authenticator-app standard.</summary>
         public const int DefaultStepSeconds = 30;
 
-        // 160-bit secret — RFC 4226 §4 recommends at least 128 bits and HMAC-SHA1's block size is
-        // 160 bits, which is what authenticator apps assume. Not a knob: validation never consults
-        // the secret's length, so a caller-chosen size could only be weaker than the one the
+        // 160-bit secret — RFC 4226 §4 requires at least 128 bits and recommends 160, the length of
+        // an HMAC-SHA1 output, which is what authenticator apps assume. Not a knob: validation never
+        // consults the secret's length, so a caller-chosen size could only be weaker than the one the
         // algorithm is built for.
         private const int SecretSizeBytes = 20;
 
@@ -73,9 +74,9 @@ namespace EasyReasy.Auth
         /// Generates a new shared secret: 20 cryptographically random bytes.
         /// </summary>
         /// <remarks>
-        /// The size is fixed rather than a parameter. RFC 4226 §4 recommends at least 128 bits, and
-        /// HMAC-SHA1 — the algorithm this generator implements — has a 160-bit block size, which is
-        /// what authenticator apps assume. Unlike the digit count and the time-step, the secret's
+        /// The size is fixed rather than a parameter. RFC 4226 §4 requires at least 128 bits and
+        /// recommends 160 — the output length of HMAC-SHA1, the algorithm this generator implements,
+        /// and what authenticator apps assume. Unlike the digit count and the time-step, the secret's
         /// length is not something validation ever consults, so it is knowledge the library owns
         /// rather than configuration.
         /// </remarks>
@@ -92,10 +93,12 @@ namespace EasyReasy.Auth
         /// app consumes, typically rendered as a QR code during enrollment.
         /// </summary>
         /// <remarks>
-        /// The URI advertises <em>this instance's</em> digit count and time-step, so it cannot
+        /// The URI advertises <em>this instance's</em> digit count and time-step, so those cannot
         /// disagree with the validation this same instance performs. A hand-built URI can: it names
         /// the defaults while the generator was constructed with other values, and the mismatch
-        /// surfaces only as codes that never match.
+        /// surfaces only as codes that never match. The third parameter an authenticator app reads,
+        /// <c>algorithm</c>, agrees for a different reason — this class is HMAC-SHA1 and offers no
+        /// choice of anything else.
         /// </remarks>
         /// <param name="issuer">The service name shown by the authenticator app; also emitted as the
         /// <c>issuer</c> parameter.</param>
@@ -120,6 +123,11 @@ namespace EasyReasy.Auth
             string label = Uri.EscapeDataString($"{issuer}{LabelSeparator}{accountName}");
             string encodedIssuer = Uri.EscapeDataString(issuer);
 
+            // digits and period come from the instance; algorithm is the one parameter written as a
+            // literal, and it is only correct because Generate is HMAC-SHA1 with no way to ask for
+            // anything else. Give this class an algorithm choice and this literal becomes the same
+            // silent disagreement the method exists to prevent — the URI parameter has to start
+            // reading that choice in the same change.
             return string.Create(CultureInfo.InvariantCulture, $"otpauth://totp/{label}?secret={Base32.Encode(secret)}&issuer={encodedIssuer}&algorithm=SHA1&digits={_digits}&period={_stepSeconds}");
         }
 

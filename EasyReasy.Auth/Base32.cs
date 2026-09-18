@@ -8,17 +8,18 @@ namespace EasyReasy.Auth
     /// whether from an existing enrollment being imported or a recovery flow.
     /// </summary>
     /// <remarks>
-    /// The plain name is deliberate. A consumer holding its own <c>Base32</c> alongside a
-    /// <c>using EasyReasy.Auth;</c> gets <c>CS0104</c> until it deletes that copy — which is the
-    /// upgrade this type exists to enable, so the collision resolves in the same commit rather than
-    /// outliving it. A permanently worse name to avoid one atomic commit is the wrong trade.
+    /// The plain name is deliberate. A consumer whose own <c>Base32</c> is reached through a
+    /// <c>using</c> of its own namespace, in a file that also has <c>using EasyReasy.Auth;</c>, gets
+    /// <c>CS0104</c> until it deletes that copy — which is the upgrade this type exists to enable, so
+    /// the collision resolves in the same commit rather than outliving it. A permanently worse name
+    /// to avoid one atomic commit is the wrong trade.
     /// </remarks>
     public static class Base32
     {
         private const string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
-        // Secrets are small — a 20-byte TOTP secret encodes to 32 characters. The heap path exists
-        // only so a caller passing something large cannot overflow the stack.
+        // The inputs this codec exists for are secrets, which encode to a few dozen characters. The
+        // heap path exists only so a caller passing something large cannot overflow the stack.
         private const int MaxStackAllocatedChars = 256;
 
         /// <summary>
