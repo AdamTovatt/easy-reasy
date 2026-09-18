@@ -59,6 +59,7 @@ All test projects use MSTest. Tests are organized into focused files by concern 
 - Nullable reference types enabled — don't bypass with `null!` or `string.Empty`
 - Use `required` keyword or proper constructors to enforce nullability
 - One public type per file, file name matches type name
+- A library project is exactly one namespace, matching the project name. Subfolders organise files and do **not** nest the namespace — `EasyReasy.Auth.Something` names a *sibling NuGet package* (as `EasyReasy.Auth.Google` does), so a nested namespace would read as a package that does not exist. Types in a folder are therefore named to stand alone in the flat namespace.
 - Do not use tuples for public return types
 - Prefer block scoped namespaces and using statements
 - Don't use `.Result()` for async calls, make everything async instead
