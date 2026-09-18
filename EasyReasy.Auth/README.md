@@ -755,14 +755,14 @@ app.UseSerilogRequestLogging(options =>
 
 ### 12. TOTP and Secret Encryption Primitives
 
-Low-level, storage-agnostic building blocks for multi-factor authentication: an RFC 6238 (TOTP) code generator covering the whole enrollment-to-validation path, a base32 codec, and an AES-256-GCM cipher for holding the shared secret encrypted at rest. They are pure — no clock, no persistence, no DI required — so the enrollment, storage, and replay-protection policy stay entirely in your application.
+Low-level, storage-agnostic building blocks for multi-factor authentication: an RFC 6238 (TOTP) code generator covering the whole enrollment-to-validation path, a base32 codec, and an AES-256-GCM cipher for holding the shared secret encrypted at rest. They hold nothing — no clock, no persistence, no DI required (the only ambient dependency anywhere is the system CSPRNG the secret and the cipher's nonces come from) — so the enrollment, storage, and replay-protection policy stay entirely in your application.
 
 ```csharp
 public sealed class Rfc6238TotpGenerator
 {
     // Defaults (6 digits, 30-second steps) match mainstream authenticator apps; digits must be 6–8.
     Rfc6238TotpGenerator(int digits = 6, int stepSeconds = 30);
-    // A fresh 20-byte secret: RFC 4226 §4 wants ≥128 bits, HMAC-SHA1's block size is 160.
+    // A fresh 20-byte secret: RFC 4226 §4 requires ≥128 bits and recommends 160, an HMAC-SHA1 output.
     static byte[] GenerateSecret();
     // The otpauth:// URI an authenticator app scans, carrying this instance's digits and period.
     string BuildProvisioningUri(string issuer, string accountName, ReadOnlySpan<byte> secret);
@@ -787,7 +787,7 @@ public interface ISecretCipher   // AesGcmSecretCipher is the AES-256-GCM implem
 }
 ```
 
-`BuildProvisioningUri` emits the digit count and time-step **of the instance you call it on**, so the URI an authenticator app provisions from cannot disagree with the codes that same instance validates. A hand-built URI can, and the mismatch surfaces only as codes that never match. It rejects an empty or whitespace issuer or account name, an empty secret, and a `:` in either string — the colon separates the two halves of the URI's label, so one inside a component silently corrupts how the app splits it.
+`BuildProvisioningUri` emits the digit count and time-step **of the instance you call it on**, so the URI an authenticator app provisions from cannot disagree with the codes that same instance validates. A hand-built URI can, and the mismatch surfaces only as codes that never match. The third thing an app reads from the URI, `algorithm`, is written as a fixed `SHA1` — correct because the generator is HMAC-SHA1 and offers no choice of anything else. It rejects an empty or whitespace issuer or account name, an empty secret, and a `:` in either string — the colon separates the two halves of the URI's label, so one inside a component silently corrupts how the app splits it.
 
 `Base32` is a generic RFC 4648 codec. TOTP enrollment uses `Encode` for both halves of what you show the user — the `secret=` parameter of the URI and the secret they type in by hand — and `Decode` for the reverse direction: taking a secret a user pastes back in, from an existing enrollment being imported or a recovery flow.
 
@@ -857,7 +857,7 @@ finally
 - Constant-time code comparison; validation reports the matched step so the caller can reject any code at or below the last accepted step (RFC 6238 §5.2 high-water-mark)
 - AES-256-GCM authenticated encryption — a tampered or wrong-key ciphertext fails closed rather than returning garbage
 - Self-describing ciphertext envelope with a leading, integrity-protected version byte for future format evolution
-- Pure and stateless: the application owns the clock, the secret store, and the atomic replay high-water-mark
+- Stateless: the application owns the clock, the secret store, and the atomic replay high-water-mark
 
 ## Advanced Configuration
 
@@ -990,7 +990,7 @@ For more details, see XML comments in the code or explore the source. This libra
 Version 5.6.0 is additive: three pieces of pure, spec-defined TOTP support code that every consumer of the 5.4.0 MFA primitives had to write before those primitives were usable. No behaviour changed, nothing was removed or resigned, and no endpoint or wire format is touched. The one thing to watch is a name collision, below.
 
 ### New: `Rfc6238TotpGenerator.GenerateSecret()`
-- **A static method returning a fresh 20-byte secret**, replacing the `RandomNumberGenerator.GetBytes(20)` call and its justifying comment that each consumer wrote for itself. RFC 4226 §4 recommends at least 128 bits and HMAC-SHA1's block size is 160, which is what authenticator apps assume.
+- **A static method returning a fresh 20-byte secret**, replacing the `RandomNumberGenerator.GetBytes(20)` call and its justifying comment that each consumer wrote for itself. RFC 4226 §4 requires at least 128 bits and recommends 160 — the output length of HMAC-SHA1, and what authenticator apps assume.
 - **The size is fixed, not a parameter.** Unlike the digit count and the time-step, the secret's length is never consulted by validation, so it is not instance configuration — and a knob here could only be turned toward a weaker value.
 
 ### New: `Rfc6238TotpGenerator.BuildProvisioningUri(issuer, accountName, secret)`
@@ -1001,7 +1001,7 @@ Version 5.6.0 is additive: three pieces of pure, spec-defined TOTP support code 
 ### New: `Base32` — RFC 4648 codec, and the one source-level break to watch
 - **`public static class Base32` with `Encode(ReadOnlySpan<byte>)` and `Decode(string)`**, a generic codec with no MFA-specific behaviour. `Encode` covers both halves of what enrollment shows the user — the URI's `secret=` parameter and the hand-typed secret — and `Decode` the reverse direction, a secret pasted back in from an imported enrollment or a recovery flow.
 - **`Decode` is lenient about presentation and strict about content, both by contract.** Lenient: whitespace ignored wherever it appears (the space-grouped layout authenticator apps display decodes as shown), trailing `=` padding tolerated, alphabet matched case-insensitively, empty array for input carrying no base32 characters. Strict: `FormatException` on an out-of-alphabet character, and on a character count no encoding could have produced. The two go together — a human types this input, so how it is spaced or cased must not matter, while a dropped character must fail loudly rather than decode into a different secret that surfaces later as an unexplained wrong code.
-- **A consumer that already has its own `Base32` type plus a `using EasyReasy.Auth;` gets `CS0104` (ambiguous reference) on upgrade** — which is the exact shape of a project that wrote one for TOTP. **The fix is to delete your copy in the same commit as the upgrade**; that is the point of the addition. If you need to keep yours, `using Base32 = YourNamespace.Base32;` in the affected files disambiguates without touching either type.
+- **A consumer whose own `Base32` is `using`-imported into a file that also has `using EasyReasy.Auth;` gets `CS0104` (ambiguous reference) on upgrade** — which is the exact shape of a project that wrote one for TOTP and keeps it in a codecs namespace of its own. (A `Base32` declared in the file's *own* namespace keeps winning silently instead, since the enclosing namespace is searched before any `using`.) **The fix is to delete your copy in the same commit as the upgrade**; that is the point of the addition. If you need to keep yours, `using Base32 = YourNamespace.Base32;` in the affected files disambiguates without touching either type.
 
 ## Migration from 5.4.0
 
