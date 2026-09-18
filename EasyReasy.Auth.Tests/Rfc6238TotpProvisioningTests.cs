@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.WebUtilities;
+
 namespace EasyReasy.Auth.Tests
 {
     /// <summary>
@@ -8,7 +10,7 @@ namespace EasyReasy.Auth.Tests
     [TestClass]
     public class Rfc6238TotpProvisioningTests
     {
-        private static readonly byte[] Seed = Rfc6238TestVectors.Seed;
+        private static ReadOnlySpan<byte> Seed => Rfc6238TestVectors.Seed;
         private const string SeedBase32 = Rfc6238TestVectors.SeedBase32;
 
         private readonly Rfc6238TotpGenerator _generator = new Rfc6238TotpGenerator();
@@ -130,7 +132,7 @@ namespace EasyReasy.Auth.Tests
 
             // Parsing through Uri also pins that what is emitted is a well-formed URI.
             Uri parsed = new Uri(uri);
-            string scannedBase32 = ReadQueryParameter(parsed, "secret");
+            string scannedBase32 = QueryHelpers.ParseQuery(parsed.Query)["secret"].ToString();
             byte[] scannedSecret = Base32.Decode(scannedBase32);
             long step = generator.GetTimeStep(DateTimeOffset.UtcNow);
             string code = generator.Generate(scannedSecret, step);
@@ -156,18 +158,5 @@ namespace EasyReasy.Auth.Tests
             CollectionAssert.AreNotEqual(first, second);
         }
 
-        private static string ReadQueryParameter(Uri uri, string name)
-        {
-            foreach (string pair in uri.Query.TrimStart('?').Split('&'))
-            {
-                string[] parts = pair.Split('=', 2);
-                if (parts.Length == 2 && parts[0] == name)
-                {
-                    return parts[1];
-                }
-            }
-
-            throw new AssertFailedException($"The provisioning URI carries no '{name}' parameter: {uri}");
-        }
     }
 }

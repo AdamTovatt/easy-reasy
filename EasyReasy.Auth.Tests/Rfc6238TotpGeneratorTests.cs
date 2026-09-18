@@ -5,7 +5,7 @@ namespace EasyReasy.Auth.Tests
     [TestClass]
     public class Rfc6238TotpGeneratorTests
     {
-        private static readonly byte[] Seed = Rfc6238TestVectors.Seed;
+        private static ReadOnlySpan<byte> Seed => Rfc6238TestVectors.Seed;
 
         private readonly Rfc6238TotpGenerator _generator = new Rfc6238TotpGenerator();
 

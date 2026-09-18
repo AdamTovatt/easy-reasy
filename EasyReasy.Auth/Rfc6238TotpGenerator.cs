@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -33,9 +34,9 @@ namespace EasyReasy.Auth
         public const int DefaultStepSeconds = 30;
 
         // 160-bit secret — RFC 4226 §4 requires at least 128 bits and recommends 160, the length of
-        // an HMAC-SHA1 output, which is what authenticator apps assume. Not a knob: validation never
-        // consults the secret's length, so a caller-chosen size could only be weaker than the one the
-        // algorithm is built for.
+        // an HMAC-SHA1 output, which is what authenticator apps assume. Not a knob: a shorter secret
+        // is weaker, a longer one buys no strength an HMAC-SHA1 key can use, and validation never
+        // consults the length either way, so the choice is the library's to make once.
         private const int SecretSizeBytes = 20;
 
         // The label in the otpauth:// URI is "issuer:accountName", so the colon is the separator
@@ -74,11 +75,9 @@ namespace EasyReasy.Auth
         /// Generates a new shared secret: 20 cryptographically random bytes.
         /// </summary>
         /// <remarks>
-        /// The size is fixed rather than a parameter. RFC 4226 §4 requires at least 128 bits and
-        /// recommends 160 — the output length of HMAC-SHA1, the algorithm this generator implements,
-        /// and what authenticator apps assume. Unlike the digit count and the time-step, the secret's
-        /// length is not something validation ever consults, so it is knowledge the library owns
-        /// rather than configuration.
+        /// The size is fixed rather than a parameter: unlike the digit count and the time-step, it is
+        /// not something validation ever consults, so it is knowledge this library owns rather than
+        /// configuration a caller supplies.
         /// </remarks>
         /// <returns>A fresh 20-byte secret. Zero it with
         /// <see cref="System.Security.Cryptography.CryptographicOperations.ZeroMemory"/> once it is
@@ -112,8 +111,8 @@ namespace EasyReasy.Auth
         /// <paramref name="secret"/> is empty.</exception>
         public string BuildProvisioningUri(string issuer, string accountName, ReadOnlySpan<byte> secret)
         {
-            ValidateLabelComponent(issuer, "issuer", nameof(issuer));
-            ValidateLabelComponent(accountName, "account name", nameof(accountName));
+            ValidateLabelComponent(issuer, "issuer");
+            ValidateLabelComponent(accountName, "account name");
 
             if (secret.IsEmpty)
             {
@@ -123,11 +122,9 @@ namespace EasyReasy.Auth
             string label = Uri.EscapeDataString($"{issuer}{LabelSeparator}{accountName}");
             string encodedIssuer = Uri.EscapeDataString(issuer);
 
-            // digits and period come from the instance; algorithm is the one parameter written as a
-            // literal, and it is only correct because Generate is HMAC-SHA1 with no way to ask for
-            // anything else. Give this class an algorithm choice and this literal becomes the same
-            // silent disagreement the method exists to prevent — the URI parameter has to start
-            // reading that choice in the same change.
+            // Maintenance rule for the one parameter here that is a literal: give this class a choice
+            // of algorithm and this SHA1 has to start reading it in the same change, or it becomes the
+            // silent disagreement the method exists to prevent. (Why it is safe as written: the remarks.)
             return string.Create(CultureInfo.InvariantCulture, $"otpauth://totp/{label}?secret={Base32.Encode(secret)}&issuer={encodedIssuer}&algorithm=SHA1&digits={_digits}&period={_stepSeconds}");
         }
 
@@ -142,8 +139,9 @@ namespace EasyReasy.Auth
         /// </remarks>
         /// <param name="value">The component to check.</param>
         /// <param name="description">How the component is named in the error message.</param>
-        /// <param name="parameterName">The parameter to blame, so the caller learns which half is wrong.</param>
-        private static void ValidateLabelComponent(string value, string description, string parameterName)
+        /// <param name="parameterName">Supplied by the compiler from the argument expression, so the
+        /// caller learns which half is wrong without the call site repeating the name.</param>
+        private static void ValidateLabelComponent(string value, string description, [CallerArgumentExpression(nameof(value))] string? parameterName = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
 
