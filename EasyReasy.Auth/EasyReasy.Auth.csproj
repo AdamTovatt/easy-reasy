@@ -33,6 +33,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The WebAuthn types decode CBOR with System.Formats.Cbor, which needs no PackageReference: it
+         ships inside the Microsoft.AspNetCore.App shared framework referenced below, so every consumer
+         of this package already has it. Adding it as a package would put a dependency on the published
+         nupkg that nothing resolves at runtime, which is what NU1510 reports. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.7" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
