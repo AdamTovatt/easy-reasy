@@ -393,10 +393,7 @@ namespace EasyReasy.Auth
         private static string GenerateToken()
         {
             byte[] tokenBytes = RandomNumberGenerator.GetBytes(32);
-            return Convert.ToBase64String(tokenBytes)
-                .Replace('+', '-')
-                .Replace('/', '_')
-                .TrimEnd('=');
+            return Base64UrlEncoding.Encode(tokenBytes);
         }
     }
 }
