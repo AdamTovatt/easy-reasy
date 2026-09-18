@@ -31,6 +31,16 @@ namespace EasyReasy.Auth
         /// <summary>Default time-step — 30 seconds, the authenticator-app standard.</summary>
         public const int DefaultStepSeconds = 30;
 
+        // 160-bit secret — RFC 4226 §4 recommends at least 128 bits and HMAC-SHA1's block size is
+        // 160 bits, which is what authenticator apps assume. Not a knob: validation never consults
+        // the secret's length, so a caller-chosen size could only be weaker than the one the
+        // algorithm is built for.
+        private const int SecretSizeBytes = 20;
+
+        // The label in the otpauth:// URI is "issuer:accountName", so the colon is the separator
+        // authenticator apps split on.
+        private const char LabelSeparator = ':';
+
         private readonly int _digits;
         private readonly int _stepSeconds;
         private readonly int _modulo;
@@ -57,6 +67,82 @@ namespace EasyReasy.Auth
             _digits = digits;
             _stepSeconds = stepSeconds;
             _modulo = (int)Math.Pow(10, digits);
+        }
+
+        /// <summary>
+        /// Generates a new shared secret: 20 cryptographically random bytes.
+        /// </summary>
+        /// <remarks>
+        /// The size is fixed rather than a parameter. RFC 4226 §4 recommends at least 128 bits, and
+        /// HMAC-SHA1 — the algorithm this generator implements — has a 160-bit block size, which is
+        /// what authenticator apps assume. Unlike the digit count and the time-step, the secret's
+        /// length is not something validation ever consults, so it is knowledge the library owns
+        /// rather than configuration.
+        /// </remarks>
+        /// <returns>A fresh 20-byte secret. Zero it with
+        /// <see cref="System.Security.Cryptography.CryptographicOperations.ZeroMemory"/> once it is
+        /// encrypted for storage and handed to the user.</returns>
+        public static byte[] GenerateSecret()
+        {
+            return RandomNumberGenerator.GetBytes(SecretSizeBytes);
+        }
+
+        /// <summary>
+        /// Builds the Key URI Format provisioning string (<c>otpauth://totp/…</c>) an authenticator
+        /// app consumes, typically rendered as a QR code during enrollment.
+        /// </summary>
+        /// <remarks>
+        /// The URI advertises <em>this instance's</em> digit count and time-step, so it cannot
+        /// disagree with the validation this same instance performs. A hand-built URI can: it names
+        /// the defaults while the generator was constructed with other values, and the mismatch
+        /// surfaces only as codes that never match.
+        /// </remarks>
+        /// <param name="issuer">The service name shown by the authenticator app; also emitted as the
+        /// <c>issuer</c> parameter.</param>
+        /// <param name="accountName">The account the secret belongs to, commonly an email address.</param>
+        /// <param name="secret">The shared secret bytes, base32-encoded into the URI.</param>
+        /// <returns>The provisioning URI.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="issuer"/> or <paramref name="accountName"/> is <c>null</c>.</exception>
+        /// <exception cref="ArgumentException"><paramref name="issuer"/> or <paramref name="accountName"/> is
+        /// empty or whitespace, either of them contains a <c>:</c> (the label separator — a colon inside a
+        /// component silently corrupts how an authenticator app splits the label), or
+        /// <paramref name="secret"/> is empty.</exception>
+        public string BuildProvisioningUri(string issuer, string accountName, ReadOnlySpan<byte> secret)
+        {
+            ValidateLabelComponent(issuer, "issuer", nameof(issuer));
+            ValidateLabelComponent(accountName, "account name", nameof(accountName));
+
+            if (secret.IsEmpty)
+            {
+                throw new ArgumentException("A TOTP secret cannot be empty.", nameof(secret));
+            }
+
+            string label = Uri.EscapeDataString($"{issuer}{LabelSeparator}{accountName}");
+            string encodedIssuer = Uri.EscapeDataString(issuer);
+
+            return string.Create(CultureInfo.InvariantCulture, $"otpauth://totp/{label}?secret={Base32.Encode(secret)}&issuer={encodedIssuer}&algorithm=SHA1&digits={_digits}&period={_stepSeconds}");
+        }
+
+        /// <summary>
+        /// Rejects a label component that would corrupt the provisioning URI: one carrying nothing, or
+        /// one carrying the separator the label is split on.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately no length bound. An over-long component does not corrupt the URI — it only
+        /// makes a QR code denser to scan, which fails visibly at whatever renders it, and that is
+        /// where the real limit lives. Any number picked here would be invented.
+        /// </remarks>
+        /// <param name="value">The component to check.</param>
+        /// <param name="description">How the component is named in the error message.</param>
+        /// <param name="parameterName">The parameter to blame, so the caller learns which half is wrong.</param>
+        private static void ValidateLabelComponent(string value, string description, string parameterName)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(value, parameterName);
+
+            if (value.Contains(LabelSeparator, StringComparison.Ordinal))
+            {
+                throw new ArgumentException($"A TOTP {description} cannot contain '{LabelSeparator}'; it separates the issuer from the account name in the provisioning URI's label.", parameterName);
+            }
         }
 
         /// <summary>

@@ -18,7 +18,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **Claim access**: Retrieve any claim value by key or enum with a single call
 - **Progressive delay**: Built-in middleware to slow down brute-force attacks (enabled by default)
 - **Refresh token rotation**: Opt-in refresh tokens with automatic theft detection via token family tracking
-- **MFA primitives**: RFC 6238 TOTP generator and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
+- **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **Flexible configuration**: Options pattern for JWT settings (issuer, audience, clock skew) and progressive delay tuning
 - **Clear error messages**: Enforces minimum secret length for security
 
@@ -755,17 +755,28 @@ app.UseSerilogRequestLogging(options =>
 
 ### 12. TOTP and Secret Encryption Primitives
 
-Two low-level, storage-agnostic building blocks for multi-factor authentication: an RFC 6238 (TOTP) code generator and an AES-256-GCM cipher for holding the shared secret encrypted at rest. They are pure — no clock, no persistence, no DI required — so the enrollment, storage, and replay-protection policy stay entirely in your application.
+Low-level, storage-agnostic building blocks for multi-factor authentication: an RFC 6238 (TOTP) code generator covering the whole enrollment-to-validation path, a base32 codec, and an AES-256-GCM cipher for holding the shared secret encrypted at rest. They are pure — no clock, no persistence, no DI required — so the enrollment, storage, and replay-protection policy stay entirely in your application.
 
 ```csharp
 public sealed class Rfc6238TotpGenerator
 {
     // Defaults (6 digits, 30-second steps) match mainstream authenticator apps; digits must be 6–8.
     Rfc6238TotpGenerator(int digits = 6, int stepSeconds = 30);
+    // A fresh 20-byte secret: RFC 4226 §4 wants ≥128 bits, HMAC-SHA1's block size is 160.
+    static byte[] GenerateSecret();
+    // The otpauth:// URI an authenticator app scans, carrying this instance's digits and period.
+    string BuildProvisioningUri(string issuer, string accountName, ReadOnlySpan<byte> secret);
     long GetTimeStep(DateTimeOffset timestamp);
     string Generate(ReadOnlySpan<byte> secret, long timeStep);
     // Reports the matched step so you can persist it and reject replay.
     bool TryValidate(ReadOnlySpan<byte> secret, string code, long currentStep, int window, out long matchedStep);
+}
+
+public static class Base32   // RFC 4648, encodes without padding
+{
+    static string Encode(ReadOnlySpan<byte> data);
+    // Ignores whitespace, tolerates trailing '=', case-insensitive; throws on a bad character or count.
+    static byte[] Decode(string input);
 }
 
 public interface ISecretCipher   // AesGcmSecretCipher is the AES-256-GCM implementation
@@ -776,6 +787,12 @@ public interface ISecretCipher   // AesGcmSecretCipher is the AES-256-GCM implem
 }
 ```
 
+`BuildProvisioningUri` emits the digit count and time-step **of the instance you call it on**, so the URI an authenticator app provisions from cannot disagree with the codes that same instance validates. A hand-built URI can, and the mismatch surfaces only as codes that never match. It rejects an empty or whitespace issuer or account name, an empty secret, and a `:` in either string — the colon separates the two halves of the URI's label, so one inside a component silently corrupts how the app splits it.
+
+`Base32` is a generic RFC 4648 codec. TOTP enrollment uses `Encode` for both halves of what you show the user — the `secret=` parameter of the URI and the secret they type in by hand — and `Decode` for the reverse direction: taking a secret a user pastes back in, from an existing enrollment being imported or a recovery flow.
+
+`Decode` is lenient about **presentation**, because a human types or pastes the input: whitespace is ignored wherever it appears (so the space-grouped layout authenticator apps display, `MZXW 6YTB OI`, decodes as shown), trailing `=` padding is tolerated, and the alphabet is matched case-insensitively. Input carrying no base32 characters at all — empty, only whitespace, only padding — decodes to an empty array. It is strict about the **characters themselves**, which is the opposite concern: a character outside the alphabet, and a character count no encoding could have produced (one character too few or too many), both raise `FormatException` rather than being skipped or truncated. A mistyped secret has to fail at the decode, not decode into a different secret that fails later as an unexplained wrong code.
+
 Register the cipher with a 32-byte key kept **outside** your datastore (e.g. an environment variable), so a database or backup dump alone can't recover the secret:
 
 ```csharp
@@ -784,27 +801,59 @@ builder.Services.AddSingleton<ISecretCipher>(new AesGcmSecretCipher(key));
 builder.Services.AddSingleton<Rfc6238TotpGenerator>();
 ```
 
-**Usage example:**
+**Enrollment** — generate a secret, store the ciphertext, show the user a QR code and the typable secret:
 ```csharp
-// Enrollment: generate a secret, store the ciphertext, show the user an otpauth:// URI / QR code.
-byte[] secret = RandomNumberGenerator.GetBytes(20); // 160-bit, the authenticator-app standard
-// Persisting EnvelopeVersion alongside the ciphertext lets you find rows on an older format to re-encrypt.
-await _store.SaveEnrollment(userId, _cipher.Encrypt(secret), _cipher.EnvelopeVersion);
+string provisioningUri;
+string manualEntrySecret;
 
-// Verification: decrypt, validate within a ±1-step skew window, then advance the replay high-water-mark.
-byte[] secret = _cipher.Decrypt(await _store.GetCiphertext(userId));
-long currentStep = _totp.GetTimeStep(DateTimeOffset.UtcNow);
-if (_totp.TryValidate(secret, presentedCode, currentStep, window: 1, out long matchedStep)
-    // RFC 6238 §5.2: atomically require matchedStep > the stored last-used step, then store it. This
-    // rejects any code at or below the last accepted step, including a still-in-window neighbour.
-    && await _store.TryAdvanceLastUsedStep(userId, matchedStep))
+byte[] secret = Rfc6238TotpGenerator.GenerateSecret();
+try
 {
-    // code accepted
+    // Persisting EnvelopeVersion alongside the ciphertext lets you find rows on an older format to re-encrypt.
+    await _store.SaveEnrollment(userId, _cipher.Encrypt(secret), _cipher.EnvelopeVersion);
+
+    provisioningUri = _totp.BuildProvisioningUri("Acme Corp", user.Email, secret); // render as a QR code
+    manualEntrySecret = Base32.Encode(secret);                                     // for typing in by hand
+}
+finally
+{
+    // Don't leave the plaintext secret lingering in a managed buffer longer than needed.
+    CryptographicOperations.ZeroMemory(secret);
 }
 ```
 
+**Verification** — decrypt, validate within a ±1-step skew window, then advance the replay high-water-mark:
+```csharp
+byte[] secret = _cipher.Decrypt(await _store.GetCiphertext(userId));
+try
+{
+    long currentStep = _totp.GetTimeStep(DateTimeOffset.UtcNow);
+    if (_totp.TryValidate(secret, presentedCode, currentStep, window: 1, out long matchedStep)
+        // RFC 6238 §5.2: atomically require matchedStep > the stored last-used step, then store it. This
+        // rejects any code at or below the last accepted step, including a still-in-window neighbour.
+        && await _store.TryAdvanceLastUsedStep(userId, matchedStep))
+    {
+        // code accepted
+    }
+}
+finally
+{
+    CryptographicOperations.ZeroMemory(secret);
+}
+```
+
+**Replay protection is yours to enforce — and it is the part that gets written wrong.** The library deliberately ships no coordinator for it, because the step it has to claim lives in your datastore. The shape above is the whole pattern, and every clause of it matters:
+
+- **`TryValidate` alone is not acceptance.** It answers whether the code matches *some* step in the skew window; a code stays valid for the whole window, so the same one replays successfully until it falls out. Acceptance is `TryValidate` **and** winning the step.
+- **Claim the step atomically, in the store.** `TryAdvanceLastUsedStep` should be a single conditional write — `UPDATE … SET last_used_step = @matchedStep WHERE user_id = @userId AND (last_used_step IS NULL OR last_used_step < @matchedStep)` — accepting only if it updated a row. Read-then-write in application code leaves a window where two concurrent requests both read the old value and both accept the same code.
+- **Advance to a high-water-mark, not a used-code set.** Requiring `matchedStep` to be strictly greater than the stored step rejects a still-in-window *neighbouring* step too, which per-code consumption alone would leave open.
+- **The same call is what confirms enrollment.** Validating the confirmation code through this path claims its step, so the code the user just typed cannot be replayed at the next step-up moments later.
+- **Zero the plaintext secret in a `finally`.** `CryptographicOperations.ZeroMemory` on every path out, including the rejection paths. It reaches the `byte[]` and nothing else: the provisioning URI and the manual-entry string are immutable managed strings holding the same secret, and .NET gives you no way to erase them — they live until they are collected. That is unavoidable, so treat it as the reason to build them once, at enrollment, and never to log or cache either one.
+
 **Key Features:**
 - RFC 6238 TOTP over RFC 4226 HOTP with HMAC-SHA1 (what mainstream authenticator apps implement), configurable digit count and time-step
+- Enrollment covered end to end: a correctly-sized random secret, the `otpauth://` provisioning URI, and the base32 encoding both the URI and manual entry need
+- The provisioning URI advertises the instance's own digits and period, so it cannot drift out of agreement with what that instance validates
 - Constant-time code comparison; validation reports the matched step so the caller can reject any code at or below the last accepted step (RFC 6238 §5.2 high-water-mark)
 - AES-256-GCM authenticated encryption — a tampered or wrong-key ciphertext fails closed rather than returning garbage
 - Self-describing ciphertext envelope with a leading, integrity-protected version byte for future format evolution
@@ -906,7 +955,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **Refresh token rotation**: Opt-in refresh tokens with token family tracking and automatic theft detection
 - **Secure password hashing**: PBKDF2 with HMAC-SHA512, max password length enforcement, and constant-time comparison
 - **Password reset tokens**: Cryptographically secure token generation with SHA-256 hashing for storage
-- **MFA primitives**: RFC 6238 TOTP generator and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
+- **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
 - **Claim access**: Retrieve any claim value by key or enum via `GetClaimValue()`
@@ -935,6 +984,24 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.5.0
+
+Version 5.6.0 is additive: three pieces of pure, spec-defined TOTP support code that every consumer of the 5.4.0 MFA primitives had to write before those primitives were usable. No behaviour changed, nothing was removed or resigned, and no endpoint or wire format is touched. The one thing to watch is a name collision, below.
+
+### New: `Rfc6238TotpGenerator.GenerateSecret()`
+- **A static method returning a fresh 20-byte secret**, replacing the `RandomNumberGenerator.GetBytes(20)` call and its justifying comment that each consumer wrote for itself. RFC 4226 §4 recommends at least 128 bits and HMAC-SHA1's block size is 160, which is what authenticator apps assume.
+- **The size is fixed, not a parameter.** Unlike the digit count and the time-step, the secret's length is never consulted by validation, so it is not instance configuration — and a knob here could only be turned toward a weaker value.
+
+### New: `Rfc6238TotpGenerator.BuildProvisioningUri(issuer, accountName, secret)`
+- **An instance method building the `otpauth://totp/…` Key URI** an authenticator app scans, base32-encoding the secret and URI-escaping the `issuer:accountName` label and the `issuer` parameter.
+- **It emits the instance's own digits and period.** A hand-built URI typically hardcodes `algorithm=SHA1&digits=6&period=30`; construct the generator with a different `digits` or `stepSeconds` and that URI keeps advertising the defaults while the validator uses the instance values, with nothing to warn you but codes that never match. Calling this method closes that gap structurally. **If you replace a hand-rolled builder with it, keep passing the same `issuer` string your builder used** — the label and issuer are what an authenticator app displays, so a changed value shows up as a differently-named entry for anyone who re-enrolls.
+- **It rejects what would silently corrupt the URI**: `ArgumentNullException` on a null `issuer` or `accountName`, and `ArgumentException` on an empty or whitespace one, on an empty `secret`, and on a `:` inside either string, since the colon is the label separator.
+
+### New: `Base32` — RFC 4648 codec, and the one source-level break to watch
+- **`public static class Base32` with `Encode(ReadOnlySpan<byte>)` and `Decode(string)`**, a generic codec with no MFA-specific behaviour. `Encode` covers both halves of what enrollment shows the user — the URI's `secret=` parameter and the hand-typed secret — and `Decode` the reverse direction, a secret pasted back in from an imported enrollment or a recovery flow.
+- **`Decode` is lenient about presentation and strict about content, both by contract.** Lenient: whitespace ignored wherever it appears (the space-grouped layout authenticator apps display decodes as shown), trailing `=` padding tolerated, alphabet matched case-insensitively, empty array for input carrying no base32 characters. Strict: `FormatException` on an out-of-alphabet character, and on a character count no encoding could have produced. The two go together — a human types this input, so how it is spaced or cased must not matter, while a dropped character must fail loudly rather than decode into a different secret that surfaces later as an unexplained wrong code.
+- **A consumer that already has its own `Base32` type plus a `using EasyReasy.Auth;` gets `CS0104` (ambiguous reference) on upgrade** — which is the exact shape of a project that wrote one for TOTP. **The fix is to delete your copy in the same commit as the upgrade**; that is the point of the addition. If you need to keep yours, `using Base32 = YourNamespace.Base32;` in the affected files disambiguates without touching either type.
 
 ## Migration from 5.4.0
 
