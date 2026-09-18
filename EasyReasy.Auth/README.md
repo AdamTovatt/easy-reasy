@@ -791,7 +791,7 @@ public interface ISecretCipher   // AesGcmSecretCipher is the AES-256-GCM implem
 
 `Base32` is a generic RFC 4648 codec. TOTP enrollment uses `Encode` for both halves of what you show the user — the `secret=` parameter of the URI and the secret they type in by hand — and `Decode` for the reverse direction: taking a secret a user pastes back in, from an existing enrollment being imported or a recovery flow.
 
-`Decode` is lenient about **presentation**, because a human types or pastes the input: whitespace is ignored wherever it appears (so the space-grouped layout authenticator apps display, `MZXW 6YTB OI`, decodes as shown), trailing `=` padding is tolerated, and the alphabet is matched case-insensitively. Input carrying no base32 characters at all — empty, only whitespace, only padding — decodes to an empty array. It is strict about the **characters themselves**, which is the opposite concern: a character outside the alphabet, and a character count no encoding could have produced (one character too few or too many), both raise `FormatException` rather than being skipped or truncated. A mistyped secret has to fail at the decode, not decode into a different secret that fails later as an unexplained wrong code.
+`Decode` is lenient about **presentation**, because a human types or pastes the input: whitespace is ignored wherever it appears (so the space-grouped layout authenticator apps display, `MZXW 6YTB OI`, decodes as shown), trailing `=` padding is tolerated, and the alphabet is matched case-insensitively. Input carrying no base32 characters at all — empty, only whitespace, only padding — decodes to an empty array. It is strict about the **characters themselves**, which is the opposite concern: a character outside the alphabet, a character count no encoding could have produced, and a final character carrying bits past the last whole byte all raise `FormatException` rather than being skipped or truncated. Between them those catch most single-character slips — but not all of them, since a dropped character can still land on a producible count with zero-looking pad bits. Treat it as a guard against decoding into a silently different secret, not as a checksum: it is what stops a typo becoming an unexplained wrong code later.
 
 Register the cipher with a 32-byte key kept **outside** your datastore (e.g. an environment variable), so a database or backup dump alone can't recover the secret:
 
@@ -809,11 +809,13 @@ string manualEntrySecret;
 byte[] secret = Rfc6238TotpGenerator.GenerateSecret();
 try
 {
-    // Persisting EnvelopeVersion alongside the ciphertext lets you find rows on an older format to re-encrypt.
-    await _store.SaveEnrollment(userId, _cipher.Encrypt(secret), _cipher.EnvelopeVersion);
-
+    // Build what the user has to receive first: BuildProvisioningUri rejects a bad issuer or account
+    // name, and a throw after the write would leave an enrollment stored that nobody can complete.
     provisioningUri = _totp.BuildProvisioningUri("Acme Corp", user.Email, secret); // render as a QR code
     manualEntrySecret = Base32.Encode(secret);                                     // for typing in by hand
+
+    // Persisting EnvelopeVersion alongside the ciphertext lets you find rows on an older format to re-encrypt.
+    await _store.SaveEnrollment(userId, _cipher.Encrypt(secret), _cipher.EnvelopeVersion);
 }
 finally
 {
@@ -987,11 +989,11 @@ For more details, see XML comments in the code or explore the source. This libra
 
 ## Migration from 5.5.0
 
-Version 5.6.0 is additive: three pieces of pure, spec-defined TOTP support code that every consumer of the 5.4.0 MFA primitives had to write before those primitives were usable. No behaviour changed, nothing was removed or resigned, and no endpoint or wire format is touched. The one thing to watch is a name collision, below.
+Version 5.6.0 is additive: three pieces of spec-defined, policy-free TOTP support code that every consumer of the 5.4.0 MFA primitives had to write before those primitives were usable. No behaviour changed, nothing was removed or resigned, and no endpoint or wire format is touched. The one thing to watch is a name collision, below.
 
 ### New: `Rfc6238TotpGenerator.GenerateSecret()`
 - **A static method returning a fresh 20-byte secret**, replacing the `RandomNumberGenerator.GetBytes(20)` call and its justifying comment that each consumer wrote for itself. RFC 4226 §4 requires at least 128 bits and recommends 160 — the output length of HMAC-SHA1, and what authenticator apps assume.
-- **The size is fixed, not a parameter.** Unlike the digit count and the time-step, the secret's length is never consulted by validation, so it is not instance configuration — and a knob here could only be turned toward a weaker value.
+- **The size is fixed, not a parameter.** Unlike the digit count and the time-step, the secret's length is never consulted by validation, so it is not instance configuration. There is also nothing for a knob to buy: a shorter secret is weaker, and a longer one adds no strength an HMAC-SHA1 key can use.
 
 ### New: `Rfc6238TotpGenerator.BuildProvisioningUri(issuer, accountName, secret)`
 - **An instance method building the `otpauth://totp/…` Key URI** an authenticator app scans, base32-encoding the secret and URI-escaping the `issuer:accountName` label and the `issuer` parameter.
@@ -1000,7 +1002,8 @@ Version 5.6.0 is additive: three pieces of pure, spec-defined TOTP support code 
 
 ### New: `Base32` — RFC 4648 codec, and the one source-level break to watch
 - **`public static class Base32` with `Encode(ReadOnlySpan<byte>)` and `Decode(string)`**, a generic codec with no MFA-specific behaviour. `Encode` covers both halves of what enrollment shows the user — the URI's `secret=` parameter and the hand-typed secret — and `Decode` the reverse direction, a secret pasted back in from an imported enrollment or a recovery flow.
-- **`Decode` is lenient about presentation and strict about content, both by contract.** Lenient: whitespace ignored wherever it appears (the space-grouped layout authenticator apps display decodes as shown), trailing `=` padding tolerated, alphabet matched case-insensitively, empty array for input carrying no base32 characters. Strict: `FormatException` on an out-of-alphabet character, and on a character count no encoding could have produced. The two go together — a human types this input, so how it is spaced or cased must not matter, while a dropped character must fail loudly rather than decode into a different secret that surfaces later as an unexplained wrong code.
+- **`Decode` is lenient about presentation and strict about content, both by contract.** Lenient: whitespace ignored wherever it appears (the space-grouped layout authenticator apps display decodes as shown), trailing `=` padding tolerated, alphabet matched case-insensitively, empty array for input carrying no base32 characters. Strict: `FormatException` on an out-of-alphabet character, on a character count no encoding could have produced, and on a final character carrying bits past the last whole byte. The two halves go together — a human types this input, so how it is spaced or cased must not matter, while a dropped character must fail loudly rather than decode into a different secret that surfaces later as an unexplained wrong code.
+- **The padding-bit rule costs a conforming caller nothing.** An encoder zero-fills the bits after the last whole byte, so a canonical secret never trips it — a 160-bit TOTP secret is 32 characters with no leftover bits at all. What it catches is the truncated or mistyped input that has a producible length and would otherwise decode to a silently wrong key. What it refuses is a non-conforming encoder's garbage in those bits, which RFC 4648 §3.5 says a decoder may reject.
 - **A consumer whose own `Base32` is `using`-imported into a file that also has `using EasyReasy.Auth;` gets `CS0104` (ambiguous reference) on upgrade** — which is the exact shape of a project that wrote one for TOTP and keeps it in a codecs namespace of its own. (A `Base32` declared in the file's *own* namespace keeps winning silently instead, since the enclosing namespace is searched before any `using`.) **The fix is to delete your copy in the same commit as the upgrade**; that is the point of the addition. If you need to keep yours, `using Base32 = YourNamespace.Base32;` in the affected files disambiguates without touching either type.
 
 ## Migration from 5.4.0

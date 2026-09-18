@@ -101,10 +101,27 @@ namespace EasyReasy.Auth.Tests
         [DataRow("MZXW6YTB0I")] // '0' is not in the alphabet — the digits start at '2'
         [DataRow("MZXW6YTB1I")] // nor is '1'
         [DataRow("MZXW6YTB-I")]
-        [DataRow("MZXW=6YTBOI")] // padding is only tolerated at the end
+        // 12 characters, a count the encoder can produce, so this row fails on the '=' itself rather
+        // than on the length check that fires first for an 11-character string.
+        [DataRow("MZXW=6YTBOIA")] // padding is only tolerated at the end
         public void Decode_OutOfAlphabetCharacter_Throws(string input)
         {
-            Assert.ThrowsException<FormatException>(() => Base32.Decode(input));
+            FormatException exception = Assert.ThrowsException<FormatException>(() => Base32.Decode(input));
+
+            // Not just any FormatException: the count guard's message also mentions characters, so a
+            // row that fell through to it would otherwise look like it had tested the alphabet.
+            StringAssert.Contains(exception.Message, "Invalid base32 character");
+        }
+
+        [TestMethod]
+        public void Decode_BadCharacterAndBadLength_ReportsTheCharacter()
+        {
+            // Three characters is a count no encoding produces, and '0' is outside the alphabet, so
+            // both guards would fire. The character is the one a reader can see is wrong, so it has
+            // to be the one reported.
+            FormatException exception = Assert.ThrowsException<FormatException>(() => Base32.Decode("M0X"));
+
+            StringAssert.Contains(exception.Message, "Invalid base32 character");
         }
 
         // 1, 3 and 6 characters over a multiple of eight is a group the encoder cannot produce, so the
@@ -119,7 +136,32 @@ namespace EasyReasy.Auth.Tests
         [DataRow("MZXW6YTBOIA=====")]
         public void Decode_CharacterCountNoEncodingProduces_Throws(string input)
         {
-            Assert.ThrowsException<FormatException>(() => Base32.Decode(input));
+            FormatException exception = Assert.ThrowsException<FormatException>(() => Base32.Decode(input));
+
+            StringAssert.Contains(exception.Message, "cannot be the encoding of any byte sequence");
+        }
+
+        // The encoder zero-pads the final character, so bits set past the last whole byte mean a
+        // character was mistyped into a neighbour — the slip a right-sized count cannot catch.
+        // "MZXQ" is the canonical encoding of "fo"; the other three differ only in those pad bits.
+        [DataTestMethod]
+        [DataRow("MZXR")]
+        [DataRow("MZXS")]
+        [DataRow("MZXT")]
+        [DataRow("MZXW6YTBOJ")]
+        public void Decode_NonZeroPaddingBits_Throws(string input)
+        {
+            FormatException exception = Assert.ThrowsException<FormatException>(() => Base32.Decode(input));
+
+            StringAssert.Contains(exception.Message, "bits past the final whole byte");
+        }
+
+        [TestMethod]
+        public void Decode_CanonicalPaddingBits_IsAccepted()
+        {
+            byte[] decoded = Base32.Decode("MZXQ");
+
+            Assert.AreEqual("fo", Encoding.ASCII.GetString(decoded));
         }
 
         [TestMethod]
