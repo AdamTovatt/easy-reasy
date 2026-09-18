@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Json;
 
 namespace EasyReasy.Auth.Tests
 {
@@ -17,26 +16,8 @@ namespace EasyReasy.Auth.Tests
     {
         private readonly SyntheticAuthenticator _authenticator;
 
-        /// <summary>The ceremony the client data records.</summary>
-        public string CeremonyType { get; set; } = CollectedClientData.RegistrationCeremonyType;
-
-        /// <summary>The challenge the client data answers, base64url-encoded.</summary>
-        public string Challenge { get; set; }
-
-        /// <summary>The origin the client data reports the ceremony ran at.</summary>
-        public string Origin { get; set; } = WebAuthnTestData.Origin;
-
-        /// <summary>
-        /// The <c>crossOrigin</c> the client data reports, or null to leave the field out entirely — which
-        /// is the case a browser produces when the page is not framed at all.
-        /// </summary>
-        public bool? CrossOrigin { get; set; } = false;
-
-        /// <summary>
-        /// Client data JSON to send instead of one built from the fields above, for the cases where what is
-        /// wrong with it is that it is not client data.
-        /// </summary>
-        public string? ClientDataJsonOverride { get; set; }
+        /// <summary>The client data the browser collected, field by field.</summary>
+        public ClientDataBuilder ClientData { get; }
 
         /// <summary>The authenticator data to place in the attestation object, field by field.</summary>
         public AuthenticatorDataBuilder AuthenticatorData { get; }
@@ -57,9 +38,6 @@ namespace EasyReasy.Auth.Tests
         /// </summary>
         public string? ReportedCredentialId { get; set; }
 
-        /// <summary>The credential type the response reports.</summary>
-        public string CredentialType { get; set; } = PublicKeyCredentialType.PublicKey;
-
         /// <summary>The transports the browser reports, or null when it reports none.</summary>
         public IEnumerable<string>? Transports { get; set; }
 
@@ -72,7 +50,7 @@ namespace EasyReasy.Auth.Tests
         public SyntheticRegistrationCeremony(SyntheticAuthenticator authenticator, string challenge)
         {
             _authenticator = authenticator;
-            Challenge = challenge;
+            ClientData = new ClientDataBuilder(CollectedClientData.RegistrationCeremonyType, challenge);
 
             AuthenticatorData = new AuthenticatorDataBuilder
             {
@@ -81,31 +59,6 @@ namespace EasyReasy.Auth.Tests
                 CredentialId = authenticator.CredentialId,
                 CredentialPublicKey = authenticator.EncodeCoseKey(),
             };
-        }
-
-        /// <summary>
-        /// Builds the collected client data JSON, as the browser would write it.
-        /// </summary>
-        private string BuildClientDataJson()
-        {
-            if (ClientDataJsonOverride != null)
-            {
-                return ClientDataJsonOverride;
-            }
-
-            Dictionary<string, object> fields = new Dictionary<string, object>
-            {
-                ["type"] = CeremonyType,
-                ["challenge"] = Challenge,
-                ["origin"] = Origin,
-            };
-
-            if (CrossOrigin != null)
-            {
-                fields["crossOrigin"] = CrossOrigin.Value;
-            }
-
-            return JsonSerializer.Serialize(fields);
         }
 
         /// <summary>
@@ -134,11 +87,11 @@ namespace EasyReasy.Auth.Tests
             string credentialId = ReportedCredentialId ?? Base64UrlEncoding.Encode(AuthenticatorData.CredentialId ?? _authenticator.CredentialId);
 
             WebAuthnAttestationResponse response = new WebAuthnAttestationResponse(
-                Base64UrlEncoding.Encode(Encoding.UTF8.GetBytes(BuildClientDataJson())),
+                Base64UrlEncoding.Encode(Encoding.UTF8.GetBytes(ClientData.Build())),
                 Base64UrlEncoding.Encode(BuildAttestationObject()),
                 Transports);
 
-            return new WebAuthnRegistrationResponse(credentialId, credentialId, CredentialType, response);
+            return new WebAuthnRegistrationResponse(credentialId, credentialId, PublicKeyCredentialType.PublicKey, response);
         }
 
         /// <summary>

@@ -9,7 +9,7 @@ namespace EasyReasy.Auth
     /// The two binary values are base64url strings rather than <c>byte[]</c>, so a credential goes into a
     /// database column and comes back out of one without the application choosing an encoding — the
     /// encoding is the library's, on both sides of the round trip, and it is the same one the browser's JSON
-    /// uses. Authentication takes these two strings back in exactly the form they are handed out in.
+    /// uses. <see cref="WebAuthnStoredCredential"/> takes these two strings back in exactly this form.
     /// </para>
     /// <para>
     /// A user may hold several credentials, and the application decides how many and how they are keyed;

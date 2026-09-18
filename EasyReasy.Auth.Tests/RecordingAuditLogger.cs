@@ -17,6 +17,7 @@ namespace EasyReasy.Auth.Tests
         public List<SessionRevocationResult> ConcurrentSessionsRevokedCalls { get; } = new List<SessionRevocationResult>();
         public List<(HttpContext? HttpContext, FamilyRetirementResult Result)> SessionSupersededCalls { get; } = new List<(HttpContext?, FamilyRetirementResult)>();
         public List<(HttpContext HttpContext, WebAuthnRegistrationResult Result)> WebAuthnRegistrationCalls { get; } = new List<(HttpContext, WebAuthnRegistrationResult)>();
+        public List<(HttpContext HttpContext, WebAuthnAuthenticationResult Result)> WebAuthnAuthenticationCalls { get; } = new List<(HttpContext, WebAuthnAuthenticationResult)>();
 
         public Task OnLoginAsync(HttpContext httpContext, LoginResult result)
         {
@@ -39,6 +40,12 @@ namespace EasyReasy.Auth.Tests
         public Task OnWebAuthnRegistrationAsync(HttpContext httpContext, WebAuthnRegistrationResult result)
         {
             WebAuthnRegistrationCalls.Add((httpContext, result));
+            return Task.CompletedTask;
+        }
+
+        public Task OnWebAuthnAuthenticationAsync(HttpContext httpContext, WebAuthnAuthenticationResult result)
+        {
+            WebAuthnAuthenticationCalls.Add((httpContext, result));
             return Task.CompletedTask;
         }
 
