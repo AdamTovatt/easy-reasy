@@ -9,73 +9,28 @@ namespace EasyReasy.Auth
     /// back after <c>navigator.credentials.get()</c> resolves.
     /// </summary>
     /// <remarks>
-    /// Constructed from the raw JSON through <see cref="FromJson"/> for the same reason its registration
-    /// counterpart is: every field here is base64url, and taking already-decoded bytes would hand that
-    /// decision to each application in turn.
+    /// The envelope — the credential id, the type, the attachment, and the guards over them — is
+    /// <see cref="WebAuthnCredentialResponse"/>'s. What an authentication adds is the assertion the
+    /// authenticator signed.
     /// </remarks>
-    public sealed class WebAuthnAuthenticationResponse
+    public sealed class WebAuthnAuthenticationResponse : WebAuthnCredentialResponse
     {
-        /// <summary>The wire (JSON) name of <see cref="Id"/>.</summary>
-        public const string IdFieldName = "id";
-
-        /// <summary>The wire (JSON) name of <see cref="RawId"/>.</summary>
-        public const string RawIdFieldName = "rawId";
-
-        /// <summary>The wire (JSON) name of <see cref="Type"/>.</summary>
-        public const string TypeFieldName = "type";
-
-        /// <summary>The wire (JSON) name of <see cref="Response"/>.</summary>
-        public const string ResponseFieldName = "response";
-
-        /// <summary>The wire (JSON) name of <see cref="AuthenticatorAttachment"/>.</summary>
-        public const string AuthenticatorAttachmentFieldName = "authenticatorAttachment";
-
-        /// <summary>
-        /// The credential id the authenticator answered with, base64url-encoded. This is the value to look
-        /// the stored credential up by.
-        /// </summary>
-        [JsonPropertyName(IdFieldName)]
-        public string Id { get; }
-
-        /// <summary>
-        /// The same credential id, base64url-encoded. A response whose <c>id</c> and <c>rawId</c> stand for
-        /// different bytes is rejected at construction rather than leaving a choice of which one it is.
-        /// </summary>
-        [JsonPropertyName(RawIdFieldName)]
-        public string RawId { get; }
-
-        /// <summary>The credential type, which WebAuthn defines exactly one of: <c>public-key</c>.</summary>
-        [JsonPropertyName(TypeFieldName)]
-        public string Type { get; }
-
         /// <summary>The assertion carrying the client data, authenticator data and signature.</summary>
         [JsonPropertyName(ResponseFieldName)]
         public WebAuthnAssertionResponse Response { get; }
 
         /// <summary>
-        /// How the authenticator was attached, or null when the browser reported nothing. Informational; a
-        /// string rather than a <see cref="WebAuthnAuthenticatorAttachment"/> for the reason given on
-        /// <see cref="WebAuthnRegistrationResponse.AuthenticatorAttachment"/>.
-        /// </summary>
-        [JsonPropertyName(AuthenticatorAttachmentFieldName)]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? AuthenticatorAttachment { get; }
-
-        /// <summary>The decoded credential id bytes, for comparison against the stored credential's.</summary>
-        internal byte[] CredentialIdBytes { get; }
-
-        /// <summary>
         /// Initializes the authentication response.
         /// </summary>
-        /// <param name="id">The base64url credential id.</param>
+        /// <param name="id">The base64url credential id. This is the value to look the stored credential up by.</param>
         /// <param name="rawId">The base64url credential id again, which must stand for the same bytes as <paramref name="id"/>.</param>
         /// <param name="type">The credential type, which must be <c>public-key</c>.</param>
         /// <param name="response">The assertion response.</param>
         /// <param name="authenticatorAttachment">How the authenticator was attached, or null.</param>
         /// <exception cref="ArgumentNullException">A required argument is null.</exception>
         /// <exception cref="ArgumentException">
-        /// An id is empty or not base64url, the two ids stand for different bytes, or the type is not
-        /// <c>public-key</c>.
+        /// An id is empty, too long or not base64url, the two ids stand for different bytes, or the type is
+        /// not <c>public-key</c>.
         /// </exception>
         public WebAuthnAuthenticationResponse(
             string id,
@@ -83,49 +38,17 @@ namespace EasyReasy.Auth
             string type,
             WebAuthnAssertionResponse response,
             string? authenticatorAttachment = null)
+            : base(id, rawId, type, authenticatorAttachment)
         {
-            ArgumentNullException.ThrowIfNull(id);
-            ArgumentNullException.ThrowIfNull(rawId);
-            ArgumentNullException.ThrowIfNull(type);
             ArgumentNullException.ThrowIfNull(response);
 
-            CredentialIdBytes = WebAuthnResponseField.Decode(id, nameof(id));
-            byte[] rawIdBytes = WebAuthnResponseField.Decode(rawId, nameof(rawId));
-
-            if (!CredentialIdBytes.AsSpan().SequenceEqual(rawIdBytes))
-            {
-                throw new ArgumentException(
-                    $"'{nameof(id)}' and '{nameof(rawId)}' are the same credential id in the browser's JSON, but these stand for different bytes.",
-                    nameof(rawId));
-            }
-
-            if (!string.Equals(type, PublicKeyCredentialType.PublicKey, StringComparison.Ordinal))
-            {
-                throw new ArgumentException(
-                    $"'{nameof(type)}' must be \"{PublicKeyCredentialType.PublicKey}\", the only credential type WebAuthn defines; got \"{type}\".",
-                    nameof(type));
-            }
-
-            Id = id;
-            RawId = rawId;
-            Type = type;
             Response = response;
-            AuthenticatorAttachment = authenticatorAttachment;
-        }
-
-        /// <summary>
-        /// Serializes this response to JSON, in the shape the browser produced it.
-        /// </summary>
-        /// <returns>The JSON representation.</returns>
-        public string ToJson()
-        {
-            return JsonSerializer.Serialize(this, JsonSerializerSettings.CurrentOptions);
         }
 
         /// <inheritdoc />
-        public override string ToString()
+        public override string ToJson()
         {
-            return ToJson();
+            return JsonSerializer.Serialize(this, JsonSerializerSettings.CurrentOptions);
         }
 
         /// <summary>
@@ -144,24 +67,24 @@ namespace EasyReasy.Auth
 
             const string what = "An authentication response";
 
-            using JsonDocument document = WebAuthnResponseField.ParseObject(json, what);
+            using JsonDocument document = WebAuthnResponseReader.ParseObject(json, what);
             JsonElement root = document.RootElement;
 
-            JsonElement responseElement = WebAuthnResponseField.ReadRequiredObject(root, ResponseFieldName, what);
+            JsonElement responseElement = WebAuthnResponseReader.ReadRequiredObject(root, ResponseFieldName, what);
             string responseSubject = $"{what}'s \"{ResponseFieldName}\"";
 
             WebAuthnAssertionResponse response = new WebAuthnAssertionResponse(
-                WebAuthnResponseField.ReadRequiredString(responseElement, WebAuthnAssertionResponse.ClientDataJsonFieldName, responseSubject),
-                WebAuthnResponseField.ReadRequiredString(responseElement, WebAuthnAssertionResponse.AuthenticatorDataFieldName, responseSubject),
-                WebAuthnResponseField.ReadRequiredString(responseElement, WebAuthnAssertionResponse.SignatureFieldName, responseSubject),
-                WebAuthnResponseField.ReadOptionalString(responseElement, WebAuthnAssertionResponse.UserHandleFieldName, responseSubject));
+                WebAuthnResponseReader.ReadRequiredString(responseElement, WebAuthnAssertionResponse.ClientDataJsonFieldName, responseSubject),
+                WebAuthnResponseReader.ReadRequiredString(responseElement, WebAuthnAssertionResponse.AuthenticatorDataFieldName, responseSubject),
+                WebAuthnResponseReader.ReadRequiredString(responseElement, WebAuthnAssertionResponse.SignatureFieldName, responseSubject),
+                WebAuthnResponseReader.ReadOptionalString(responseElement, WebAuthnAssertionResponse.UserHandleFieldName, responseSubject));
 
             return new WebAuthnAuthenticationResponse(
-                WebAuthnResponseField.ReadRequiredString(root, IdFieldName, what),
-                WebAuthnResponseField.ReadRequiredString(root, RawIdFieldName, what),
-                WebAuthnResponseField.ReadRequiredString(root, TypeFieldName, what),
+                WebAuthnResponseReader.ReadRequiredString(root, IdFieldName, what),
+                WebAuthnResponseReader.ReadRequiredString(root, RawIdFieldName, what),
+                WebAuthnResponseReader.ReadRequiredString(root, TypeFieldName, what),
                 response,
-                WebAuthnResponseField.ReadOptionalString(root, AuthenticatorAttachmentFieldName, what));
+                WebAuthnResponseReader.ReadOptionalString(root, AuthenticatorAttachmentFieldName, what));
         }
     }
 }

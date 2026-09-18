@@ -90,14 +90,14 @@ namespace EasyReasy.Auth
             ArgumentNullException.ThrowIfNull(authenticatorData);
             ArgumentNullException.ThrowIfNull(signature);
 
-            ClientDataJsonBytes = WebAuthnResponseField.Decode(clientDataJson, nameof(clientDataJson));
-            AuthenticatorDataBytes = WebAuthnResponseField.Decode(authenticatorData, nameof(authenticatorData));
-            SignatureBytes = WebAuthnResponseField.Decode(signature, nameof(signature));
+            ClientDataJsonBytes = WebAuthnResponseReader.Decode(clientDataJson, nameof(clientDataJson));
+            AuthenticatorDataBytes = WebAuthnResponseReader.Decode(authenticatorData, nameof(authenticatorData));
+            SignatureBytes = WebAuthnResponseReader.Decode(signature, nameof(signature));
 
             ClientDataJson = clientDataJson;
             AuthenticatorData = authenticatorData;
             Signature = signature;
-            UserHandle = WebAuthnResponseField.CheckOptional(userHandle, nameof(userHandle));
+            UserHandle = WebAuthnResponseReader.CheckOptional(userHandle, nameof(userHandle));
         }
     }
 }

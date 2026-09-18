@@ -163,9 +163,19 @@ namespace EasyReasy.Auth.Tests
         {
             // Pins which side of the bound is rejected; without it the cap could be off by one in the
             // direction that refuses legitimate client data and nothing would say so.
-            string json = NewClientDataJson(fieldName, new string('a', 1024));
+            string atTheLimit = new string('a', 1024);
+            CollectedClientData clientData = Parse(NewClientDataJson(fieldName, atTheLimit));
 
-            Assert.IsNotNull(Parse(json));
+            // Asserts the field came through rather than only that parsing did not throw: the return is
+            // non-nullable, so a null check could never fail whatever the parser stored.
+            string kept = fieldName switch
+            {
+                "type" => clientData.Type,
+                "challenge" => clientData.Challenge,
+                _ => clientData.Origin,
+            };
+
+            Assert.AreEqual(atTheLimit, kept);
         }
 
         /// <summary>

@@ -193,7 +193,7 @@ namespace EasyReasy.Auth.Tests
             // Padded to one character over the bound while staying a response that would otherwise parse,
             // so the length is the only thing that can reject it. Filled with junk instead, it would be
             // caught as invalid JSON and this would pass with no bound in place at all.
-            string json = PadToLength(WebAuthnResponseTestData.BrowserJson(), WebAuthnResponseField.MaximumResponseLength + 1);
+            string json = PadToLength(WebAuthnResponseTestData.BrowserJson(), WebAuthnResponseReader.MaximumResponseLength + 1);
 
             Assert.ThrowsException<ArgumentException>(() => WebAuthnRegistrationResponse.FromJson(json));
         }
@@ -203,7 +203,7 @@ namespace EasyReasy.Auth.Tests
         {
             // Pins which side of the bound is rejected; without it the cap could be off by one in the
             // direction that refuses legitimate responses and nothing would say so.
-            string json = PadToLength(WebAuthnResponseTestData.BrowserJson(), WebAuthnResponseField.MaximumResponseLength);
+            string json = PadToLength(WebAuthnResponseTestData.BrowserJson(), WebAuthnResponseReader.MaximumResponseLength);
 
             Assert.AreEqual(WebAuthnResponseTestData.CredentialId, WebAuthnRegistrationResponse.FromJson(json).Id);
         }

@@ -82,41 +82,50 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void Constructor_NameLongerThanAnAuthenticatorMustStore_Throws()
+        public void Constructor_NameLongerThanAnAuthenticatorMustStore_IsAccepted()
         {
-            // An oversized value otherwise fails inside CTAP, with an error the application cannot pin on
-            // any one of the three fields.
-            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
-                () => new PublicKeyCredentialUserEntity(new byte[] { 0x01 }, new string('a', 65), "Ada Lovelace"));
+            // The 64-byte rule is the user handle's, and applying it here would reject valid input: a name
+            // an authenticator cannot store in full is truncated by whoever cannot store it, not refused.
+            // An email address of 65 bytes is an ordinary one, and its owner has to be able to enroll.
+            PublicKeyCredentialUserEntity user = new PublicKeyCredentialUserEntity(
+                new byte[] { 0x01 },
+                new string('a', 65),
+                new string('b', 200));
 
-            Assert.AreEqual("name", exception.ParamName);
+            Assert.AreEqual(new string('a', 65), user.Name);
+            Assert.AreEqual(new string('b', 200), user.DisplayName);
         }
 
         [TestMethod]
-        public void Constructor_DisplayNameLongerThanAnAuthenticatorMustStore_Throws()
+        public void Constructor_MultiByteNameLongerThanSixtyFourBytes_IsAccepted()
         {
-            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
-                () => new PublicKeyCredentialUserEntity(new byte[] { 0x01 }, "ada@example.com", new string('a', 65)));
+            // 33 of these are 66 bytes, so this is over the handle's limit whichever way it is counted.
+            PublicKeyCredentialUserEntity user = new PublicKeyCredentialUserEntity(new byte[] { 0x01 }, new string('ä', 33), "Ada Lovelace");
 
-            Assert.AreEqual("displayName", exception.ParamName);
+            Assert.AreEqual(new string('ä', 33), user.Name);
         }
 
         [TestMethod]
-        public void Constructor_MultiByteNameWithinTheByteLimit_IsAccepted()
+        public void Constructor_UserHandleLongerThanTheSpecPermits_Throws()
         {
-            // The limit is on UTF-8 bytes, not characters: 32 of these are 64 bytes.
-            PublicKeyCredentialUserEntity user = new PublicKeyCredentialUserEntity(new byte[] { 0x01 }, new string('ä', 32), "Ada Lovelace");
+            // The handle keeps its hard limit: §5.4.3 states it as a MUST NOT, and an authenticator has
+            // nowhere to put the excess.
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => new PublicKeyCredentialUserEntity(new byte[PublicKeyCredentialUserEntity.MaximumIdLength + 1], "ada@example.com", "Ada Lovelace"));
 
-            Assert.AreEqual(new string('ä', 32), user.Name);
+            Assert.AreEqual("id", exception.ParamName);
         }
 
         [TestMethod]
-        public void Constructor_MultiByteNameOverTheByteLimit_Throws()
+        public void Constructor_UserHandleExactlyAtTheLimit_IsAccepted()
         {
-            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
-                () => new PublicKeyCredentialUserEntity(new byte[] { 0x01 }, new string('ä', 33), "Ada Lovelace"));
+            // The other half of the bound: without this the test above would pass against a limit of zero.
+            PublicKeyCredentialUserEntity user = new PublicKeyCredentialUserEntity(
+                new byte[PublicKeyCredentialUserEntity.MaximumIdLength],
+                "ada@example.com",
+                "Ada Lovelace");
 
-            Assert.AreEqual("name", exception.ParamName);
+            Assert.AreEqual(Base64UrlEncoding.Encode(new byte[PublicKeyCredentialUserEntity.MaximumIdLength]), user.Id);
         }
     }
 }

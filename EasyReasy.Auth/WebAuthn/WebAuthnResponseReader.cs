@@ -3,8 +3,8 @@ using System.Text.Json;
 namespace EasyReasy.Auth
 {
     /// <summary>
-    /// Reads the fields of a credential the browser sent back, reporting anything that is not a credential
-    /// as an <see cref="ArgumentException"/>.
+    /// Reads a credential the browser sent back — the document and its fields — reporting anything that is
+    /// not a credential as an <see cref="ArgumentException"/>.
     /// </summary>
     /// <remarks>
     /// The reading itself is <see cref="JsonFieldReader"/>'s; what this type fixes is the failure those
@@ -14,7 +14,7 @@ namespace EasyReasy.Auth
     /// ceremony can produce and still fail on is a result object instead, so an application never has to
     /// catch an exception to learn that a security key was declined.
     /// </remarks>
-    internal static class WebAuthnResponseField
+    internal static class WebAuthnResponseReader
     {
         /// <summary>
         /// Longest response body this library will parse.

@@ -43,7 +43,7 @@ namespace EasyReasy.Auth.Tests
         {
             // One character past the bound rather than an arbitrarily huge value: a test that overshot
             // would pass just as well against a bound set anywhere below it.
-            string tooLong = new string('A', WebAuthnResponseField.MaximumEncodedFieldLength + 4);
+            string tooLong = new string('A', WebAuthnResponseReader.MaximumEncodedFieldLength + 4);
 
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
                 () => NewAssertion(badField, tooLong));
@@ -59,11 +59,21 @@ namespace EasyReasy.Auth.Tests
         public void Constructor_FieldExactlyAtTheLimit_IsAccepted(string field)
         {
             // The other half of the bound: without this the test above would pass against a bound of zero.
-            string atTheLimit = new string('A', WebAuthnResponseField.MaximumEncodedFieldLength);
+            string atTheLimit = new string('A', WebAuthnResponseReader.MaximumEncodedFieldLength);
 
             WebAuthnAssertionResponse assertion = NewAssertion(field, atTheLimit);
 
-            Assert.IsNotNull(assertion);
+            // Asserts the value survived rather than only that nothing threw: the return is non-nullable,
+            // so a null check here could never fail whatever the constructor did with it.
+            string? kept = field switch
+            {
+                "clientDataJson" => assertion.ClientDataJson,
+                "authenticatorData" => assertion.AuthenticatorData,
+                "signature" => assertion.Signature,
+                _ => assertion.UserHandle,
+            };
+
+            Assert.AreEqual(atTheLimit, kept);
         }
 
         [DataTestMethod]

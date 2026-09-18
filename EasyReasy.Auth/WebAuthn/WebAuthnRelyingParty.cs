@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -62,9 +63,11 @@ namespace EasyReasy.Auth
         /// <param name="name">The human-readable name the authenticator shows the user. Surrounding whitespace is trimmed.</param>
         /// <param name="origins">
         /// The origins allowed to run a ceremony, for example <c>https://example.com</c>. Each must be an
-        /// absolute <c>http</c> or <c>https</c> URL carrying nothing but a scheme, host and optional port,
-        /// and its host must be <paramref name="id"/> or a subdomain of it. At least one is required;
-        /// duplicates that normalize to the same origin collapse.
+        /// absolute URL carrying nothing but a scheme, host and optional port, and its host must be
+        /// <paramref name="id"/> or a subdomain of it. The scheme must be <c>https</c>, or <c>http</c> for
+        /// a loopback host — <c>localhost</c>, anything under it, or a loopback address — because WebAuthn
+        /// runs only in a secure context and those are the origins a browser treats as one without TLS. At
+        /// least one is required; duplicates that normalize to the same origin collapse.
         /// </param>
         /// <exception cref="ArgumentNullException"><paramref name="id"/>, <paramref name="name"/> or <paramref name="origins"/> is null.</exception>
         /// <exception cref="ArgumentException">
@@ -119,17 +122,24 @@ namespace EasyReasy.Auth
                 errors.Add($"'{nameof(origins)}' must contain at least one allowed origin, for example \"https://example.com\".");
             }
 
-            if (errors.Count > 0)
+            // The null check is part of the same condition rather than a separate guard: a null id always
+            // added an error above, so it cannot reach here, and saying so in the condition is what lets the
+            // assignments below be written without suppressing nullability.
+            if (errors.Count > 0 || normalizedId == null)
             {
                 // No paramName: the problems are aggregated across all three parameters, and naming one of
                 // them would misattribute the rest.
                 throw new ArgumentException($"Invalid WebAuthn relying-party configuration:\n{string.Join("\n", errors)}");
             }
 
-            Id = normalizedId!;
+            Id = normalizedId;
             Name = normalizedName;
-            Origins = normalizedOrigins;
-            IdHash = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedId!));
+
+            // Frozen rather than handed out as the live set it was built in: IsAllowedOrigin reads this
+            // instance on every ceremony, so a caller who downcast the IReadOnlySet back to HashSet could
+            // add an origin that never passed the validation above, permanently and for every request.
+            Origins = normalizedOrigins.ToFrozenSet(StringComparer.Ordinal);
+            IdHash = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedId));
         }
 
         /// <summary>
@@ -204,6 +214,16 @@ namespace EasyReasy.Auth
                 return null;
             }
 
+            // WebAuthn only runs in a secure context, so a plain-http origin that is not loopback can never
+            // complete a ceremony. Rejected here for the same reason the relying-party id's suffix rule is:
+            // a deployment the browser will refuse should fail at construction rather than at its first
+            // registration. Loopback is the exception the platform itself makes — a development origin over
+            // http is a secure context, which is what lets a dev deployment work at all.
+            if (uri.Scheme == Uri.UriSchemeHttp && !IsLoopbackOrigin(uri))
+            {
+                return null;
+            }
+
             // An origin carries no path, query, fragment or userinfo. Rejecting rather than trimming them
             // keeps a configured "https://example.com/app" from silently becoming a broader origin than it
             // reads as, and keeps "https://evil.com@example.com" — which is an origin of example.com — from
@@ -224,6 +244,28 @@ namespace EasyReasy.Auth
 
             string authority = uri.IsDefaultPort ? host : $"{host}:{uri.Port}";
             return $"{uri.Scheme}://{authority}";
+        }
+
+        /// <summary>
+        /// Whether an origin's host is one the platform treats as a secure context without TLS.
+        /// </summary>
+        /// <remarks>
+        /// The set the secure-contexts specification calls potentially trustworthy by virtue of being
+        /// local: the loopback addresses, and the name <c>localhost</c> along with anything under it.
+        /// <see cref="Uri.IsLoopback"/> covers 127.0.0.0/8, ::1 and <c>localhost</c> itself but not a
+        /// subdomain of it, and browsers do treat <c>app.localhost</c> as trustworthy — so accepting only
+        /// what that property reports would refuse a development origin the browser would have run, which
+        /// is the same mistake as accepting one it would not.
+        /// </remarks>
+        private static bool IsLoopbackOrigin(Uri uri)
+        {
+            if (uri.IsLoopback)
+            {
+                return true;
+            }
+
+            string host = uri.IdnHost.ToLowerInvariant();
+            return host.EndsWith(".localhost", StringComparison.Ordinal);
         }
 
         /// <summary>
