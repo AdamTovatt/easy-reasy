@@ -22,10 +22,7 @@ namespace EasyReasy.Auth
         {
             byte[] tokenBytes = RandomNumberGenerator.GetBytes(TokenByteLength);
 
-            string token = Convert.ToBase64String(tokenBytes)
-                .Replace('+', '-')
-                .Replace('/', '_')
-                .TrimEnd('=');
+            string token = Base64UrlEncoding.Encode(tokenBytes);
 
             string tokenHash = HashToken(token);
 

@@ -5,6 +5,25 @@ namespace EasyReasy.Auth.Tests
     [TestClass]
     public class Base64UrlEncodingTests
     {
+        [DataTestMethod]
+        [DataRow(new byte[] { 0xFB, 0xFF, 0xBF })] // every character differs between the two alphabets
+        [DataRow(new byte[] { 0x01 })]             // two padding characters in standard base64
+        [DataRow(new byte[] { 0x01, 0x02 })]       // one padding character
+        [DataRow(new byte[] { 0x01, 0x02, 0x03 })] // none
+        [DataRow(new byte[0])]
+        public void Encode_MatchesTheUrlSafeTransformOfStandardBase64(byte[] value)
+        {
+            // The expression on the right is what RefreshTokenService and SecurePasswordResetTokenHandler
+            // each spelled out before they moved onto this type. Written out here rather than referenced,
+            // it is an independent oracle that the move changed no token's shape.
+            string expected = Convert.ToBase64String(value)
+                .Replace('+', '-')
+                .Replace('/', '_')
+                .TrimEnd('=');
+
+            Assert.AreEqual(expected, Base64UrlEncoding.Encode(value));
+        }
+
         [TestMethod]
         public void Encode_UsesTheUrlSafeAlphabet()
         {
