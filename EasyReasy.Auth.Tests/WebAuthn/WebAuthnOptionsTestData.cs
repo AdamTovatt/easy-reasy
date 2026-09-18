@@ -1,7 +1,9 @@
 namespace EasyReasy.Auth.Tests
 {
     /// <summary>
-    /// The generator and the inputs the options tests are written against.
+    /// The inputs the options tests are written against. The relying party and the subjects built from it
+    /// are shared, and live in <see cref="WebAuthnTestData"/>; what is here is specific to generating
+    /// options.
     /// </summary>
     internal static class WebAuthnOptionsTestData
     {
@@ -16,13 +18,6 @@ namespace EasyReasy.Auth.Tests
 
         /// <summary>The display name the test user carries, deliberately unlike <see cref="UserName"/>.</summary>
         public const string UserDisplayName = "Ada Lovelace";
-
-        /// <summary>A generator for the relying party the WebAuthn tests share.</summary>
-        public static WebAuthnOptionsGenerator NewGenerator()
-        {
-            return new WebAuthnOptionsGenerator(
-                new WebAuthnRelyingParty(WebAuthnTestData.RelyingPartyId, "Contoso", new[] { WebAuthnTestData.Origin }));
-        }
 
         /// <summary>The user the registration tests register a credential for.</summary>
         public static PublicKeyCredentialUserEntity NewUser()

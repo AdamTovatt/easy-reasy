@@ -86,11 +86,11 @@ namespace EasyReasy.Auth
         {
             ArgumentNullException.ThrowIfNull(user);
             ThrowIfTimeoutIsNotPositive(timeoutMilliseconds);
-            ThrowIfUndefined(userVerification, nameof(userVerification));
+            EnumArgument.ThrowIfUndefined(userVerification, nameof(userVerification));
 
             if (authenticatorAttachment != null)
             {
-                ThrowIfUndefined(authenticatorAttachment.Value, nameof(authenticatorAttachment));
+                EnumArgument.ThrowIfUndefined(authenticatorAttachment.Value, nameof(authenticatorAttachment));
             }
 
             IReadOnlyList<PublicKeyCredentialDescriptor>? excludeCredentials = null;
@@ -133,7 +133,7 @@ namespace EasyReasy.Auth
         {
             ArgumentNullException.ThrowIfNull(allowCredentialIds);
             ThrowIfTimeoutIsNotPositive(timeoutMilliseconds);
-            ThrowIfUndefined(userVerification, nameof(userVerification));
+            EnumArgument.ThrowIfUndefined(userVerification, nameof(userVerification));
 
             List<PublicKeyCredentialDescriptor> allowCredentials = ToDescriptors(allowCredentialIds, nameof(allowCredentialIds));
             if (allowCredentials.Count == 0)
@@ -204,20 +204,6 @@ namespace EasyReasy.Auth
             if (timeoutMilliseconds <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(timeoutMilliseconds), timeoutMilliseconds, "A ceremony timeout must be positive.");
-            }
-        }
-
-        /// <summary>
-        /// Rejects an enum value outside the declared members. The string enum converter writes an
-        /// undefined value as a number rather than failing, so without this the browser would be handed
-        /// options carrying <c>"userVerification":99</c> and nothing here would have complained.
-        /// </summary>
-        private static void ThrowIfUndefined<TEnum>(TEnum value, string parameterName)
-            where TEnum : struct, Enum
-        {
-            if (!Enum.IsDefined(value))
-            {
-                throw new ArgumentOutOfRangeException(parameterName, value, $"'{parameterName}' is not a defined {typeof(TEnum).Name} value.");
             }
         }
     }

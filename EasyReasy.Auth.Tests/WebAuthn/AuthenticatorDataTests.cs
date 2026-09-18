@@ -308,7 +308,7 @@ namespace EasyReasy.Auth.Tests
 
         private static WebAuthnParseException AssertParseError(byte[] data)
         {
-            return WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedAuthenticatorData, () => AuthenticatorData.Parse(data));
+            return WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedAuthenticatorData, () => AuthenticatorData.Parse(data));
         }
     }
 }

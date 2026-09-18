@@ -13,6 +13,24 @@ namespace EasyReasy.Auth
     /// </remarks>
     internal sealed class CollectedClientData
     {
+        /// <summary>
+        /// Longest any of the three text fields may be.
+        /// </summary>
+        /// <remarks>
+        /// These are the only attacker-controlled values this library puts into the failure message it hands
+        /// back, and that message is documented as one to log. An unbounded value there is a log entry an
+        /// attacker chooses the size of; the control-character rule below is the other half of the same
+        /// concern. The bound is far above anything legitimate — the longest of the three is an origin,
+        /// itself bounded by what a host name and port can be.
+        /// </remarks>
+        private const int MaximumFieldLength = 1024;
+
+        /// <summary>How this structure is named in the messages the reader produces.</summary>
+        private const string What = "Collected client data";
+
+        private static readonly Func<string, Exception> MalformedClientData =
+            message => new WebAuthnParseException(WebAuthnParseError.MalformedClientData, message);
+
         /// <summary>The ceremony type a registration produces.</summary>
         public const string RegistrationCeremonyType = "webauthn.create";
 
@@ -80,17 +98,27 @@ namespace EasyReasy.Auth
 
         private static string ReadRequiredString(JsonElement element, string propertyName)
         {
-            if (!element.TryGetProperty(propertyName, out JsonElement property) || property.ValueKind != JsonValueKind.String)
+            string value = JsonFieldReader.ReadRequiredString(element, propertyName, What, MalformedClientData);
+
+            if (value.Length > MaximumFieldLength)
             {
-                throw new WebAuthnParseException(WebAuthnParseError.MalformedClientData, $"Collected client data has no string \"{propertyName}\".");
+                throw new WebAuthnParseException(
+                    WebAuthnParseError.MalformedClientData,
+                    $"Collected client data's \"{propertyName}\" is {value.Length} characters; none of its fields is longer than {MaximumFieldLength}.");
             }
 
-            string value = property.GetString()!;
-            if (value.Length == 0)
+            foreach (char character in value)
             {
-                // None of the three can be empty and still mean anything, and rejecting here keeps the
-                // verifier's checks from being the place an empty value is first noticed.
-                throw new WebAuthnParseException(WebAuthnParseError.MalformedClientData, $"Collected client data has an empty \"{propertyName}\".");
+                // A newline here would end up inside the diagnostic message the verifier hands back, which
+                // an application is told to log — so a rejected ceremony could write whatever lines it liked
+                // into that log. None of the three fields can legitimately carry a control character, so the
+                // narrow fix is to refuse them rather than to escape them at every place they are quoted.
+                if (char.IsControl(character))
+                {
+                    throw new WebAuthnParseException(
+                        WebAuthnParseError.MalformedClientData,
+                        $"Collected client data's \"{propertyName}\" contains a control character.");
+                }
             }
 
             return value;
@@ -98,17 +126,7 @@ namespace EasyReasy.Auth
 
         private static bool ReadOptionalBoolean(JsonElement element, string propertyName)
         {
-            if (!element.TryGetProperty(propertyName, out JsonElement property) || property.ValueKind == JsonValueKind.Null)
-            {
-                return false;
-            }
-
-            if (property.ValueKind != JsonValueKind.True && property.ValueKind != JsonValueKind.False)
-            {
-                throw new WebAuthnParseException(WebAuthnParseError.MalformedClientData, $"Collected client data's \"{propertyName}\" is not a boolean.");
-            }
-
-            return property.ValueKind == JsonValueKind.True;
+            return JsonFieldReader.ReadOptionalBoolean(element, propertyName, What, valueWhenAbsent: false, MalformedClientData);
         }
     }
 }
