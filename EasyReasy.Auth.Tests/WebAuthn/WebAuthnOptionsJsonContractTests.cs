@@ -4,33 +4,12 @@ namespace EasyReasy.Auth.Tests
 {
     /// <summary>
     /// The JSON these options serialize to is read by a browser, so its field names and value spellings are
-    /// fixed by WebAuthn rather than by whatever serializer settings the application happens to hold. Every
-    /// test here runs under a naming policy that produces something different for each unpinned name, which
-    /// is what makes the assertions capable of failing: under the library's own camelCase options, most of
-    /// the names come out right whether or not they are pinned at all.
+    /// fixed by WebAuthn rather than by whatever serializer settings the application happens to hold.
     /// </summary>
     [TestClass]
     [DoNotParallelize]
-    public class WebAuthnOptionsJsonContractTests
+    public class WebAuthnOptionsJsonContractTests : HostileNamingPolicyTestBase
     {
-        private JsonSerializerOptions _originalOptions = null!;
-
-        [TestInitialize]
-        public void SwapInAHostileNamingPolicy()
-        {
-            _originalOptions = JsonSerializerSettings.CurrentOptions;
-            JsonSerializerSettings.CurrentOptions = new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-            };
-        }
-
-        [TestCleanup]
-        public void RestoreTheOriginalOptions()
-        {
-            JsonSerializerSettings.CurrentOptions = _originalOptions;
-        }
-
         [TestMethod]
         public void CreationOptions_CarryExactlyTheFieldsTheBrowserReads()
         {
@@ -150,7 +129,7 @@ namespace EasyReasy.Auth.Tests
         [DataRow(WebAuthnUserVerificationRequirement.Discouraged, "discouraged")]
         public void UserVerification_IsWrittenWithTheSpecSpelling(WebAuthnUserVerificationRequirement userVerification, string expected)
         {
-            string json = WebAuthnOptionsTestData.NewGenerator()
+            string json = WebAuthnTestData.NewGenerator()
                 .CreateAuthenticationOptions(new[] { WebAuthnOptionsTestData.FirstCredentialId }, userVerification)
                 .ToJson();
 
@@ -164,7 +143,7 @@ namespace EasyReasy.Auth.Tests
         {
             // "cross-platform" is not what any naming policy produces from CrossPlatform, so this is the
             // spelling most likely to drift.
-            string json = WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+            string json = WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                 WebAuthnOptionsTestData.NewUser(),
                 WebAuthnUserVerificationRequirement.Required,
                 authenticatorAttachment: attachment).ToJson();
@@ -190,7 +169,7 @@ namespace EasyReasy.Auth.Tests
 
         private static PublicKeyCredentialCreationOptions NewRegistrationOptions()
         {
-            return WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+            return WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                 WebAuthnOptionsTestData.NewUser(),
                 WebAuthnUserVerificationRequirement.Required,
                 excludeCredentialIds: new[] { WebAuthnOptionsTestData.FirstCredentialId });
@@ -198,7 +177,7 @@ namespace EasyReasy.Auth.Tests
 
         private static PublicKeyCredentialRequestOptions NewAuthenticationOptions()
         {
-            return WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(
+            return WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                 new[] { WebAuthnOptionsTestData.FirstCredentialId },
                 WebAuthnUserVerificationRequirement.Required);
         }

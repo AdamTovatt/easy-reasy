@@ -8,7 +8,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateRegistrationOptions_NamesTheRelyingPartyItWasConfiguredWith()
         {
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator()
                 .CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required);
 
             Assert.AreEqual("example.com", options.RelyingParty.Id);
@@ -18,7 +18,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateAuthenticationOptions_NamesTheRelyingPartyIdItWasConfiguredWith()
         {
-            PublicKeyCredentialRequestOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialRequestOptions options = WebAuthnTestData.NewGenerator()
                 .CreateAuthenticationOptions(new[] { WebAuthnOptionsTestData.FirstCredentialId }, WebAuthnUserVerificationRequirement.Required);
 
             Assert.AreEqual("example.com", options.RelyingPartyId);
@@ -27,7 +27,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateRegistrationOptions_ChallengeIsThirtyTwoBytesOfBase64Url()
         {
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator()
                 .CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required);
 
             Assert.AreEqual(32, Base64Url.DecodeFromChars(options.Challenge).Length);
@@ -37,7 +37,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateAuthenticationOptions_ChallengeIsThirtyTwoBytesOfBase64Url()
         {
-            PublicKeyCredentialRequestOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialRequestOptions options = WebAuthnTestData.NewGenerator()
                 .CreateAuthenticationOptions(new[] { WebAuthnOptionsTestData.FirstCredentialId }, WebAuthnUserVerificationRequirement.Required);
 
             Assert.AreEqual(32, Base64Url.DecodeFromChars(options.Challenge).Length);
@@ -47,7 +47,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateRegistrationOptions_CalledTwice_IssuesDifferentChallenges()
         {
-            WebAuthnOptionsGenerator generator = WebAuthnOptionsTestData.NewGenerator();
+            WebAuthnOptionsGenerator generator = WebAuthnTestData.NewGenerator();
 
             string first = generator.CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required).Challenge;
             string second = generator.CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required).Challenge;
@@ -58,7 +58,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateAuthenticationOptions_CalledTwice_IssuesDifferentChallenges()
         {
-            WebAuthnOptionsGenerator generator = WebAuthnOptionsTestData.NewGenerator();
+            WebAuthnOptionsGenerator generator = WebAuthnTestData.NewGenerator();
 
             string first = generator.CreateAuthenticationOptions(new[] { WebAuthnOptionsTestData.FirstCredentialId }, WebAuthnUserVerificationRequirement.Required).Challenge;
             string second = generator.CreateAuthenticationOptions(new[] { WebAuthnOptionsTestData.FirstCredentialId }, WebAuthnUserVerificationRequirement.Required).Challenge;
@@ -71,7 +71,7 @@ namespace EasyReasy.Auth.Tests
         {
             // The numbers are the IANA COSE identifiers, written out rather than read from CoseAlgorithm:
             // referring to the enum here would make the test agree with whatever the enum said.
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator()
                 .CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required);
 
             CollectionAssert.AreEqual(new[] { -7, -257 }, options.AcceptedAlgorithms.Select(parameters => parameters.Algorithm).ToArray());
@@ -83,7 +83,7 @@ namespace EasyReasy.Auth.Tests
         {
             // The list is shared by every options object this generator produces, so a caller who could
             // cast it back to an array would be editing what every later registration offers.
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator()
                 .CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required);
 
             Assert.IsNull(options.AcceptedAlgorithms as PublicKeyCredentialParameters[]);
@@ -92,7 +92,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateRegistrationOptions_AsksForNoAttestation()
         {
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator()
                 .CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required);
 
             Assert.AreEqual("none", options.Attestation);
@@ -101,7 +101,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateRegistrationOptions_AsksForNoDiscoverableCredential()
         {
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator()
                 .CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required);
 
             Assert.AreEqual("discouraged", options.AuthenticatorSelection.ResidentKey);
@@ -111,7 +111,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateRegistrationOptions_NoExcludedCredentials_LeavesTheFieldOutOfTheJson()
         {
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator()
                 .CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required);
 
             Assert.IsNull(options.ExcludeCredentials);
@@ -121,7 +121,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateRegistrationOptions_EmptyExcludedCredentials_LeavesTheFieldOutOfTheJson()
         {
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                 WebAuthnOptionsTestData.NewUser(),
                 WebAuthnUserVerificationRequirement.Required,
                 excludeCredentialIds: Array.Empty<string>());
@@ -132,7 +132,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateRegistrationOptions_ExcludedCredentials_CarriesEachOneInOrder()
         {
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                 WebAuthnOptionsTestData.NewUser(),
                 WebAuthnUserVerificationRequirement.Required,
                 excludeCredentialIds: new[] { WebAuthnOptionsTestData.FirstCredentialId, WebAuthnOptionsTestData.SecondCredentialId });
@@ -145,7 +145,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateAuthenticationOptions_CarriesEachAllowedCredentialInOrder()
         {
-            PublicKeyCredentialRequestOptions options = WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(
+            PublicKeyCredentialRequestOptions options = WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                 new[] { WebAuthnOptionsTestData.FirstCredentialId, WebAuthnOptionsTestData.SecondCredentialId },
                 WebAuthnUserVerificationRequirement.Required);
 
@@ -157,7 +157,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateRegistrationOptions_NoAttachmentRequested_LeavesTheFieldOutOfTheJson()
         {
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator()
                 .CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required);
 
             Assert.IsNull(options.AuthenticatorSelection.AuthenticatorAttachment);
@@ -169,7 +169,7 @@ namespace EasyReasy.Auth.Tests
         {
             // The value is deliberately not 60000: asserting the default would pass with the caller's
             // argument dropped on the floor.
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                 WebAuthnOptionsTestData.NewUser(),
                 WebAuthnUserVerificationRequirement.Required,
                 timeoutMilliseconds: 21000);
@@ -180,7 +180,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateAuthenticationOptions_GivenTimeout_UsesItRatherThanTheDefault()
         {
-            PublicKeyCredentialRequestOptions options = WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(
+            PublicKeyCredentialRequestOptions options = WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                 new[] { WebAuthnOptionsTestData.FirstCredentialId },
                 WebAuthnUserVerificationRequirement.Required,
                 timeoutMilliseconds: 12345);
@@ -191,7 +191,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateRegistrationOptions_NoTimeoutGiven_UsesTheDefault()
         {
-            PublicKeyCredentialCreationOptions options = WebAuthnOptionsTestData.NewGenerator()
+            PublicKeyCredentialCreationOptions options = WebAuthnTestData.NewGenerator()
                 .CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), WebAuthnUserVerificationRequirement.Required);
 
             Assert.AreEqual(60000, options.Timeout);

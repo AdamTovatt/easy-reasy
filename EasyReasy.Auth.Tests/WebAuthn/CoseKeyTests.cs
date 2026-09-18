@@ -74,7 +74,7 @@ namespace EasyReasy.Auth.Tests
 
             byte[] encoded = CborTestEncoder.EncodeCoseEc2Key(parameters.Q.X!, parameters.Q.Y!, keyType: 3);
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
         }
 
         [TestMethod]
@@ -86,7 +86,7 @@ namespace EasyReasy.Auth.Tests
             // Curve 2 is P-384; the coordinates are still the P-256 ones, so only the stated curve is wrong.
             byte[] encoded = CborTestEncoder.EncodeCoseEc2Key(parameters.Q.X!, parameters.Q.Y!, curve: 2);
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
         }
 
         [TestMethod]
@@ -97,7 +97,7 @@ namespace EasyReasy.Auth.Tests
 
             byte[] encoded = CborTestEncoder.EncodeCoseEc2Key(parameters.Q.X![..31], parameters.Q.Y!);
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
         }
 
         [DataTestMethod]
@@ -125,7 +125,7 @@ namespace EasyReasy.Auth.Tests
 
             byte[] encoded = builder.Build();
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
         }
 
         [TestMethod]
@@ -134,7 +134,7 @@ namespace EasyReasy.Auth.Tests
             byte[] x = Enumerable.Repeat((byte)0xAA, 32).ToArray();
             byte[] y = Enumerable.Repeat((byte)0xBB, 32).ToArray();
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(CborTestEncoder.EncodeCoseEc2Key(x, y)));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(CborTestEncoder.EncodeCoseEc2Key(x, y)));
         }
 
         [TestMethod]
@@ -145,7 +145,7 @@ namespace EasyReasy.Auth.Tests
 
             byte[] encoded = CborTestEncoder.EncodeCoseRsaKey(parameters.Modulus!, parameters.Exponent!, keyType: 2);
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
         }
 
         [TestMethod]
@@ -158,7 +158,7 @@ namespace EasyReasy.Auth.Tests
 
             byte[] encoded = CborTestEncoder.EncodeCoseRsaKey(parameters.Modulus!, parameters.Exponent!, algorithm: -7);
 
-            WebAuthnParseException exception = WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseException exception = WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
             StringAssert.Contains(exception.Message, "states ES256");
         }
 
@@ -170,7 +170,7 @@ namespace EasyReasy.Auth.Tests
 
             byte[] encoded = CborTestEncoder.EncodeCoseRsaKey(parameters.Modulus!, parameters.Exponent!);
 
-            WebAuthnParseException exception = WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseException exception = WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
             StringAssert.Contains(exception.Message, "1024-bit modulus");
         }
 
@@ -183,7 +183,7 @@ namespace EasyReasy.Auth.Tests
 
             byte[] encoded = CborTestEncoder.EncodeCoseRsaKey(hugeModulus, new byte[] { 0x01, 0x00, 0x01 });
 
-            WebAuthnParseException exception = WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseException exception = WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
             StringAssert.Contains(exception.Message, "16384-bit modulus");
         }
 
@@ -209,7 +209,7 @@ namespace EasyReasy.Auth.Tests
 
             byte[] encoded = CborTestEncoder.EncodeCoseRsaKey(parameters.Modulus!, Array.Empty<byte>());
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
         }
 
         [DataTestMethod]
@@ -224,7 +224,7 @@ namespace EasyReasy.Auth.Tests
 
             byte[] encoded = CborTestEncoder.EncodeCoseEc2Key(parameters.Q.X!, parameters.Q.Y!, algorithm: algorithm);
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.UnsupportedAlgorithm, () => CoseKey.Parse(encoded));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.UnsupportedAlgorithm, () => CoseKey.Parse(encoded));
         }
 
         [TestMethod]
@@ -234,7 +234,7 @@ namespace EasyReasy.Auth.Tests
                 .With(CborTestEncoder.EncodeInteger(3), CborTestEncoder.EncodeInteger(-7))
                 .Build();
 
-            WebAuthnParseException exception = WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseException exception = WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
             StringAssert.Contains(exception.Message, "no key type");
         }
 
@@ -245,7 +245,7 @@ namespace EasyReasy.Auth.Tests
                 .With(CborTestEncoder.EncodeInteger(1), CborTestEncoder.EncodeInteger(2))
                 .Build();
 
-            WebAuthnParseException exception = WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseException exception = WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
             StringAssert.Contains(exception.Message, "no algorithm");
         }
 
@@ -267,7 +267,7 @@ namespace EasyReasy.Auth.Tests
                 .With(CborTestEncoder.EncodeInteger(-3), CborTestEncoder.EncodeByteString(parameters.Q.Y!))
                 .Build();
 
-            WebAuthnParseException exception = WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
+            WebAuthnParseException exception = WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(encoded));
             StringAssert.Contains(exception.Message, "repeats label 3");
         }
 
@@ -304,20 +304,20 @@ namespace EasyReasy.Auth.Tests
             byte[] withTrailingBytes = new byte[coseKey.Length + 2];
             coseKey.CopyTo(withTrailingBytes, 0);
 
-            WebAuthnParseException exception = WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(withTrailingBytes));
+            WebAuthnParseException exception = WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(withTrailingBytes));
             StringAssert.Contains(exception.Message, "not part of it");
         }
 
         [TestMethod]
         public void Parse_BytesThatAreNotCbor_Throws()
         {
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF }));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF }));
         }
 
         [TestMethod]
         public void Parse_CborThatIsNotAMap_Throws()
         {
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(new byte[] { 0x01 }));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedPublicKey, () => CoseKey.Parse(new byte[] { 0x01 }));
         }
     }
 }

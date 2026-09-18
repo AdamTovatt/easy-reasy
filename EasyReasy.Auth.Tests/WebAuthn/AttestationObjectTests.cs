@@ -29,7 +29,7 @@ namespace EasyReasy.Auth.Tests
 
             byte[] encoded = CborTestEncoder.EncodeAttestationObject(format, BuildAuthenticatorData(authenticator), CborTestEncoder.EncodeEmptyMap());
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.UnsupportedAttestationFormat, () => AttestationObject.Parse(encoded));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.UnsupportedAttestationFormat, () => AttestationObject.Parse(encoded));
         }
 
         [TestMethod]
@@ -148,7 +148,7 @@ namespace EasyReasy.Auth.Tests
         {
             byte[] encoded = CborTestEncoder.EncodeAttestationObject("none", new byte[10], CborTestEncoder.EncodeEmptyMap());
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedAuthenticatorData, () => AttestationObject.Parse(encoded));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedAuthenticatorData, () => AttestationObject.Parse(encoded));
         }
 
         [TestMethod]
@@ -176,7 +176,7 @@ namespace EasyReasy.Auth.Tests
 
         private static WebAuthnParseException AssertMalformed(byte[] encoded)
         {
-            return WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedAttestationObject, () => AttestationObject.Parse(encoded));
+            return WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedAttestationObject, () => AttestationObject.Parse(encoded));
         }
     }
 }

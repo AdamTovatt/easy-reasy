@@ -13,7 +13,7 @@ namespace EasyReasy.Auth.Tests
         public void CreateRegistrationOptions_NullUser_Throws()
         {
             Assert.ThrowsException<ArgumentNullException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(null!, WebAuthnUserVerificationRequirement.Required));
+                () => WebAuthnTestData.NewGenerator().CreateRegistrationOptions(null!, WebAuthnUserVerificationRequirement.Required));
         }
 
         [DataTestMethod]
@@ -22,7 +22,7 @@ namespace EasyReasy.Auth.Tests
         public void CreateRegistrationOptions_NonPositiveTimeout_Throws(int timeoutMilliseconds)
         {
             Assert.ThrowsException<ArgumentOutOfRangeException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                     WebAuthnOptionsTestData.NewUser(),
                     WebAuthnUserVerificationRequirement.Required,
                     timeoutMilliseconds: timeoutMilliseconds));
@@ -34,7 +34,7 @@ namespace EasyReasy.Auth.Tests
         public void CreateAuthenticationOptions_NonPositiveTimeout_Throws(int timeoutMilliseconds)
         {
             Assert.ThrowsException<ArgumentOutOfRangeException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                     new[] { WebAuthnOptionsTestData.FirstCredentialId },
                     WebAuthnUserVerificationRequirement.Required,
                     timeoutMilliseconds: timeoutMilliseconds));
@@ -46,7 +46,7 @@ namespace EasyReasy.Auth.Tests
             // The string enum converter writes an undefined value as a number instead of failing, so
             // without the guard the browser would be handed "userVerification":99.
             ArgumentOutOfRangeException exception = Assert.ThrowsException<ArgumentOutOfRangeException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                     WebAuthnOptionsTestData.NewUser(),
                     (WebAuthnUserVerificationRequirement)99));
 
@@ -57,7 +57,7 @@ namespace EasyReasy.Auth.Tests
         public void CreateRegistrationOptions_UndefinedAuthenticatorAttachment_Throws()
         {
             ArgumentOutOfRangeException exception = Assert.ThrowsException<ArgumentOutOfRangeException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                     WebAuthnOptionsTestData.NewUser(),
                     WebAuthnUserVerificationRequirement.Required,
                     authenticatorAttachment: (WebAuthnAuthenticatorAttachment)99));
@@ -69,7 +69,7 @@ namespace EasyReasy.Auth.Tests
         public void CreateAuthenticationOptions_UndefinedUserVerification_Throws()
         {
             ArgumentOutOfRangeException exception = Assert.ThrowsException<ArgumentOutOfRangeException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                     new[] { WebAuthnOptionsTestData.FirstCredentialId },
                     (WebAuthnUserVerificationRequirement)99));
 
@@ -82,7 +82,7 @@ namespace EasyReasy.Auth.Tests
             // An empty allowCredentials asks the browser for any discoverable credential, which is
             // passwordless login — out of scope, and not something verification here could complete.
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                     Array.Empty<string>(),
                     WebAuthnUserVerificationRequirement.Required));
 
@@ -93,7 +93,7 @@ namespace EasyReasy.Auth.Tests
         public void CreateAuthenticationOptions_NullAllowedCredentials_Throws()
         {
             Assert.ThrowsException<ArgumentNullException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(null!, WebAuthnUserVerificationRequirement.Required));
+                () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(null!, WebAuthnUserVerificationRequirement.Required));
         }
 
         [DataTestMethod]
@@ -107,7 +107,7 @@ namespace EasyReasy.Auth.Tests
             // Every one of these would otherwise reach the browser verbatim and produce a ceremony that
             // never matches the credential and never says why.
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                     new[] { credentialId },
                     WebAuthnUserVerificationRequirement.Required));
 
@@ -118,7 +118,7 @@ namespace EasyReasy.Auth.Tests
         public void CreateRegistrationOptions_ExcludedCredentialThatIsNotCanonicalBase64Url_NamesTheArgument()
         {
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                     WebAuthnOptionsTestData.NewUser(),
                     WebAuthnUserVerificationRequirement.Required,
                     excludeCredentialIds: new[] { "Y3JlZGVudGlhbC1vbmU=" }));
@@ -131,7 +131,7 @@ namespace EasyReasy.Auth.Tests
         {
             // The empty string is canonical base64url for zero bytes, so only an explicit guard rejects it.
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                     new[] { string.Empty },
                     WebAuthnUserVerificationRequirement.Required));
 
@@ -142,7 +142,7 @@ namespace EasyReasy.Auth.Tests
         public void CreateRegistrationOptions_EmptyExcludedCredentialId_NamesTheArgument()
         {
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                     WebAuthnOptionsTestData.NewUser(),
                     WebAuthnUserVerificationRequirement.Required,
                     excludeCredentialIds: new[] { string.Empty }));
@@ -154,7 +154,7 @@ namespace EasyReasy.Auth.Tests
         public void CreateAuthenticationOptions_NullCredentialId_ThrowsArgumentNullException()
         {
             ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                     new string[] { null! },
                     WebAuthnUserVerificationRequirement.Required));
 
@@ -165,7 +165,7 @@ namespace EasyReasy.Auth.Tests
         public void CreateRegistrationOptions_NullExcludedCredentialId_ThrowsArgumentNullException()
         {
             ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateRegistrationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
                     WebAuthnOptionsTestData.NewUser(),
                     WebAuthnUserVerificationRequirement.Required,
                     excludeCredentialIds: new string[] { null! }));
@@ -179,7 +179,7 @@ namespace EasyReasy.Auth.Tests
             // The message used to carry two "(Parameter …)" suffixes, the internal one first, because the
             // failure was rewrapped from a constructor deeper down.
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
-                () => WebAuthnOptionsTestData.NewGenerator().CreateAuthenticationOptions(
+                () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                     new[] { "not base64url!" },
                     WebAuthnUserVerificationRequirement.Required));
 

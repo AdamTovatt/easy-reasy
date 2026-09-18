@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 
 namespace EasyReasy.Auth.Tests
 {
@@ -124,7 +125,64 @@ namespace EasyReasy.Auth.Tests
             // a byte sequence that is not text at all.
             byte[] invalidUtf8 = new byte[] { (byte)'{', (byte)'"', 0xC3, 0x28, (byte)'"', (byte)'}' };
 
-            WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedClientData, () => CollectedClientData.Parse(invalidUtf8));
+            WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedClientData, () => CollectedClientData.Parse(invalidUtf8));
+        }
+
+        [DataTestMethod]
+        [DataRow("type")]
+        [DataRow("challenge")]
+        [DataRow("origin")]
+        public void Parse_FieldCarryingANewline_IsRejected(string fieldName)
+        {
+            // These three are the only attacker-controlled values the verifier puts into the failure
+            // message it hands back, and that message is documented as one to log. A newline in one of them
+            // is a rejected ceremony choosing what extra lines appear in the application's log.
+            string json = NewClientDataJson(fieldName, "webauthn.create\nforged log line");
+
+            WebAuthnParseException exception = AssertParseError(json);
+
+            StringAssert.Contains(exception.Message, "control character");
+        }
+
+        [DataTestMethod]
+        [DataRow("type")]
+        [DataRow("challenge")]
+        [DataRow("origin")]
+        public void Parse_FieldLongerThanAnyLegitimateValue_IsRejected(string fieldName)
+        {
+            string json = NewClientDataJson(fieldName, new string('a', 1025));
+
+            AssertParseError(json);
+        }
+
+        [DataTestMethod]
+        [DataRow("type")]
+        [DataRow("challenge")]
+        [DataRow("origin")]
+        public void Parse_FieldAtTheLengthLimit_IsAccepted(string fieldName)
+        {
+            // Pins which side of the bound is rejected; without it the cap could be off by one in the
+            // direction that refuses legitimate client data and nothing would say so.
+            string json = NewClientDataJson(fieldName, new string('a', 1024));
+
+            Assert.IsNotNull(Parse(json));
+        }
+
+        /// <summary>
+        /// Builds client data that is correct except for the named field, which carries the given value.
+        /// </summary>
+        private static string NewClientDataJson(string fieldName, string value)
+        {
+            string type = fieldName == "type" ? value : "webauthn.create";
+            string challenge = fieldName == "challenge" ? value : "Y2hhbGxlbmdl";
+            string origin = fieldName == "origin" ? value : WebAuthnTestData.Origin;
+
+            return JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["type"] = type,
+                ["challenge"] = challenge,
+                ["origin"] = origin,
+            });
         }
 
         private static CollectedClientData Parse(string json)
@@ -136,7 +194,7 @@ namespace EasyReasy.Auth.Tests
         {
             byte[] bytes = Encoding.UTF8.GetBytes(json);
 
-            return WebAuthnTestData.AssertParseError(WebAuthnParseError.MalformedClientData, () => CollectedClientData.Parse(bytes));
+            return WebAuthnParseAssert.Throws(WebAuthnParseError.MalformedClientData, () => CollectedClientData.Parse(bytes));
         }
     }
 }
