@@ -126,7 +126,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyRegistration_WrongCeremonyType_IsRejected()
         {
-            _ceremony.CeremonyType = CollectedClientData.AuthenticationCeremonyType;
+            _ceremony.ClientData.CeremonyType = CollectedClientData.AuthenticationCeremonyType;
 
             AssertFailure(WebAuthnRegistrationFailureReason.WrongCeremonyType, _ceremony);
         }
@@ -134,7 +134,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyRegistration_ChallengeFromAnotherCeremony_IsRejected()
         {
-            _ceremony.Challenge = WebAuthnTestData.OtherChallenge;
+            _ceremony.ClientData.Challenge = WebAuthnTestData.OtherChallenge;
 
             AssertFailure(WebAuthnRegistrationFailureReason.ChallengeMismatch, _ceremony);
         }
@@ -142,7 +142,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyRegistration_ChallengeThatIsNotBase64Url_IsRejectedAsAMismatch()
         {
-            _ceremony.Challenge = "not base64url!";
+            _ceremony.ClientData.Challenge = "not base64url!";
 
             AssertFailure(WebAuthnRegistrationFailureReason.ChallengeMismatch, _ceremony);
         }
@@ -152,7 +152,7 @@ namespace EasyReasy.Auth.Tests
         {
             // The browser writes unpadded base64url, but a client library that pads it has still named the
             // bytes that were issued, and failing the ceremony over a spelling would be wrong.
-            _ceremony.Challenge = WebAuthnTestData.Challenge + "=";
+            _ceremony.ClientData.Challenge = WebAuthnTestData.Challenge + "=";
 
             AssertSucceeds(_ceremony);
         }
@@ -160,7 +160,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyRegistration_OriginOutsideTheConfiguredSet_IsRejected()
         {
-            _ceremony.Origin = "https://evil.example.com";
+            _ceremony.ClientData.Origin = "https://evil.example.com";
 
             AssertFailure(WebAuthnRegistrationFailureReason.OriginNotAllowed, _ceremony);
         }
@@ -170,7 +170,7 @@ namespace EasyReasy.Auth.Tests
         {
             // Same host and port, different scheme: a different origin, and the one a page served over a
             // stripped connection would report.
-            _ceremony.Origin = "http://example.com";
+            _ceremony.ClientData.Origin = "http://example.com";
 
             AssertFailure(WebAuthnRegistrationFailureReason.OriginNotAllowed, _ceremony);
         }
@@ -178,7 +178,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyRegistration_CrossOriginCeremony_IsRejected()
         {
-            _ceremony.CrossOrigin = true;
+            _ceremony.ClientData.CrossOrigin = true;
 
             AssertFailure(WebAuthnRegistrationFailureReason.CrossOriginCeremony, _ceremony);
         }
@@ -186,7 +186,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyRegistration_NoCrossOriginField_IsAccepted()
         {
-            _ceremony.CrossOrigin = null;
+            _ceremony.ClientData.CrossOrigin = null;
 
             AssertSucceeds(_ceremony);
         }
@@ -289,7 +289,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyRegistration_ClientDataThatIsNotJson_IsRejected()
         {
-            _ceremony.ClientDataJsonOverride = "not json";
+            _ceremony.ClientData.Override = "not json";
 
             AssertFailure(WebAuthnRegistrationFailureReason.MalformedClientData, _ceremony);
         }
@@ -316,7 +316,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyRegistration_FailedCeremony_CarriesNoCredential()
         {
-            _ceremony.Challenge = WebAuthnTestData.OtherChallenge;
+            _ceremony.ClientData.Challenge = WebAuthnTestData.OtherChallenge;
 
             WebAuthnRegistrationResult result = Verify(_ceremony);
 

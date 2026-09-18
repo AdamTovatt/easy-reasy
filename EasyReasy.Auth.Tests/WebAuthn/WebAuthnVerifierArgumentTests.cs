@@ -98,9 +98,115 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual("userVerification", exception.ParamName);
         }
 
+        [TestMethod]
+        public void VerifyAuthentication_NullResponse_Throws()
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+
+            Assert.ThrowsException<ArgumentNullException>(
+                () => WebAuthnTestData.NewVerifier().VerifyAuthentication(
+                    null!,
+                    WebAuthnTestData.Challenge,
+                    NewCeremony(authenticator).StoredCredential(),
+                    WebAuthnUserVerificationRequirement.Required));
+        }
+
+        [TestMethod]
+        public void VerifyAuthentication_NullChallenge_Throws()
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
+
+            Assert.ThrowsException<ArgumentNullException>(
+                () => WebAuthnTestData.NewVerifier().VerifyAuthentication(
+                    ceremony.Build(),
+                    null!,
+                    ceremony.StoredCredential(),
+                    WebAuthnUserVerificationRequirement.Required));
+        }
+
+        [TestMethod]
+        public void VerifyAuthentication_NullStoredCredential_Throws()
+        {
+            // The argument without which there is nothing to verify against. Left unguarded it would
+            // surface as a null reference from inside the credential-id comparison.
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+
+            Assert.ThrowsException<ArgumentNullException>(
+                () => WebAuthnTestData.NewVerifier().VerifyAuthentication(
+                    NewCeremony(authenticator).Build(),
+                    WebAuthnTestData.Challenge,
+                    null!,
+                    WebAuthnUserVerificationRequirement.Required));
+        }
+
+        [DataTestMethod]
+        [DataRow("")]
+        [DataRow("not base64url!")]
+        [DataRow("+/+/")]            // the standard base64 alphabet
+        [DataRow("Y2hhbGxlbmdl")]    // canonical base64url, but of nine bytes
+        public void VerifyAuthentication_ChallengeThatWasNotIssuedInThisEncoding_Throws(string challenge)
+        {
+            AssertAssertionChallengeRejected(challenge);
+        }
+
+        [TestMethod]
+        public void VerifyAuthentication_PaddedStoredChallenge_Throws()
+        {
+            // Padding is valid base64url of the right bytes, so only re-encoding catches it — and it is the
+            // one row that separates the strict rule this path applies to the stored challenge from the lax
+            // one it applies to the challenge the browser recorded.
+            AssertAssertionChallengeRejected(WebAuthnTestData.Challenge + "=");
+        }
+
+        [TestMethod]
+        public void VerifyAuthentication_TruncatedStoredChallenge_Throws()
+        {
+            // Canonical base64url of 30 bytes rather than 32. Without the length check every assertion
+            // would be declined as a challenge mismatch, reporting an attack per attempt instead of the one
+            // storage bug behind all of them.
+            AssertAssertionChallengeRejected(WebAuthnTestData.Challenge.Substring(0, 40));
+        }
+
+        [TestMethod]
+        public void VerifyAuthentication_UndefinedUserVerification_Throws()
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
+
+            ArgumentOutOfRangeException exception = Assert.ThrowsException<ArgumentOutOfRangeException>(
+                () => WebAuthnTestData.NewVerifier().VerifyAuthentication(
+                    ceremony.Build(),
+                    WebAuthnTestData.Challenge,
+                    ceremony.StoredCredential(),
+                    (WebAuthnUserVerificationRequirement)99));
+
+            Assert.AreEqual("userVerification", exception.ParamName);
+        }
+
+        private static void AssertAssertionChallengeRejected(string challenge)
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => WebAuthnTestData.NewVerifier().VerifyAuthentication(
+                    ceremony.Build(),
+                    challenge,
+                    ceremony.StoredCredential(),
+                    WebAuthnUserVerificationRequirement.Required));
+
+            Assert.AreEqual("expectedChallenge", exception.ParamName);
+        }
+
         private static WebAuthnRegistrationResponse NewResponse(SyntheticAuthenticator authenticator)
         {
             return new SyntheticRegistrationCeremony(authenticator, WebAuthnTestData.Challenge).Build();
+        }
+
+        private static SyntheticAuthenticationCeremony NewCeremony(SyntheticAuthenticator authenticator)
+        {
+            return new SyntheticAuthenticationCeremony(authenticator, WebAuthnTestData.Challenge);
         }
     }
 }

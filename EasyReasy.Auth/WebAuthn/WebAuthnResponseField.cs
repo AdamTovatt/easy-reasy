@@ -70,6 +70,29 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
+        /// Checks an optional base64url field without keeping the bytes, returning the text unchanged.
+        /// </summary>
+        /// <remarks>
+        /// Holds an optional field to the same rules as a required one when it is present. The field is
+        /// untrusted and is documented to applications as base64url they may decode, so leaving one field
+        /// of the envelope unbounded would undo on that field what bounding the envelope does for the rest
+        /// — and would hand an application a value this library called base64url without checking.
+        /// </remarks>
+        /// <param name="value">The encoded text, or null.</param>
+        /// <param name="parameterName">The parameter to name in the exception.</param>
+        /// <returns>The text, unchanged.</returns>
+        /// <exception cref="ArgumentException">The text is present and is too long, is not base64url, or stands for no bytes.</exception>
+        public static string? CheckOptional(string? value, string parameterName)
+        {
+            if (value != null)
+            {
+                Decode(value, parameterName);
+            }
+
+            return value;
+        }
+
+        /// <summary>
         /// Reads a required, non-empty string property.
         /// </summary>
         /// <param name="element">The JSON object to read from.</param>
