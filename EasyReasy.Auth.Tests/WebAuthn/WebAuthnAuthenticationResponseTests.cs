@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace EasyReasy.Auth.Tests
 {
     /// <summary>
@@ -55,6 +57,24 @@ namespace EasyReasy.Auth.Tests
                 WebAuthnAssertionTestData.BrowserJson(userHandle: "null", quoteUserHandle: false));
 
             Assert.IsNull(response.Response.UserHandle);
+        }
+
+        [TestMethod]
+        public void ToJson_WritesTheFieldNamesTheBrowserUses()
+        {
+            // The exact set, not the presence of each name: an assertion that only checks the fields it
+            // knows about passes just as well once a field has been added, which is how a body stops being
+            // the one a browser writes without any test noticing. The registration counterpart pins its
+            // two objects the same way.
+            using JsonDocument document = JsonDocument.Parse(WebAuthnAuthenticationResponse.FromJson(WebAuthnAssertionTestData.BrowserJson()).ToJson());
+
+            CollectionAssert.AreEquivalent(
+                new[] { "id", "rawId", "type", "response", "authenticatorAttachment" },
+                document.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+
+            CollectionAssert.AreEquivalent(
+                new[] { "clientDataJSON", "authenticatorData", "signature", "userHandle" },
+                document.RootElement.GetProperty("response").EnumerateObject().Select(property => property.Name).ToArray());
         }
 
         [TestMethod]
