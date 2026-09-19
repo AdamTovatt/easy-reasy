@@ -870,7 +870,7 @@ finally
 
 Server-side verification of the two WebAuthn ceremonies, for adding a hardware second factor to a user who has **already** passed a first one. Like the TOTP primitives above, these types hold nothing: `WebAuthnVerifier` is a pure function of its arguments, so the credential store, the enrollment state machine and the policy for a declined ceremony all stay in your application.
 
-Scope, deliberately: **second factor only** — no passwordless or discoverable-credential flow; **attestation `none` only** — the ceremony proves possession of a key, not which authenticator model holds it; **ES256 and RS256 only**, the two algorithms every authenticator in use implements.
+Scope, deliberately: **second factor only** — no passwordless or discoverable-credential flow, so the generated options always ask for a `discouraged` resident key and expose no setting for it; **attestation `none` only** — the ceremony proves possession of a key, not which authenticator model holds it; **ES256 and RS256 only**, the two algorithms every authenticator in use implements.
 
 ```csharp
 public sealed class WebAuthnRelyingParty   // validated at construction; every error reported at once
@@ -1000,6 +1000,7 @@ WebAuthnAuthenticationResult assertion = verifier.VerifyAuthentication(
 await auditLogger.OnWebAuthnAuthenticationAsync(httpContext, assertion);
 if (!assertion.Success) return Results.BadRequest();
 await store.UpdateSignCountAsync(stored.CredentialId, assertion.SignCount);   // unconditionally
+await store.UpdateBackedUpAsync(stored.CredentialId, assertion.BackedUp);     // it can have changed
 ```
 
 **The page's side of this is three browser APIs, and a page without them converts the values itself.** The options travel to the browser as the JSON `PublicKeyCredential.parseCreationOptionsFromJSON()` and `parseRequestOptionsFromJSON()` consume, and what a ceremony posts back is what `PublicKeyCredential.toJSON()` writes. A page that has all three needs no encoding code of its own, which is why nothing above asks an application to encode anything.
@@ -1013,12 +1014,13 @@ Feature-detect them rather than assuming them — as `window.PublicKeyCredential
 
 Padding is tolerated on every field the library decodes, so an encoder written in the page does not fail a ceremony over a spelling. `id` is the exception, and not because a check rejects it: it is kept exactly as sent, because it is the string your application looks the credential up by. A padded `id` therefore passes everything here and then matches nothing in your store, surfacing as a credential that does not exist. Send it canonical — the URL-safe alphabet, no padding — which is already what the browser's own `credential.id` is.
 
-**What this library cannot do for you.** Verification answers whether the authenticator holding a given public key signed a given challenge. It never sees your session, so four things are yours, and getting any of them wrong leaves the factor looking like it works:
+**What this library cannot do for you.** Verification answers whether the authenticator holding a given public key signed a given challenge. It never sees your session, so five things are yours, and getting any of them wrong leaves the factor looking like it works:
 
 - **Look the credential up among *that user's* credentials.** A successful assertion proves someone holds the private key for the credential you passed in — not that it belongs to the user who passed the first factor. Fetching by credential id alone, across all users, turns the second factor into a check that anyone with any enrolled key can pass. The lookup is what ties the two factors to one person.
 - **Store the challenge against the session and use it once.** `CreateRegistrationOptions` and `CreateAuthenticationOptions` return a fresh 32-byte challenge; a challenge that outlives its ceremony, or is shared between sessions, is what a replayed assertion needs. Hand back exactly the string you stored — it is checked strictly, so a value truncated by a narrow column is reported as your storage bug rather than as an attack.
 - **Write the sign counter back on every success**, including when `SignCounterState` is `NotSupported`. It is 0 there, so storing it changes nothing — and having one unconditional write is what stops an authenticator that *starts* counting (a firmware update, or a different authenticator) from being compared forever against a value that stopped being updated.
 - **Decide what a `SignCounterRegressed` result means.** WebAuthn's counter is its only clone signal, and a regression is evidence rather than proof: an authenticator restored from a backup regresses too. The library reports it and stops; locking the account, forcing re-enrollment, or alerting is policy.
+- **Decide what a backed-up credential means for your threat model.** A synced credential proves access to the user's account rather than possession of one device, and whether that still counts as a second factor is yours to decide. A `discouraged` resident key does not settle it: discoverability and syncing are separate authenticator choices. Re-read `BackedUp` on every assertion and update what you stored — an eligible credential can become backed up later.
 
 **The counter rule is not the strict comparison it looks like.** An authenticator that keeps no counter reports 0 on every assertion — Touch ID and Face ID among them, which is the factor most of your users will have — so the comparison is skipped when the stored and reported counts are *both* zero, and only then. That case is a successful result with `SignCounterState.NotSupported`; a counter that should have advanced and did not is a failure reason. The two look identical in the data and mean opposite things, so they are never reported alike: on any declined assertion `SignCounterState` is null.
 
@@ -1034,7 +1036,7 @@ Padding is tolerated on every field the library decodes, so an encoder written i
 - `userVerification` is a required parameter with no default, and an empty allow-list is rejected rather than silently meaning "any discoverable credential"
 - CBOR decoded with `System.Formats.Cbor`, which ships in the ASP.NET Core shared framework — no new package dependency
 - Audit hooks `OnWebAuthnRegistrationAsync` and `OnWebAuthnAuthenticationAsync` on `IAuthAuditLogger`, both defaulted
-- Stateless: your application owns the credential store, the challenge, the session, and the response to a cloned-credential signal
+- Stateless: your application owns the credential store, the challenge, the session, and the response to a cloned-credential signal or a synced credential
 
 ## Advanced Configuration
 
@@ -1173,7 +1175,7 @@ Version 5.7.0 is additive: a WebAuthn/FIDO2 second factor, and two audit hooks f
 - **The fix is an alias in the affected files** — `using AuthenticatorSelectionCriteria = YourNamespace.AuthenticatorSelectionCriteria;` — or deleting yours if this package's now covers it.
 
 ### New: WebAuthn/FIDO2 ceremony verification
-- **`WebAuthnRelyingParty`, `WebAuthnOptionsGenerator` and `WebAuthnVerifier`**, covering both ceremonies end to end for a second factor: the options a browser is handed, and the verification of what it posts back. See [section 13](#13-webauthn--fido2-second-factor-security-keys-touch-id-face-id) for the whole flow and for the four obligations that stay with your application.
+- **`WebAuthnRelyingParty`, `WebAuthnOptionsGenerator` and `WebAuthnVerifier`**, covering both ceremonies end to end for a second factor: the options a browser is handed, and the verification of what it posts back. See [section 13](#13-webauthn--fido2-second-factor-security-keys-touch-id-face-id) for the whole flow and for the obligations that stay with your application.
 - **Scoped deliberately.** Second factor only, attestation `none` only, ES256 and RS256 only. Passwordless and discoverable-credential flows are not supported, and an empty allow-list — which is how that mode is spelled — is rejected rather than accepted as meaning something else.
 - **Nothing is stored or resolved by the library.** `WebAuthnVerifier` is a pure function of its arguments, so it takes no `HttpContext`, no DI and no credential store. Registering anything is unnecessary; construct it where you need it.
 
