@@ -5,8 +5,8 @@ namespace EasyReasy.Auth
     /// <summary>
     /// Optional service that receives structured notifications for every authentication event
     /// the library surfaces. Register an implementation in DI to emit ISO 27001 A.12.4.1 audit
-    /// records (successful authentications, failed authentications, session termination, and
-    /// bulk session revocation).
+    /// records (successful authentications, failed authentications, second-factor enrollment, second-factor
+    /// verification, session termination, and bulk session revocation).
     /// </summary>
     /// <remarks>
     /// <para>All methods have default no-op implementations — implement only the events you care about.</para>
@@ -39,6 +39,10 @@ namespace EasyReasy.Auth
     /// logger itself. Consumers who authenticate outside the built-in HTTP endpoint flow can resolve
     /// <see cref="IAuthAuditLogger"/> from DI and invoke these hooks themselves — the library's endpoint code uses the
     /// interface exactly the same way.
+    /// <see cref="OnWebAuthnRegistrationAsync"/> and <see cref="OnWebAuthnAuthenticationAsync"/> go one step further and
+    /// are invoked by the consumer only: the WebAuthn ceremonies run partly in the browser, so this library ships no
+    /// endpoint for either and <see cref="WebAuthnVerifier"/> is a pure function that takes neither an
+    /// <see cref="HttpContext"/> nor a logger.
     /// </para>
     /// <para>
     /// <b>Default-interface-method caveat</b>: the no-op defaults only resolve when a method is invoked through the
@@ -81,6 +85,69 @@ namespace EasyReasy.Auth
         /// <param name="httpContext">The HTTP context of the request that triggered the event.</param>
         /// <param name="result">The structured result of the external authentication attempt.</param>
         Task OnExternalAuthAsync(HttpContext httpContext, ExternalAuthResult result) => Task.CompletedTask;
+
+        /// <summary>
+        /// Invoked after a WebAuthn registration ceremony is verified — a user enrolling a security key,
+        /// Touch ID or Face ID as a second factor. <paramref name="result"/> carries success state and,
+        /// on failure, a <see cref="WebAuthnRegistrationFailureReason"/> naming the check that rejected it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Like <see cref="OnLoginAsync"/> and <see cref="OnExternalAuthAsync"/>, this hook is not invoked
+        /// from inside the core: <see cref="WebAuthnVerifier"/> is a pure function with no HTTP context and
+        /// no DI, and the endpoint that runs the ceremony is the consumer's. Resolve
+        /// <see cref="IAuthAuditLogger"/> and call this after verifying.
+        /// </para>
+        /// <para>
+        /// The distinctions in <see cref="WebAuthnRegistrationFailureReason"/> exist for this record. A
+        /// ceremony rejected for its origin is a page running somewhere it should not be; one rejected for
+        /// a challenge is a stale or replayed enrollment; one rejected for a cleared user-verification flag
+        /// is a policy the authenticator could not meet. Logging the reason keeps them apart.
+        /// <see cref="WebAuthnRegistrationResult.FailureMessage"/> may be recorded alongside it — it names
+        /// structures rather than values, and the values it does quote are bounded and free of control
+        /// characters.
+        /// </para>
+        /// <para>
+        /// Unlike <see cref="LoginResult"/> and <see cref="ApiKeyAuthResult"/>, this result carries no
+        /// bearer credential: a verified registration yields a public key, so the serialisation caveat
+        /// above does not apply to it.
+        /// </para>
+        /// </remarks>
+        /// <param name="httpContext">The HTTP context of the request that triggered the event.</param>
+        /// <param name="result">The structured result of the registration verification.</param>
+        Task OnWebAuthnRegistrationAsync(HttpContext httpContext, WebAuthnRegistrationResult result) => Task.CompletedTask;
+
+        /// <summary>
+        /// Invoked after a WebAuthn authentication ceremony is verified — a user presenting the security
+        /// key, Touch ID or Face ID they enrolled. <paramref name="result"/> carries success state and, on
+        /// failure, a <see cref="WebAuthnAuthenticationFailureReason"/> naming the check that rejected it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Invoked by the consumer only, for the same reason as
+        /// <see cref="OnWebAuthnRegistrationAsync"/>: <see cref="WebAuthnVerifier"/> is a pure function
+        /// with no <see cref="HttpContext"/> and no DI, and the endpoint that runs the ceremony is the
+        /// consumer's.
+        /// </para>
+        /// <para>
+        /// The record an intrusion is most likely to show up in. A failed second factor is an attempt to
+        /// finish a login that already passed a first factor, so the reason matters:
+        /// <see cref="WebAuthnAuthenticationFailureReason.SignatureInvalid"/> is something answering
+        /// without the private key, <see cref="WebAuthnAuthenticationFailureReason.ChallengeMismatch"/> a
+        /// replayed assertion, and
+        /// <see cref="WebAuthnAuthenticationFailureReason.SignCounterRegressed"/> WebAuthn's one signal of
+        /// a cloned credential — evidence worth alerting on rather than counting.
+        /// <see cref="WebAuthnAuthenticationResult.FailureMessage"/> may be recorded alongside it, on the
+        /// same terms as the registration hook's.
+        /// </para>
+        /// <para>
+        /// Carries no bearer credential: a verified assertion yields a sign counter and two flags, so the
+        /// serialisation caveat above does not apply to it.
+        /// </para>
+        /// </remarks>
+        /// <param name="httpContext">The HTTP context of the request that triggered the event.</param>
+        /// <param name="result">The structured result of the authentication verification.</param>
+        Task OnWebAuthnAuthenticationAsync(HttpContext httpContext, WebAuthnAuthenticationResult result) => Task.CompletedTask;
 
         /// <summary>
         /// Invoked after a refresh token operation. <paramref name="result"/> carries success state,
