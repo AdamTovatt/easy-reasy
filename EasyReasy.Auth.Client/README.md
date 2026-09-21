@@ -167,6 +167,60 @@ await client.ForceAuthorizeAsync();
 await client.ForceReauthorizeAsync();
 ```
 
+### When the Address Is Not an Auth Server
+
+A base address that points at something other than an auth server does not fail as a connection error. A host
+that answers the auth path with a redirect to its own sign-in page returns `200` carrying HTML — a success by
+every check the client can make — so the body reaches the parser and fails there. So does a body that parses
+but is not an auth response: no `token`, or an `expiresAt` that is not a date and time.
+
+That case throws `InvalidAuthResponseException`, carrying what separates it from a genuinely corrupt response
+from the right server:
+
+| Property | What it carries |
+|---|---|
+| `RequestUri` | The URI the request ended at, **after any redirects**. This, not the configured base address, is the host that answered. `null` when the handler recorded none. |
+| `StatusCode` | The status the endpoint answered with. Always a success status — an unsuccessful one is reported before the body is parsed. |
+| `ContentType` | The response's content type, or `null` when it carried none. `text/html` here is the signature of a sign-in page. |
+| `BodySnippet` | The start of the body, capped at `InvalidAuthResponseException.BodySnippetLength` characters, whitespace collapsed, with a trailing `…` when the body continued. Values under a name containing `token`, `secret` or `password` are replaced with `[REDACTED]`, whether the name is a JSON property or an HTML field — a body that nearly is an auth response carries a real token, and a sign-in page carries the hidden fields of one. |
+
+The failure the parse reported is kept as the inner exception: an `ArgumentException` from
+`AuthResponse.FromJson`, which itself carries the `JsonException` when the body failed to parse at all. A body
+that parses but is not an auth response has no `JsonException` under it — what was wrong with it is in the
+`ArgumentException`'s message.
+
+The body is read under a cap of 64 K characters. An auth response is a token, an expiry and a refresh token, so
+nothing near that size is one; a longer body is read only that far and reported as the body that is not an auth
+response. The same cap and the same redaction apply to the body of an *unsuccessful* answer, which reaches the
+message of the `UnauthorizedAccessException` or `HttpRequestException` reporting it.
+
+Redaction reads the text rather than a parsed document, which is what lets it blank a token in a body no parser
+will accept — one cut off mid-value, or JSON embedded in a page. The cost is an outer bound on what it can
+recognise: an unquoted HTML attribute value, and a value whose name is out of reach behind an unescaped quote
+earlier in a malformed body, are not blanked. Treat the snippet as a diagnosis, not as something safe to
+forward anywhere a full body would not be.
+
+```csharp
+try
+{
+    await client.EnsureAuthorizedAsync();
+}
+catch (InvalidAuthResponseException exception)
+{
+    // A consumer can say the thing the library cannot know:
+    if (exception.RequestUri?.Host == "example.com")
+        Console.WriteLine("That domain serves the public site. The API is at https://app.example.com/.");
+    else
+        Console.WriteLine(exception.Message);
+}
+```
+
+The same exception covers the refresh endpoint. An unsuccessful status there is a refusal to refresh, and the
+client falls back as before — to full re-authentication when it holds credentials, and to an
+`InvalidOperationException` when it was constructed pre-authorized and so has none. A *success* carrying
+something that is not an auth response is neither: that is the endpoint not being one, which re-authenticating
+against the same address would only repeat, so it throws here instead of falling back.
+
 ### Persisting Auth State with Callbacks
 
 All constructors accept an optional `onAuthResponseChanged` callback that fires whenever the auth state changes — on initial authentication, token refresh, or re-auth. This is useful for CLI tools and long-running processes that want to persist the token to disk:
@@ -204,6 +258,28 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
     await client.GetAsync("api/data");
 }
 ```
+
+`AuthResponse.FromJson` throws `ArgumentException` for JSON it cannot read as an auth response: not JSON at
+all, the literal `null`, a `token` or `expiresAt` that is missing or written out as `null`, or an `expiresAt`
+that is not an ISO 8601 date and time. A file truncated or overwritten by something else reads every one of
+those ways. Handle it where the persisted state is loaded, and fall back to authenticating from credentials.
+
+Reading the expiry is part of that check, so an instance that came from `FromJson` always has one: use
+`AuthResponse.ExpirationTime` for the expiry as a `DateTime` rather than parsing `ExpiresAt` again. It is
+always UTC, whatever offset the wire value carried — `ExpiresAt` parsed with a general date parser comes back
+as a local time for an offset-bearing value, and comparing that against a UTC clock is hours wrong on a machine
+that is not on UTC. Building an `AuthResponse` in code skips the check: `ExpirationTime` throws
+`FormatException` for a value that is not an ISO 8601 date and time, and the pre-authorized constructor throws
+it where it reads one, before it has touched the `HttpClient` you passed in.
+
+What counts as readable is a full calendar date, then `T` or a space, then the time, with or without an offset
+— what a server writes with the round-trip (`"O"`) format. A bare time of day and a date in a local convention
+are refused rather than read as some point in time that means nothing.
+
+A client constructed from an `AuthResponse` holds no credentials. It works for as long as its token is valid
+and its refresh token is accepted; once the token has expired with no refresh token left to redeem, there is
+nothing to re-authenticate with and the next request throws `InvalidOperationException`. That is the point at
+which a new client has to be constructed from credentials — it is not a failure the client can retry past.
 
 ### Token Expiration
 The client automatically handles token expiration:
@@ -270,6 +346,13 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
     {
         // Handle credentials the server rejected (the auth endpoint answered 401)
     }
+    catch (InvalidAuthResponseException exception)
+    {
+        // The address answered, successfully, with something that is not an auth response — so it is
+        // most likely not an auth server. Say the host-specific thing here: the library knows the
+        // address answered wrongly, and you know which addresses are supposed to be yours.
+        Console.WriteLine($"{exception.RequestUri} is not the API. Check the configured server address.");
+    }
     catch (HttpRequestException)
     {
         // Handle network/server errors. Only a 401 from the auth endpoint surfaces as
@@ -280,7 +363,37 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
 
 Note that construction itself throws when a credential carries nothing — `ArgumentNullException` for `null`, `ArgumentException` for an empty string. If your credentials come from configuration that may be unset, validate them before constructing the client, or the throw lands on the constructor line rather than inside the `try` above.
 
-## Migration from 1.6.0
+## Migration
+
+### From 1.7.0
+
+**`AuthResponse.FromJson` now rejects JSON that is not an auth response.** It previously returned an instance
+whose non-nullable properties were null when the JSON carried no `token` or no `expiresAt`, and returned one
+carrying an unreadable `expiresAt` unchecked — both failed later, at the first use, with an exception naming
+nothing that could be acted on. All of those now throw `ArgumentException`, as does an `expiresAt` that is not
+an ISO 8601 date and time and a field written out as `null`. If you were relying on the old behaviour to hold
+a half-populated response, read the fields from your own model instead.
+
+**An expiry is read as UTC.** `AuthResponse.ExpirationTime` returns the instant the wire value names, converted
+from whatever offset it carried; the client's own expiry checks use it. A server sending a non-UTC round-trip
+value was previously compared against a UTC clock as though it were UTC, so its tokens read as valid for the
+length of the offset after they expired. If you were compensating for that skew, stop.
+
+**An auth or refresh endpoint that answers successfully with something that is not an auth response now throws
+`InvalidAuthResponseException`.** It previously surfaced as a bare `ArgumentException` about deserialization,
+naming neither the address that answered nor what it said. The new exception carries both; see [When the
+Address Is Not an Auth Server](#when-the-address-is-not-an-auth-server). A `catch (ArgumentException)` around
+an authenticating call no longer catches it.
+
+**Bodies from an auth endpoint are read under a 64 K character cap, and redacted before they reach a message.** This
+covers the unsuccessful branch too, so the body quoted in an `UnauthorizedAccessException` or
+`HttpRequestException` message is now capped and has secret-looking values replaced with `[REDACTED]`. If you
+were parsing the full error body out of the message, read it from the server's response instead.
+
+**`AuthResponse.ToString()` writes the refresh token as `null` when there is none**, rather than leaving the
+field out. Both forms are redacted; only the shape of the log line changed.
+
+### From 1.6.0
 
 **Both credential constructors now reject an empty credential.** `new AuthorizedHttpClient(httpClient, "")` and `new AuthorizedHttpClient(httpClient, "", "")` previously constructed successfully and failed later, at the first request; they now throw `ArgumentException` at construction. `null` continues to throw `ArgumentNullException`, and a whitespace-only credential is still sent to the server unchanged.
 

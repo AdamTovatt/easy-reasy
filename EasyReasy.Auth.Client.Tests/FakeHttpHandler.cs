@@ -16,6 +16,17 @@ namespace EasyReasy.Auth.Client.Tests
         public IReadOnlyList<HttpRequestMessage> SentRequests => _sentRequests;
 
         /// <summary>
+        /// Whether to leave <see cref="HttpResponseMessage.RequestMessage"/> unset on the responses this handler
+        /// returns, the way a handler that recorded none would.
+        /// </summary>
+        /// <remarks>
+        /// Off by default, because the real handlers do set it. A handler that cannot be made to leave it unset is
+        /// a handler that cannot reach the branch reporting an unknown endpoint, and that branch is a message a
+        /// caller can be shown.
+        /// </remarks>
+        public bool OmitRequestMessage { get; set; }
+
+        /// <summary>
         /// Enqueues a response to be returned by the next matching request.
         /// </summary>
         /// <param name="response">The response to return.</param>
@@ -49,7 +60,16 @@ namespace EasyReasy.Auth.Client.Tests
                     $"No more responses enqueued. Request: {request.Method} {request.RequestUri}");
             }
 
-            return Task.FromResult(_responses.Dequeue());
+            HttpResponseMessage response = _responses.Dequeue();
+
+            // The real handlers set this, and code that diagnoses a wrong host reads it — a fake that left it null
+            // would report null where a running client reports an address, which is the whole of what is being tested.
+            if (!OmitRequestMessage)
+            {
+                response.RequestMessage ??= request;
+            }
+
+            return Task.FromResult(response);
         }
     }
 }
