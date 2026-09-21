@@ -3,8 +3,14 @@
 namespace EasyReasy.Auth.Client
 {
     /// <summary>
-    /// Provides centralized JSON serializer settings for the application.
+    /// The JSON serializer options the request models this client sends are built with.
     /// </summary>
+    /// <remarks>
+    /// Settable, so that a consumer can make the requests match a server that expects something else. That is also
+    /// why it stops at the requests: <see cref="AuthResponse"/> reads with options of its own, carrying the check
+    /// that a body which is not an auth response fails, and a setter here must not be able to switch that off.
+    /// The wire field names are pinned by attributes on the models either way.
+    /// </remarks>
     public static class JsonSerializerSettings
     {
         private static JsonSerializerOptions? _currentOptions;

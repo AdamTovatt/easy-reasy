@@ -1,5 +1,3 @@
-using System.Globalization;
-
 namespace EasyReasy.Auth.Client
 {
     /// <summary>
@@ -126,6 +124,13 @@ namespace EasyReasy.Auth.Client
         /// <param name="refreshEndpoint">The refresh token endpoint path, relative to the client's base address. If not specified, defaults to "api/auth/refresh".</param>
         /// <param name="logoutEndpoint">The logout endpoint path, relative to the client's base address. If not specified, defaults to "api/auth/logout".</param>
         /// <param name="onAuthResponseChanged">An optional callback invoked whenever the auth state changes (initial auth, token refresh, or re-auth).</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="httpClient"/> or <paramref name="authResponse"/> is <c>null</c>.</exception>
+        /// <exception cref="FormatException">
+        /// Thrown when <paramref name="authResponse"/> carries an expiry that is not a date and time. One read from
+        /// a server cannot be in that state, so this is about a persisted or hand-built value:
+        /// <see cref="AuthResponse.FromJson"/> is what rejects a persisted one, and it throws
+        /// <see cref="ArgumentException"/> where it does.
+        /// </exception>
         public AuthorizedHttpClient(
             HttpClient httpClient,
             AuthResponse authResponse,
@@ -177,6 +182,23 @@ namespace EasyReasy.Auth.Client
         /// Ensures the client is authorized and the token is not expired.
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
+        /// <exception cref="UnauthorizedAccessException">
+        /// Thrown when the auth endpoint rejects the credentials with a <c>401 Unauthorized</c>. The body it
+        /// answered with is carried in the message, redacted and capped the way
+        /// <see cref="InvalidAuthResponseException.BodySnippet"/> is.
+        /// </exception>
+        /// <exception cref="HttpRequestException">
+        /// Thrown when the auth endpoint answers with any other unsuccessful status, or when the request fails at
+        /// the network level.
+        /// </exception>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when the client was constructed pre-authorized and its token has expired with no refresh token
+        /// left to redeem, so there are no credentials to re-authenticate with.
+        /// </exception>
+        /// <exception cref="InvalidAuthResponseException">
+        /// Thrown when the auth or refresh endpoint answers successfully with a body that is not an
+        /// <see cref="AuthResponse"/> — most often because the base address is not an auth server.
+        /// </exception>
         public async Task EnsureAuthorizedAsync(CancellationToken cancellationToken = default)
         {
             // Quick check before acquiring the lock
@@ -205,6 +227,7 @@ namespace EasyReasy.Auth.Client
         /// This is useful when the server rejects a token that the client thinks is still valid.
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
+        /// <exception cref="InvalidAuthResponseException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which lists everything authorizing can throw.</exception>
         public async Task ForceAuthorizeAsync(CancellationToken cancellationToken = default)
         {
             await _authLock.WaitAsync(cancellationToken);
@@ -223,6 +246,7 @@ namespace EasyReasy.Auth.Client
         /// This is useful when you want to ensure a completely fresh authentication flow.
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
+        /// <exception cref="InvalidAuthResponseException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which lists everything authorizing can throw.</exception>
         public async Task ForceReauthorizeAsync(CancellationToken cancellationToken = default)
         {
             await _authLock.WaitAsync(cancellationToken);
@@ -274,8 +298,11 @@ namespace EasyReasy.Auth.Client
                     if (_refreshToken != null)
                     {
                         LogoutRequest logoutRequest = new LogoutRequest(_refreshToken);
-                        StringContent content = new StringContent(logoutRequest.ToJson(), System.Text.Encoding.UTF8, "application/json");
-                        await _httpClient.PostAsync(_logoutEndpoint, content, cancellationToken);
+
+                        // Posted the same way as the other auth endpoints, and the answer disposed without being
+                        // read: logout is best-effort and its body carries nothing this client acts on, but the
+                        // connection is the caller's HttpClient's and has to be given back.
+                        using HttpResponseMessage response = await PostAuthRequestAsync(_logoutEndpoint, logoutRequest.ToJson(), cancellationToken);
                     }
                 }
                 catch (HttpRequestException)
@@ -326,6 +353,10 @@ namespace EasyReasy.Auth.Client
         /// Thrown when the client was constructed pre-authorized and its token has expired with no refresh token
         /// left to redeem, so there are no credentials to re-authenticate with.
         /// </exception>
+        /// <exception cref="InvalidAuthResponseException">
+        /// Thrown when the auth or refresh endpoint answers successfully with a body that is not an
+        /// <see cref="AuthResponse"/> — most often because the base address is not an auth server.
+        /// </exception>
         private async Task AuthorizeAsync(CancellationToken cancellationToken = default)
         {
             // Try refresh token first if available
@@ -348,26 +379,71 @@ namespace EasyReasy.Auth.Client
 
             string json = _credentials.CreateAuthRequestJson(ClientId);
 
-            StringContent content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-
-            HttpResponseMessage response = await _httpClient.PostAsync(_credentials.AuthEndpoint, content, cancellationToken);
+            using HttpResponseMessage response = await PostAuthRequestAsync(_credentials.AuthEndpoint, json, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
-                string errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                string errorSnippet = ResponseBodySnippet.Create(await ResponseBodyReader.ReadAsync(response, cancellationToken));
 
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
-                    throw new UnauthorizedAccessException($"Authentication failed with status {response.StatusCode}. Additional information from the backend: {errorContent}");
+                    throw new UnauthorizedAccessException($"Authentication failed with status {response.StatusCode}. Additional information from the backend: {errorSnippet}");
                 }
 
-                throw new HttpRequestException($"Authentication failed. Status: {response.StatusCode}, Content: {errorContent}");
+                throw new HttpRequestException($"Authentication failed. Status: {response.StatusCode}, Content: {errorSnippet}");
             }
 
-            string responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-            AuthResponse authResponse = AuthResponse.FromJson(responseJson);
+            string responseJson = await ResponseBodyReader.ReadAsync(response, cancellationToken);
+            AuthResponse authResponse = ParseAuthResponse(response, responseJson);
 
             ApplyAuthResponse(authResponse);
+        }
+
+        /// <summary>
+        /// Posts a request to an auth endpoint.
+        /// </summary>
+        /// <remarks>
+        /// Sent with <see cref="HttpCompletionOption.ResponseHeadersRead"/> so that the answer is not held in
+        /// memory before this client has decided how much of it to read: the address may not be an auth server, and
+        /// what it answers with is read under a cap by <see cref="ResponseBodyReader"/>.
+        /// </remarks>
+        /// <param name="endpoint">The endpoint path to post to, relative to the client's base address.</param>
+        /// <param name="json">The JSON body to post.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The response, which the caller owns and must dispose.</returns>
+        private async Task<HttpResponseMessage> PostAuthRequestAsync(string endpoint, string json, CancellationToken cancellationToken)
+        {
+            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+            };
+
+            return await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        }
+
+        /// <summary>
+        /// Reads an auth endpoint's body as an <see cref="AuthResponse"/>, turning a body that is not one into an
+        /// <see cref="InvalidAuthResponseException"/> naming the endpoint that produced it.
+        /// </summary>
+        /// <remarks>
+        /// Both the authentication and the refresh path parse through here, so the two cannot drift into describing
+        /// a wrong host differently — and neither reports it as a bare deserialization failure, which names nothing
+        /// a caller can act on.
+        /// </remarks>
+        /// <param name="response">The response the body was read from.</param>
+        /// <param name="body">The body as it was read.</param>
+        /// <returns>The parsed <see cref="AuthResponse"/>.</returns>
+        /// <exception cref="InvalidAuthResponseException">Thrown when the body is not an <see cref="AuthResponse"/>.</exception>
+        private static AuthResponse ParseAuthResponse(HttpResponseMessage response, string body)
+        {
+            try
+            {
+                return AuthResponse.FromJson(body);
+            }
+            catch (ArgumentException exception)
+            {
+                throw InvalidAuthResponseException.FromResponse(response, body, exception);
+            }
         }
 
         /// <summary>
@@ -388,12 +464,17 @@ namespace EasyReasy.Auth.Client
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>True if the refresh was successful; false if it failed and full re-authentication is needed.</returns>
+        /// <exception cref="InvalidAuthResponseException">
+        /// Thrown when the refresh endpoint answers successfully with a body that is not an <see cref="AuthResponse"/>.
+        /// An unsuccessful status is a refusal to refresh and returns false; a success carrying something that is not
+        /// an auth response is the endpoint not being one, which falling back to full re-authentication would only
+        /// repeat against the same wrong address.
+        /// </exception>
         private async Task<bool> TryRefreshTokenAsync(CancellationToken cancellationToken = default)
         {
             RefreshRequest refreshRequest = new RefreshRequest(_refreshToken!);
-            StringContent content = new StringContent(refreshRequest.ToJson(), System.Text.Encoding.UTF8, "application/json");
 
-            HttpResponseMessage response = await _httpClient.PostAsync(_refreshEndpoint, content, cancellationToken);
+            using HttpResponseMessage response = await PostAuthRequestAsync(_refreshEndpoint, refreshRequest.ToJson(), cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -402,8 +483,8 @@ namespace EasyReasy.Auth.Client
                 return false;
             }
 
-            string responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-            AuthResponse authResponse = AuthResponse.FromJson(responseJson);
+            string responseJson = await ResponseBodyReader.ReadAsync(response, cancellationToken);
+            AuthResponse authResponse = ParseAuthResponse(response, responseJson);
 
             ApplyAuthResponse(authResponse);
             return true;
@@ -413,11 +494,22 @@ namespace EasyReasy.Auth.Client
         /// Applies an authentication response by setting the authorization header, token expiration, and refresh token.
         /// </summary>
         /// <param name="authResponse">The authentication response to apply.</param>
+        /// <exception cref="FormatException">
+        /// Thrown when the response's expiry is not a date and time. A response that came off the wire cannot be in
+        /// that state — <see cref="AuthResponse.FromJson"/> rejects one, and the wrong host that sends one is
+        /// reported as <see cref="InvalidAuthResponseException"/> — so this is reachable only from the
+        /// pre-authorized constructor, with a value the caller built.
+        /// </exception>
         private void ApplyAuthResponse(AuthResponse authResponse)
         {
+            // Read before anything is set. This is the one part of applying a response that can fail, and failing
+            // after the header is set would leave the caller's HttpClient holding a token from a response this
+            // client went on to reject.
+            DateTime expirationTime = authResponse.ExpirationTime;
+
             _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authResponse.Token);
             _isAuthorized = true;
-            _tokenExpiresAt = DateTime.Parse(authResponse.ExpiresAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+            _tokenExpiresAt = expirationTime;
 
             _refreshToken = authResponse.RefreshToken;
 
@@ -437,6 +529,7 @@ namespace EasyReasy.Auth.Client
         /// <param name="request">The HTTP request message.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The HTTP response message.</returns>
+        /// <exception cref="InvalidAuthResponseException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which authorizing runs first and which lists everything it can throw.</exception>
         public async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
         {
             await EnsureAuthorizedAsync(cancellationToken);
@@ -459,6 +552,7 @@ namespace EasyReasy.Auth.Client
         /// <param name="requestUri">The request URI.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The HTTP response message.</returns>
+        /// <exception cref="InvalidAuthResponseException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which authorizing runs first and which lists everything it can throw.</exception>
         public async Task<HttpResponseMessage> GetAsync(string requestUri, CancellationToken cancellationToken = default)
         {
             await EnsureAuthorizedAsync(cancellationToken);
@@ -482,6 +576,7 @@ namespace EasyReasy.Auth.Client
         /// <param name="content">The HTTP content.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The HTTP response message.</returns>
+        /// <exception cref="InvalidAuthResponseException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which authorizing runs first and which lists everything it can throw.</exception>
         public async Task<HttpResponseMessage> PostAsync(string requestUri, HttpContent content, CancellationToken cancellationToken = default)
         {
             await EnsureAuthorizedAsync(cancellationToken);

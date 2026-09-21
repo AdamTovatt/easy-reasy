@@ -56,6 +56,23 @@ namespace EasyReasy.Auth.Client.Tests
         }
 
         [TestMethod]
+        public void Constructor_PreAuthorized_UnreadableExpiry_LeavesTheHttpClientUntouched()
+        {
+            // Arrange — the HttpClient belongs to the caller and outlives a constructor that throws. Applying the
+            // response header-first would leave it carrying a Bearer token from a response the client rejected,
+            // which every later request on that client would then send.
+            FakeHttpHandler handler = new FakeHttpHandler();
+            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com") };
+            AuthResponse unreadable = new AuthResponse("my-jwt-token", "tomorrow");
+
+            // Act
+            Assert.ThrowsException<FormatException>(() => new AuthorizedHttpClient(httpClient, unreadable));
+
+            // Assert
+            Assert.IsNull(httpClient.DefaultRequestHeaders.Authorization);
+        }
+
+        [TestMethod]
         public void Constructor_PreAuthorized_SetsAuthorizationHeader()
         {
             // Arrange
