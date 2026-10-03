@@ -32,9 +32,7 @@ Install via NuGet:
 ```sh
 # In your web/API project
 dotnet add package EasyReasy.Auth
-dotnet add package Microsoft.IdentityModel.JsonWebTokens
 ```
-> Important note! You will always get 401 Unauthorized if you forget to install `Microsoft.IdentityModel.JsonWebTokens`
 
 ### 2. Configure in Program.cs
 
@@ -1205,6 +1203,16 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.8.0
+
+Version 5.8.1 is a fix: installing `EasyReasy.Auth` alone now authenticates the tokens it issues. Nothing in the API changed.
+
+### Fixed: tokens were rejected unless you installed `Microsoft.IdentityModel.JsonWebTokens` yourself
+- **The cause was a version skew inside the package's dependencies.** `Microsoft.AspNetCore.Authentication.JwtBearer` brings `Microsoft.IdentityModel.JsonWebTokens`, `System.IdentityModel.Tokens.Jwt` and the `Protocols` packages at an older version than the `Microsoft.IdentityModel.Tokens` this package references, and the mixed set fails to read every token (IDX14102), so every request got 401.
+- **The whole IdentityModel family now resolves at one version from this package alone**, and a test fails if they drift apart.
+- **If you followed the earlier README and added `Microsoft.IdentityModel.JsonWebTokens` yourself, remove that reference.** At any version other than the one this package references, it splits the family again: older fails restore with a package downgrade (NU1605), and newer lifts some of the family without the rest.
+- **`EasyReasy.Auth.Google` 1.1.1** depends on this version, so a consumer who installs only that package gets the fix too.
 
 ## Migration from 5.7.0
 

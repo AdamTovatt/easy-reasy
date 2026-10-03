@@ -17,7 +17,7 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>5.8.0</VersionPrefix>
+    <VersionPrefix>5.8.1</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
   </PropertyGroup>
 
@@ -39,7 +39,14 @@
          nupkg that nothing resolves at runtime, which is what NU1510 reports. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.7" />
+    <!-- JwtBearer brings JsonWebTokens, System.IdentityModel.Tokens.Jwt and the Protocols packages at an older
+         version than Tokens, and a mixed IdentityModel set rejects every token this package issues (IDX14102).
+         The family is therefore referenced here at one version, directly or through these references, so a
+         consumer resolves an aligned set from this package alone. IdentityModelVersionAlignmentTests fails if they drift apart. -->
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.1" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.1" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.1" />
   </ItemGroup>
 
   <ItemGroup>
