@@ -350,25 +350,5 @@ namespace EasyReasy.Auth.Tests
 
             Assert.IsTrue(elapsed.TotalMilliseconds < 1000);
         }
-
-        /// <summary>
-        /// A fake <see cref="TimeProvider"/> that allows advancing time manually for testing.
-        /// </summary>
-        private sealed class FakeTimeProvider : TimeProvider
-        {
-            private DateTimeOffset _utcNow;
-
-            public FakeTimeProvider(DateTimeOffset startTime)
-            {
-                _utcNow = startTime;
-            }
-
-            public override DateTimeOffset GetUtcNow() => _utcNow;
-
-            public void Advance(TimeSpan duration)
-            {
-                _utcNow += duration;
-            }
-        }
     }
 }

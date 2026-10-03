@@ -21,6 +21,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **WebAuthn second factor**: Server-side verification of both FIDO2 ceremonies — security keys, Touch ID, Face ID and Windows Hello — for a user who has already passed a first factor
 - **WebSocket authentication**: Opt-in, per-path acceptance of the token in the `access_token` query string, for the browser `WebSocket` that cannot send an `Authorization` header
+- **Testable clock**: One `TimeProvider` registered in DI drives token issuing, refreshing and validation, so tests can mint expired or not-yet-valid tokens
 - **Flexible configuration**: Options pattern for JWT settings (issuer, audience, clock skew) and progressive delay tuning
 - **Clear error messages**: Enforces minimum secret length for security
 
@@ -1075,6 +1076,36 @@ const socket = new WebSocket(`wss://example.com/ws/city?access_token=${encodeURI
 - **Redact `access_token` from your own logs.** The library records no URL — bearer validation calls no `IAuthAuditLogger` hook — but your reverse proxy's access log, `Microsoft.AspNetCore.HttpLogging` with `HttpLoggingFields.RequestQuery`, and request-logging middleware all may. A token in a URL can also end up in browser history, so keep these tokens short-lived.
 - **Close a connection whose token has expired.** The token is validated once, at the handshake; a WebSocket connection outlives it. If a session must end when its access token expires or is revoked, read the `exp` claim when the connection opens and close the socket yourself.
 
+### 15. Controlling the Clock (`TimeProvider`)
+
+The services the library registers read one clock when they issue, refresh and validate tokens: the `TimeProvider` registered in DI, which defaults to `TimeProvider.System`. Register a fake one in a test and you can mint an expired or not-yet-valid token, then watch the server reject it:
+
+```csharp
+// Microsoft.Extensions.TimeProvider.Testing
+FakeTimeProvider clock = new FakeTimeProvider(new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero));
+
+builder.Services.AddEasyReasyAuth(jwtSecret);
+builder.Services.AddSingleton<TimeProvider>(clock);  // before or after AddEasyReasyAuth
+
+// ...
+IJwtTokenService tokens = app.Services.GetRequiredService<IJwtTokenService>();
+string token = tokens.CreateToken("user-1", "user", [], [], clock.GetUtcNow().UtcDateTime.AddHours(1));
+// accepted now
+clock.Advance(TimeSpan.FromHours(2));
+// rejected: expired on the same clock that issued it
+```
+
+**What follows the registered clock:**
+- **`JwtTokenService`** stamps each token's `nbf` and `iat` from it. Constructed directly, `new JwtTokenService(secret, issuer, audience, timeProvider)` takes it; the existing constructor reads the system clock. `RefreshAsync` mints with whichever `IJwtTokenService` you pass it, so a hand-built one on the system clock would stamp `nbf` from real time and `exp` from the fake clock.
+- **`RefreshTokenService`** stamps a refresh token's `CreatedAt` and `ExpiresAt`, decides whether a presented one has expired, and sets the expiry of the access token it mints on refresh. `AddRefreshTokenService` passes the registered clock. Constructed directly, the constructor that takes every parameter explicitly accepts it.
+- **Bearer validation** checks `nbf` and `exp`, with `ClockSkew`, against it. JwtBearer copies the registered clock onto its options but still checks lifetime against the wall clock, so the library installs a `TokenValidationParameters.LifetimeValidator` that reads the registered clock. It keeps IdentityModel's rules, exception types, exception properties and messages (IDX codes included), so a rejected token is challenged with the same error as before. A test runs a grid of boundary cases through both and requires identical results.
+
+**What stays with your application:**
+- **Compute `expiresAt` from the same clock in code that runs under a fake one.** The examples above use `DateTime.UtcNow`, which is right on the system clock. `CreateToken` takes the expiry you pass, and computed from `DateTime.UtcNow` under a fake clock, it lands at a different instant from the `nbf` the library stamps, and a fake clock far enough ahead makes `CreateToken` throw because the token would expire before it is valid. Inject `TimeProvider` where you mint tokens and use `timeProvider.GetUtcNow()`.
+- **Register the clock in DI, not on `JwtBearerOptions.TimeProvider`.** Issuing and refreshing read DI, so a clock set only on the bearer options would split them from validation.
+- **A lifetime validator of your own opts out.** The library sets its validator in a plain `Configure`, so if you assign `TokenValidationParameters.LifetimeValidator`, or replace `TokenValidationParameters`, in your own `Configure<JwtBearerOptions>` registered after `AddEasyReasyAuth`, yours wins, and lifetime is then checked however yours checks it. One registered before it is overwritten, since the library assigns `TokenValidationParameters` whole.
+- **`ProgressiveDelayMiddleware` keeps the system clock.** It measures failed-attempt delays, not token lifetime.
+
 ## Advanced Configuration
 
 ### Service Registration Options
@@ -1125,6 +1156,8 @@ builder.Services.AddEasyReasyAuth(jwtSecret, options =>
 // Manually register your own implementation
 builder.Services.AddSingleton<IJwtTokenService>(new MyCustomJwtTokenService(jwtSecret, issuer));
 ```
+
+An implementation of your own stamps `nbf` from whatever clock it reads. To keep it on the clock bearer validation uses (see [section 15](#15-controlling-the-clock-timeprovider)), resolve `TimeProvider` from DI, or register `new JwtTokenService(jwtSecret, issuer, audience, provider.GetRequiredService<TimeProvider>())`.
 
 This is useful for:
 - **Testing scenarios**: Mock the service in unit tests
@@ -1203,6 +1236,19 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.8.1
+
+Version 5.9.0 lets one registered `TimeProvider` drive token issuing, refreshing and validation. With no `TimeProvider` of your own registered, the clock is the system clock as before, and no existing constructor or signature changed.
+
+### New: the registered `TimeProvider` is the library's clock
+- **`AddEasyReasyAuth` and `AddRefreshTokenService` register `TimeProvider.System` if nothing else is registered**, and every token clock reads the registered one. See [section 15](#15-controlling-the-clock-timeprovider).
+- **New constructors**: `JwtTokenService(secret, issuer, audience, timeProvider)`, and a `RefreshTokenService` constructor that takes every parameter explicitly, with `timeProvider` last. The existing constructors read the system clock.
+
+### Changed: token lifetime is validated by the library's lifetime validator
+- **`AddEasyReasyAuth` now sets `TokenValidationParameters.LifetimeValidator`**, because JwtBearer's own lifetime check ignores the registered clock. On the system clock it accepts and rejects exactly what IdentityModel's check did, with the same exception types, properties and IDX-coded messages, which a differential test pins. The one observable difference: these exceptions no longer pass through IdentityModel's own logging.
+- **If you set `LifetimeValidator` yourself, or replace `TokenValidationParameters`, in a `Configure<JwtBearerOptions>` registered after `AddEasyReasyAuth`, yours still wins**, as before. It just won't follow a fake clock.
+- **Watch: a test suite that already registers a fake `TimeProvider` now moves token lifetimes too.** Bearer validation reads it, so tokens minted elsewhere on real time — for example by `new JwtTokenService(secret)` — are judged against the fake clock. A `FakeTimeProvider` left at its default start (2000-01-01) makes them all not-yet-valid (401). Mint those tokens from the registered `IJwtTokenService`, or start the fake clock at the real time.
 
 ## Migration from 5.8.0
 

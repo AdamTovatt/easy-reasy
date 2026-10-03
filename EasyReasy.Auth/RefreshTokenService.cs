@@ -17,9 +17,10 @@ namespace EasyReasy.Auth
         private readonly IAuthAuditLogger? _auditLogger;
         private readonly IRefreshClaimsResolver? _claimsResolver;
         private readonly ConcurrentSessionPolicy _concurrentSessionPolicy;
+        private readonly TimeProvider _timeProvider;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="RefreshTokenService"/> class.
+        /// Initializes a new instance of the <see cref="RefreshTokenService"/> class that reads the system clock.
         /// </summary>
         /// <param name="store">The consumer-implemented refresh token store.</param>
         /// <param name="refreshTokenLifetime">
@@ -55,6 +56,34 @@ namespace EasyReasy.Auth
             IAuthAuditLogger? auditLogger = null,
             IRefreshClaimsResolver? claimsResolver = null,
             ConcurrentSessionPolicy concurrentSessionPolicy = ConcurrentSessionPolicy.AllowMultiple)
+            : this(store, refreshTokenLifetime, accessTokenLifetime, auditLogger, claimsResolver, concurrentSessionPolicy, TimeProvider.System)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RefreshTokenService"/> class that reads the given clock.
+        /// Every parameter is explicit; the parameters shared with the other constructor mean the same here.
+        /// </summary>
+        /// <param name="store">The consumer-implemented refresh token store.</param>
+        /// <param name="refreshTokenLifetime">The lifetime of refresh tokens, or null for 30 days.</param>
+        /// <param name="accessTokenLifetime">The lifetime of access tokens created during refresh, or null for 1 hour.</param>
+        /// <param name="auditLogger">Optional audit logger; see the other constructor.</param>
+        /// <param name="claimsResolver">Optional claims/roles resolver; see the other constructor.</param>
+        /// <param name="concurrentSessionPolicy">How many concurrent sessions a single subject may hold.</param>
+        /// <param name="timeProvider">
+        /// The clock that stamps a refresh token's <c>CreatedAt</c> and <c>ExpiresAt</c>, decides whether a presented
+        /// refresh token has expired, and sets the expiry of the access token minted on refresh.
+        /// <c>AddRefreshTokenService</c> passes the <see cref="TimeProvider"/> registered in DI, which token issuing and
+        /// bearer validation also read.
+        /// </param>
+        public RefreshTokenService(
+            IRefreshTokenStore store,
+            TimeSpan? refreshTokenLifetime,
+            TimeSpan? accessTokenLifetime,
+            IAuthAuditLogger? auditLogger,
+            IRefreshClaimsResolver? claimsResolver,
+            ConcurrentSessionPolicy concurrentSessionPolicy,
+            TimeProvider timeProvider)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _refreshTokenLifetime = refreshTokenLifetime ?? TimeSpan.FromDays(30);
@@ -62,6 +91,7 @@ namespace EasyReasy.Auth
             _auditLogger = auditLogger;
             _claimsResolver = claimsResolver;
             _concurrentSessionPolicy = concurrentSessionPolicy;
+            _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         }
 
         /// <inheritdoc />
@@ -89,7 +119,7 @@ namespace EasyReasy.Auth
             string rawToken = GenerateToken();
             string tokenHash = HashToken(rawToken);
             string familyId = Guid.NewGuid().ToString();
-            DateTime now = DateTime.UtcNow;
+            DateTime now = _timeProvider.GetUtcNow().UtcDateTime;
 
             StoredRefreshToken storedToken = new StoredRefreshToken
             {
@@ -194,7 +224,7 @@ namespace EasyReasy.Auth
 
         private async Task<RefreshResult> ComputeRefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext, CancellationToken cancellationToken)
         {
-            DateTime now = DateTime.UtcNow;
+            DateTime now = _timeProvider.GetUtcNow().UtcDateTime;
             string tokenHash = HashToken(refreshToken);
             StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(tokenHash, cancellationToken);
 

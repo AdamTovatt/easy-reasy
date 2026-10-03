@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
@@ -44,25 +45,35 @@ namespace EasyReasy.Auth
 
             byte[] key = Encoding.UTF8.GetBytes(jwtSecret);
 
+            // The one clock for issuing, refreshing and validating tokens. TryAdd, so a consumer's own registration
+            // wins whether it comes before or after this call.
+            services.TryAddSingleton(TimeProvider.System);
+
             services.AddAuthentication(authOptions =>
             {
                 authOptions.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
                 authOptions.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
             })
-            .AddJwtBearer(bearerOptions =>
-            {
-                bearerOptions.TokenValidationParameters = new TokenValidationParameters
+            .AddJwtBearer();
+
+            // A plain Configure, like the rest of the parameters, so a consumer who replaces the parameters or the
+            // lifetime validator in a later Configure keeps theirs.
+            services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+                .Configure<TimeProvider>((bearerOptions, timeProvider) =>
                 {
-                    ValidateIssuer = options.Issuer != null,
-                    ValidIssuer = options.Issuer,
-                    ValidateAudience = options.Audience != null,
-                    ValidAudience = options.Audience,
-                    ValidateLifetime = true,
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(key),
-                    ClockSkew = options.ClockSkew,
-                };
-            });
+                    bearerOptions.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateIssuer = options.Issuer != null,
+                        ValidIssuer = options.Issuer,
+                        ValidateAudience = options.Audience != null,
+                        ValidAudience = options.Audience,
+                        ValidateLifetime = true,
+                        LifetimeValidator = TimeProviderLifetimeValidator.Create(timeProvider),
+                        ValidateIssuerSigningKey = true,
+                        IssuerSigningKey = new SymmetricSecurityKey(key),
+                        ClockSkew = options.ClockSkew,
+                    };
+                });
 
             if (options.QueryStringTokenPaths.Count > 0)
             {
@@ -84,7 +95,7 @@ namespace EasyReasy.Auth
             if (options.RegisterJwtTokenService)
             {
                 services.AddSingleton<IJwtTokenService>(
-                    provider => new JwtTokenService(jwtSecret, options.Issuer, options.Audience));
+                    provider => new JwtTokenService(jwtSecret, options.Issuer, options.Audience, provider.GetRequiredService<TimeProvider>()));
             }
 
             return services;
@@ -138,13 +149,15 @@ namespace EasyReasy.Auth
             ConcurrentSessionPolicy concurrentSessionPolicy = ConcurrentSessionPolicy.AllowMultiple)
             where TStore : class, IRefreshTokenStore
         {
+            services.TryAddSingleton(TimeProvider.System);
             services.AddScoped<IRefreshTokenStore, TStore>();
             services.AddScoped<IRefreshTokenService>(provider =>
             {
                 IRefreshTokenStore store = provider.GetRequiredService<IRefreshTokenStore>();
                 IAuthAuditLogger? auditLogger = provider.GetService<IAuthAuditLogger>();
                 IRefreshClaimsResolver? claimsResolver = provider.GetService<IRefreshClaimsResolver>();
-                return new RefreshTokenService(store, refreshTokenLifetime, accessTokenLifetime, auditLogger, claimsResolver, concurrentSessionPolicy);
+                TimeProvider timeProvider = provider.GetRequiredService<TimeProvider>();
+                return new RefreshTokenService(store, refreshTokenLifetime, accessTokenLifetime, auditLogger, claimsResolver, concurrentSessionPolicy, timeProvider);
             });
 
             return services;
