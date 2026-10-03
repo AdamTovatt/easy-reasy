@@ -13,15 +13,34 @@ namespace EasyReasy.Auth
         private readonly byte[] _key;
         private readonly string? _issuer;
         private readonly string? _audience;
+        private readonly TimeProvider _timeProvider;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="JwtTokenService"/> class.
+        /// Initializes a new instance of the <see cref="JwtTokenService"/> class that reads the system clock.
         /// </summary>
         /// <param name="secret">The secret key used to sign JWT tokens.</param>
         /// <param name="issuer">The issuer to use in the JWT tokens. If null, no issuer is set.</param>
         /// <param name="audience">The audience to include in the JWT tokens. If null, no audience is set.</param>
         public JwtTokenService(string secret, string? issuer = null, string? audience = null)
+            : this(secret, issuer, audience, TimeProvider.System)
         {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="JwtTokenService"/> class that reads the given clock.
+        /// </summary>
+        /// <param name="secret">The secret key used to sign JWT tokens.</param>
+        /// <param name="issuer">The issuer to use in the JWT tokens. If null, no issuer is set.</param>
+        /// <param name="audience">The audience to include in the JWT tokens. If null, no audience is set.</param>
+        /// <param name="timeProvider">
+        /// The clock that stamps each token's <c>nbf</c> and <c>iat</c>. <c>AddEasyReasyAuth</c> passes the
+        /// <see cref="TimeProvider"/> registered in DI, which bearer validation also reads, so one fake clock in a
+        /// test drives both issuing and validation.
+        /// </param>
+        public JwtTokenService(string secret, string? issuer, string? audience, TimeProvider timeProvider)
+        {
+            ArgumentNullException.ThrowIfNull(timeProvider);
+
             if (string.IsNullOrEmpty(secret))
                 throw new ArgumentException("JWT secret cannot be null or empty", nameof(secret));
 
@@ -32,6 +51,7 @@ namespace EasyReasy.Auth
             _key = secretBytes;
             _issuer = issuer;
             _audience = audience;
+            _timeProvider = timeProvider;
         }
 
         /// <summary>
@@ -50,7 +70,7 @@ namespace EasyReasy.Auth
             IEnumerable<string> roles,
             DateTime expiresAt)
         {
-            DateTime now = DateTime.UtcNow;
+            DateTime now = _timeProvider.GetUtcNow().UtcDateTime;
 
             List<Claim> claims = new List<Claim>
             {
