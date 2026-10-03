@@ -18,8 +18,14 @@ namespace EasyReasy.Auth.Tests
         {
             // IdentityModel reads a clock that TokenValidationParameters keeps non-public. Setting it here lets both
             // validators see the same instant, so cases can sit exactly on a boundary, one tick inside or one tick out.
+            // Each way IdentityModel could drift fails here, naming the member, rather than letting the grid run
+            // against the system clock.
+            const string Member = "TokenValidationParameters.TimeProvider (non-public)";
             PropertyInfo? identityModelClock = typeof(TokenValidationParameters).GetProperty("TimeProvider", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.IsNotNull(identityModelClock, "IdentityModel no longer has the non-public TokenValidationParameters.TimeProvider this oracle relies on. If it is now public, use it instead of the mirrored validator.");
+            Assert.IsNotNull(identityModelClock, $"IdentityModel no longer has {Member}, which this oracle sets. If it is now public, use it instead of the mirrored validator.");
+            Assert.AreEqual(typeof(TimeProvider), identityModelClock.PropertyType, $"{Member} is no longer a TimeProvider.");
+            Assert.IsNotNull(identityModelClock.SetMethod, $"{Member} can no longer be set.");
+            AssertIdentityModelReadsClock(identityModelClock, Member);
 
             // Clocks near either end of DateTime too, where adding the skew would overflow without saturation.
             DateTime[] clockInstants =
@@ -36,8 +42,24 @@ namespace EasyReasy.Auth.Tests
                 compared += CompareGrid(identityModelClock, clock, utcNow);
             }
 
-            // Guards the grid itself: a filter that silently emptied it would otherwise pass.
-            Assert.IsTrue(compared > 1500, $"Only {compared} cases were compared.");
+            // Guards the grid itself: a filter that silently thinned it would otherwise pass. Clocks x skews x
+            // nbf instants x exp instants x RequireExpirationTime x ValidateLifetime.
+            Assert.AreEqual(clockInstants.Length * ClockSkews.Length * 12 * 12 * 2 * 2, compared);
+        }
+
+        /// <summary>
+        /// Fails unless IdentityModel's lifetime check reads the property: a token that the system clock accepts must
+        /// be rejected once the property holds a clock past its expiry.
+        /// </summary>
+        private static void AssertIdentityModelReadsClock(PropertyInfo identityModelClock, string member)
+        {
+            DateTime utcNow = DateTime.UtcNow;
+            TokenValidationParameters parameters = new TokenValidationParameters { ClockSkew = TimeSpan.Zero };
+            identityModelClock.SetValue(parameters, new FakeTimeProvider(new DateTimeOffset(utcNow.AddDays(10))));
+
+            string outcome = Outcome(() => Validators.ValidateLifetime(utcNow.AddMinutes(-1), utcNow.AddDays(1), null, parameters), includeMessage: false);
+
+            StringAssert.StartsWith(outcome, nameof(SecurityTokenExpiredException), $"IdentityModel's lifetime check no longer reads {member}, so the grid would compare against the system clock.");
         }
 
         private static int CompareGrid(PropertyInfo identityModelClock, FakeTimeProvider clock, DateTime utcNow)
