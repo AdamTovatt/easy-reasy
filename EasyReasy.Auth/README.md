@@ -20,6 +20,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **Refresh token rotation**: Opt-in refresh tokens with automatic theft detection via token family tracking
 - **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **WebAuthn second factor**: Server-side verification of both FIDO2 ceremonies — security keys, Touch ID, Face ID and Windows Hello — for a user who has already passed a first factor
+- **WebSocket authentication**: Opt-in, per-path acceptance of the token in the `access_token` query string, for the browser `WebSocket` that cannot send an `Authorization` header
 - **Flexible configuration**: Options pattern for JWT settings (issuer, audience, clock skew) and progressive delay tuning
 - **Clear error messages**: Enforces minimum secret length for security
 
@@ -1038,6 +1039,44 @@ Padding is tolerated on every field the library decodes, so an encoder written i
 - Audit hooks `OnWebAuthnRegistrationAsync` and `OnWebAuthnAuthenticationAsync` on `IAuthAuditLogger`, both defaulted
 - Stateless: your application owns the credential store, the challenge, the session, and the response to a cloned-credential signal or a synced credential
 
+### 14. WebSocket Connections (token in the query string)
+
+A browser's `WebSocket` cannot send an `Authorization` header, so a token for a WebSocket connection has to travel in the URL. List the path prefixes where that is allowed, and the bearer handler will read the token from the `access_token` query-string parameter there, which is the convention SignalR and its clients use:
+
+```csharp
+builder.Services.AddEasyReasyAuth(jwtSecret, options =>
+{
+    options.QueryStringTokenPaths = ["/ws"];
+});
+
+app.UseEasyReasyAuth();
+app.UseWebSockets();
+
+app.Map("/ws/city", async (HttpContext context) =>
+{
+    using WebSocket socket = await context.WebSockets.AcceptWebSocketAsync();
+    string? userId = context.GetUserId(); // claims arrive exactly as with a header token
+    // ...
+}).RequireAuthorization();
+```
+
+```js
+const socket = new WebSocket(`wss://example.com/ws/city?access_token=${encodeURIComponent(accessToken)}`);
+```
+
+**The rules:**
+- **Off by default.** With `QueryStringTokenPaths` empty, a token in the query string is ignored everywhere, as it was before 5.8.0.
+- **Prefixes match by whole path segments, ignoring case** as routing does. `/ws` matches `/ws`, `/ws/city` and `/WS/city`, not `/wsx`. The prefix is compared against `HttpRequest.Path`, which excludes any `PathBase` — and, if you call `UseEasyReasyAuth()` inside an `app.Map("/prefix", ...)` branch, excludes that branch's prefix too. A prefix must start with `/` and must not end with one; `/ws/` or `/` would never match a WebSocket path, so either is rejected by `AddEasyReasyAuth` at startup.
+- **Any request on a listed path, not only WebSocket upgrades.** The listed path is the opt-in. This also means the order of `UseWebSockets()` and `UseEasyReasyAuth()` does not matter.
+- **The header wins.** The query string is read only when the request carries no `Authorization` header at all. A request with any `Authorization` header, Bearer or not, is authenticated from the header alone.
+- **A repeated `access_token` is ignored**, since it is ambiguous which token the client meant.
+- **Validation is unchanged.** A query-string token is checked against the same signature, lifetime, issuer and audience as a header token.
+- **Your own `JwtBearerEvents` keep working.** The library wraps the events you assign in `Configure<JwtBearerOptions>` — whether you set the `On...` delegates or subclass and override the methods — and passes every event through to them, without modifying your instance. Your `MessageReceived` runs first, and the query string is consulted only if it set no token and no result. Assigning `Events` in a `PostConfigure` of your own registered after `AddEasyReasyAuth` would replace the fallback. `JwtBearerOptions.EventsType` cannot be combined with it, because the handler then ignores `Events`; that combination throws `InvalidOperationException` when the bearer options are first resolved.
+
+**What stays with your application:**
+- **Redact `access_token` from your own logs.** The library records no URL — bearer validation calls no `IAuthAuditLogger` hook — but your reverse proxy's access log, `Microsoft.AspNetCore.HttpLogging` with `HttpLoggingFields.RequestQuery`, and request-logging middleware all may. A token in a URL can also end up in browser history, so keep these tokens short-lived.
+- **Close a connection whose token has expired.** The token is validated once, at the handshake; a WebSocket connection outlives it. If a session must end when its access token expires or is revoked, read the `exp` claim when the connection opens and close the socket yourself.
+
 ## Advanced Configuration
 
 ### Service Registration Options
@@ -1060,6 +1099,7 @@ builder.Services.AddEasyReasyAuth(jwtSecret, options =>
     options.Audience = "my-api";                         // null = audience validation disabled (default)
     options.ClockSkew = TimeSpan.FromSeconds(30);        // default; Microsoft default is 5 minutes
     options.RegisterJwtTokenService = true;              // default; set false to register your own
+    options.QueryStringTokenPaths = ["/ws"];             // empty = query-string tokens ignored (default); see section 14
 });
 
 app.UseEasyReasyAuth(options =>
@@ -1136,6 +1176,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **Password reset tokens**: Cryptographically secure token generation with SHA-256 hashing for storage
 - **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **WebAuthn/FIDO2 second factor**: Registration and authentication ceremonies verified server-side (attestation `none`, ES256/RS256), with result objects naming the individual check that declined a ceremony and the signature-counter rule platform authenticators need
+- **WebSocket authentication**: `QueryStringTokenPaths` lets listed paths read the token from the `access_token` query string, validated exactly as a header token, with the header taking precedence
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
 - **Claim access**: Retrieve any claim value by key or enum via `GetClaimValue()`
@@ -1164,6 +1205,15 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.7.0
+
+Version 5.8.0 is additive: one option, off by default. No behaviour changed for a consumer who does not set it, nothing was removed or resigned, and no endpoint or wire format is touched.
+
+### New: `EasyReasyAuthOptions.QueryStringTokenPaths`
+- **Path prefixes on which the bearer token may arrive in the `access_token` query string**, for WebSocket connections from a browser. See [section 14](#14-websocket-connections-token-in-the-query-string) for the rules and for what stays with your application.
+- **If you patched `JwtBearerOptions.Events` yourself to do this**, delete that patch and list the paths here instead. Keeping both is harmless — your handler runs first and the library only fills a token yours left unset — but it is two implementations of one rule.
+- **A malformed prefix now fails at startup.** Validation only applies to entries you add, so an existing configuration cannot start failing.
 
 ## Migration from 5.6.0
 

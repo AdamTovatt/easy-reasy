@@ -64,6 +64,14 @@ namespace EasyReasy.Auth
                 };
             });
 
+            if (options.QueryStringTokenPaths.Count > 0)
+            {
+                // Post-configure runs after every Configure, so it wraps a consumer's own events rather than
+                // being replaced by them.
+                QueryStringTokenFallback fallback = new QueryStringTokenFallback(options.QueryStringTokenPaths);
+                services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, fallback.Install);
+            }
+
             services.AddAuthorization(authzOptions =>
             {
                 authzOptions.AddPolicy("ApiKeyOnly", policy =>

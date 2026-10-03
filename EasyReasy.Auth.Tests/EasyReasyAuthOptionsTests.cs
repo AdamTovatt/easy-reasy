@@ -16,6 +16,35 @@ namespace EasyReasy.Auth.Tests
             Assert.IsNull(options.Audience);
             Assert.AreEqual(TimeSpan.FromSeconds(30), options.ClockSkew);
             Assert.IsTrue(options.RegisterJwtTokenService);
+            Assert.AreEqual(0, options.QueryStringTokenPaths.Count);
+        }
+
+        [TestMethod]
+        [DataRow("ws")]
+        [DataRow("/ws/")]
+        [DataRow("/")]
+        [DataRow("")]
+        public void AddEasyReasyAuth_WithQueryStringTokenPathThatNeverMatches_ShouldThrow(string path)
+        {
+            ServiceCollection services = new ServiceCollection();
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() =>
+                services.AddEasyReasyAuth(ValidSecret, options =>
+                {
+                    options.QueryStringTokenPaths = ["/api", path];
+                }));
+            Assert.AreEqual(nameof(EasyReasyAuthOptions.QueryStringTokenPaths), exception.ParamName);
+        }
+
+        [TestMethod]
+        public void AddEasyReasyAuth_WithValidQueryStringTokenPaths_ShouldNotThrow()
+        {
+            ServiceCollection services = new ServiceCollection();
+
+            services.AddEasyReasyAuth(ValidSecret, options =>
+            {
+                options.QueryStringTokenPaths = ["/ws", "/api/live/feed"];
+            });
         }
 
         [TestMethod]
