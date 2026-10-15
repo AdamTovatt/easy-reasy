@@ -79,8 +79,11 @@ namespace EasyReasy.Auth
         /// authentication response does not repeat it, so an application that does not keep it now cannot
         /// recover it later without re-enrolling the authenticator. What it is worth keeping for is the
         /// browser's own prompting — handing these values back in a later ceremony lets it ask for the
-        /// right authenticator instead of offering every kind. This library's allow-list has nowhere to put
-        /// them, so doing so means building that ceremony's options yourself.
+        /// right authenticator instead of offering every kind. Hand them back with
+        /// <see cref="CredentialId"/> as a <see cref="WebAuthnCredentialReference"/>, which
+        /// <see cref="WebAuthnOptionsGenerator"/> writes into <c>allowCredentials</c> at authentication and
+        /// <c>excludeCredentials</c> at registration. They go back exactly as stored: the generator bounds
+        /// them as registration did, and checks no vocabulary.
         /// </remarks>
         public IReadOnlyList<string>? Transports { get; }
 

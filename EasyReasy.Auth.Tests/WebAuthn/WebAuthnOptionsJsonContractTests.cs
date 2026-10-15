@@ -123,6 +123,39 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual(WebAuthnOptionsTestData.FirstCredentialId, descriptor.GetProperty("id").GetString());
         }
 
+        [TestMethod]
+        public void RequestOptions_CredentialDescriptorWithTransports_CarriesExactlyItsSpecFields()
+        {
+            string json = WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
+                new[] { new WebAuthnCredentialReference(WebAuthnOptionsTestData.FirstCredentialId, new[] { "internal", "hybrid" }) },
+                WebAuthnUserVerificationRequirement.Required).ToJson();
+
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement descriptor = document.RootElement.GetProperty("allowCredentials")[0];
+
+            CollectionAssert.AreEquivalent(new[] { "type", "id", "transports" }, PropertyNames(descriptor));
+            CollectionAssert.AreEqual(
+                new[] { "internal", "hybrid" },
+                descriptor.GetProperty("transports").EnumerateArray().Select(transport => transport.GetString()).ToArray());
+        }
+
+        [TestMethod]
+        public void CreationOptions_CredentialDescriptorWithTransports_CarriesExactlyItsSpecFields()
+        {
+            string json = WebAuthnTestData.NewGenerator().CreateRegistrationOptions(
+                WebAuthnOptionsTestData.NewUser(),
+                WebAuthnUserVerificationRequirement.Required,
+                excludeCredentials: new[] { new WebAuthnCredentialReference(WebAuthnOptionsTestData.FirstCredentialId, new[] { "usb" }) }).ToJson();
+
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement descriptor = document.RootElement.GetProperty("excludeCredentials")[0];
+
+            CollectionAssert.AreEquivalent(new[] { "type", "id", "transports" }, PropertyNames(descriptor));
+            CollectionAssert.AreEqual(
+                new[] { "usb" },
+                descriptor.GetProperty("transports").EnumerateArray().Select(transport => transport.GetString()).ToArray());
+        }
+
         [DataTestMethod]
         [DataRow(WebAuthnUserVerificationRequirement.Required, "required")]
         [DataRow(WebAuthnUserVerificationRequirement.Preferred, "preferred")]

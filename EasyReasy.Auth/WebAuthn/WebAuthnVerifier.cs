@@ -47,7 +47,7 @@ namespace EasyReasy.Auth
         /// The requirement the options were generated with. Passing a weaker value than was asked for is
         /// what would let an authenticator that skipped verification enroll under a policy that required
         /// it, so this is the same value that went into
-        /// <see cref="WebAuthnOptionsGenerator.CreateRegistrationOptions"/>.
+        /// either overload of <see cref="WebAuthnOptionsGenerator"/>'s <c>CreateRegistrationOptions</c>.
         /// </param>
         /// <returns>
         /// The outcome. Every way a real ceremony can fail is a reason on this result; nothing about a
@@ -164,7 +164,7 @@ namespace EasyReasy.Auth
         /// The requirement the options were generated with. Passing a weaker value than was asked for is
         /// what would let an authenticator that skipped verification authenticate under a policy that
         /// required it, so this is the same value that went into
-        /// <see cref="WebAuthnOptionsGenerator.CreateAuthenticationOptions"/>.
+        /// either overload of <see cref="WebAuthnOptionsGenerator"/>'s <c>CreateAuthenticationOptions</c>.
         /// </param>
         /// <returns>
         /// The outcome, carrying the sign counter to store when it succeeded. Every way a real ceremony can
