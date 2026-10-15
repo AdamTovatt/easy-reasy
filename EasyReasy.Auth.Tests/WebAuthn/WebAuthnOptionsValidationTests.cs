@@ -90,10 +90,12 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void CreateAuthenticationOptions_NullAllowedCredentials_Throws()
+        public void CreateAuthenticationOptions_NullAllowedCredentialIds_Throws()
         {
-            Assert.ThrowsException<ArgumentNullException>(
-                () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(null!, WebAuthnUserVerificationRequirement.Required));
+            ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
+                () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions((IEnumerable<string>)null!, WebAuthnUserVerificationRequirement.Required));
+
+            Assert.AreEqual("allowCredentialIds", exception.ParamName);
         }
 
         [DataTestMethod]

@@ -20,14 +20,29 @@ namespace EasyReasy.Auth
         public string Id { get; }
 
         /// <summary>
-        /// Initializes the descriptor from a credential id already validated by the caller. Internal: the
-        /// id has to be canonical base64url before it gets here, and <see cref="WebAuthnOptionsGenerator"/>
-        /// is where that is checked so the failure names the argument the application passed.
+        /// How the browser can reach this credential's authenticator, as its registration reported it, or
+        /// null to leave the field out — which is what a credential with no stored transports gets.
+        /// </summary>
+        /// <remarks>
+        /// A hint only: the browser uses it to go straight to the authenticator it names rather than
+        /// offering every kind, and the ceremony is verified the same way with or without it.
+        /// </remarks>
+        [JsonPropertyName("transports")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? Transports { get; }
+
+        /// <summary>
+        /// Initializes the descriptor from values already validated by the caller. Internal: the id has to
+        /// be canonical base64url and the transports bounded before they get here, and
+        /// <see cref="WebAuthnOptionsGenerator"/> is where that is checked so the failure names the argument
+        /// the application passed.
         /// </summary>
         /// <param name="credentialId">The stored credential id, canonical base64url.</param>
-        internal PublicKeyCredentialDescriptor(string credentialId)
+        /// <param name="transports">The stored transports, non-empty, or null to omit the field.</param>
+        internal PublicKeyCredentialDescriptor(string credentialId, IReadOnlyList<string>? transports)
         {
             Id = credentialId;
+            Transports = transports;
         }
     }
 }

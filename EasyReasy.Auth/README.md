@@ -893,11 +893,33 @@ public sealed class WebAuthnOptionsGenerator   // what the browser is handed
         IEnumerable<string>? excludeCredentialIds = null,      // the user's existing credentials
         WebAuthnAuthenticatorAttachment? authenticatorAttachment = null,
         int timeoutMilliseconds = DefaultTimeoutMilliseconds);
+    // The same, with each credential's stored transports written into its excludeCredentials entry.
+    PublicKeyCredentialCreationOptions CreateRegistrationOptions(
+        PublicKeyCredentialUserEntity user,
+        WebAuthnUserVerificationRequirement userVerification,
+        IEnumerable<WebAuthnCredentialReference> excludeCredentials,
+        WebAuthnAuthenticatorAttachment? authenticatorAttachment = null,
+        int timeoutMilliseconds = DefaultTimeoutMilliseconds);
     // allowCredentialIds must be non-empty: an empty allow-list is the passwordless mode this is not.
     PublicKeyCredentialRequestOptions CreateAuthenticationOptions(
         IEnumerable<string> allowCredentialIds,
         WebAuthnUserVerificationRequirement userVerification,
         int timeoutMilliseconds = DefaultTimeoutMilliseconds);
+    // The same, with each credential's stored transports written into its allowCredentials entry, so
+    // the browser can go straight to the authenticator the user enrolled.
+    PublicKeyCredentialRequestOptions CreateAuthenticationOptions(
+        IEnumerable<WebAuthnCredentialReference> allowCredentials,
+        WebAuthnUserVerificationRequirement userVerification,
+        int timeoutMilliseconds = DefaultTimeoutMilliseconds);
+}
+
+// A stored credential handed back to the generator. Pass both values exactly as registration reported
+// them; null or empty transports leave the field out, as the credential-id overloads do.
+public sealed class WebAuthnCredentialReference
+{
+    WebAuthnCredentialReference(string credentialId, IReadOnlyList<string>? transports = null);
+    string CredentialId { get; }
+    IReadOnlyList<string>? Transports { get; }
 }
 
 public sealed class WebAuthnVerifier   // pure; no HTTP context, no DI, no storage
@@ -924,7 +946,7 @@ public sealed class WebAuthnRegisteredCredential
     Guid Aaguid { get; }                       // authenticator model, reported for you to store
     bool BackupEligible { get; }               // fixed for the credential's life
     bool BackedUp { get; }                     // can change; re-read it from every assertion
-    IReadOnlyList<string>? Transports { get; } // recoverable from nowhere else — store it
+    IReadOnlyList<string>? Transports { get; } // recoverable from nowhere else — store it, hand it back
 }
 
 public sealed class WebAuthnStoredCredential
@@ -967,11 +989,15 @@ public enum WebAuthnSignCounterState { NotSupported, Advanced }
 Both ceremonies answer with a result carrying a reason, never an exception — a security key that failed a check is an outcome of authentication, not an error in it. An `ArgumentException` from these methods means the *request body* was not a WebAuthn credential, or that an argument your application supplied was wrong; it never means a ceremony was declined.
 
 ```csharp
-// 1. Enrolling an authenticator, for a user who is already signed in.
+// 1. Enrolling an authenticator, for a user who is already signed in. Their existing credentials go
+//    back as they were stored: each one's id and the transports its registration reported.
+IEnumerable<WebAuthnCredentialReference> existingCredentials = (await store.GetCredentialsAsync(userId))
+    .Select(credential => new WebAuthnCredentialReference(credential.CredentialId, credential.Transports));
+
 PublicKeyCredentialCreationOptions options = generator.CreateRegistrationOptions(
     new PublicKeyCredentialUserEntity(userIdBytes, "ada@example.com", "Ada Lovelace"),
     WebAuthnUserVerificationRequirement.Required,
-    excludeCredentialIds: await store.GetCredentialIdsAsync(userId));
+    excludeCredentials: existingCredentials);
 
 await sessions.StoreChallengeAsync(sessionId, options.Challenge);   // yours to keep
 return Results.Content(options.ToJson(), "application/json");        // parseCreationOptionsFromJSON()
@@ -986,16 +1012,25 @@ await auditLogger.OnWebAuthnRegistrationAsync(httpContext, result);
 if (!result.Success) return Results.BadRequest();
 await store.AddCredentialAsync(userId, result.Credential!);          // against this user
 
-// 3. Stepping up: hand out an allow-list of that user's credentials, verify the assertion.
-//    CreateAuthenticationOptions(await store.GetCredentialIdsAsync(userId), Required) issued the
-//    challenge; this is what comes back.
+// 3. Stepping up: hand out an allow-list of that user's credentials, built the same way as in step 1.
+//    The transports are what let the browser go straight to the authenticator they enrolled.
+IEnumerable<WebAuthnCredentialReference> allowCredentials = (await store.GetCredentialsAsync(userId))
+    .Select(credential => new WebAuthnCredentialReference(credential.CredentialId, credential.Transports));
+
+PublicKeyCredentialRequestOptions requestOptions = generator.CreateAuthenticationOptions(
+    allowCredentials, WebAuthnUserVerificationRequirement.Required);
+
+await sessions.StoreChallengeAsync(sessionId, requestOptions.Challenge);
+return Results.Content(requestOptions.ToJson(), "application/json"); // parseRequestOptionsFromJSON()
+
+// 4. Verifying the assertion the browser posts back.
 WebAuthnAuthenticationResponse response = WebAuthnAuthenticationResponse.FromJson(body);
 
 WebAuthnStoredCredential stored = await store.GetCredentialAsync(userId, response.Id)
     ?? throw new InvalidOperationException("no such credential for this user");
 
 WebAuthnAuthenticationResult assertion = verifier.VerifyAuthentication(
-    response, expectedChallenge, stored, WebAuthnUserVerificationRequirement.Required);
+    response, await sessions.TakeChallengeAsync(sessionId), stored, WebAuthnUserVerificationRequirement.Required);
 
 await auditLogger.OnWebAuthnAuthenticationAsync(httpContext, assertion);
 if (!assertion.Success) return Results.BadRequest();
@@ -1011,6 +1046,9 @@ Feature-detect them rather than assuming them — as `window.PublicKeyCredential
 - **Encode**, `ArrayBuffer` to base64url, into the body posted back: `response.clientDataJSON` for both ceremonies; `response.attestationObject` for a registration; and for an assertion `response.authenticatorData`, `response.signature`, and `response.userHandle` when the authenticator sent one.
 - **Copy across unchanged**: `type`, `authenticatorAttachment`, and `id` — which the browser already exposes as the base64url of `rawId`, so `rawId` carries that same string. Parsing rejects a body whose two ids stand for different bytes, and does it with an `ArgumentException`: disagreeing ids are a malformed body rather than a declined ceremony.
 - **Include `response.transports` on a registration**, the plain string array `getTransports()` returns. `toJSON()` sends it, and a body that leaves it out silently drops `WebAuthnRegisteredCredential.Transports` — the one value no later ceremony reports again.
+- **Leave `transports` on each `allowCredentials[]` and `excludeCredentials[]` entry as it is.** It is already the string array `navigator.credentials` takes, and it only appears for a credential handed in as a `WebAuthnCredentialReference` with transports stored.
+
+**Hand the transports back, not only the ids.** A credential whose `allowCredentials` entry names no transports may get the browser's full chooser — security key, phone, this device — instead of going straight to the Touch ID the user enrolled. The `WebAuthnCredentialReference` overloads write what registration reported into the entry, unchanged: there is no vocabulary check, so a transport newer than this library still goes back, and the only bounds are the ones registration applied (`WebAuthnAttestationResponse.MaximumTransportCount` and `MaximumTransportLength`), so anything registration accepted is accepted here. A credential with null or empty transports gets the entry the credential-id overloads write. Use the same overload for `excludeCredentials` at registration, so a stored credential goes back the same way in both ceremonies.
 
 Padding is tolerated on every field the library decodes, so an encoder written in the page does not fail a ceremony over a spelling. `id` is the exception, and not because a check rejects it: it is kept exactly as sent, because it is the string your application looks the credential up by. A padded `id` therefore passes everything here and then matches nothing in your store, surfacing as a credential that does not exist. Send it canonical — the URL-safe alphabet, no padding — which is already what the browser's own `credential.id` is.
 
@@ -1029,6 +1067,7 @@ Padding is tolerated on every field the library decodes, so an encoder written i
 **Key Features:**
 - Both ceremonies verified in the order WebAuthn Level 3 §7.1 and §7.2 state their checks, with the checks common to both written once so neither path can be hardened without the other
 - Options generated in the JSON shape the browser's `parseCreationOptionsFromJSON()` and `parseRequestOptionsFromJSON()` consume, with a 32-byte CSPRNG challenge
+- Stored transports handed back on each `allowCredentials` and `excludeCredentials` entry, bounded as registration bounded them, so the browser can go straight to the enrolled authenticator
 - Result objects with a failure-reason enum naming the individual check that rejected a ceremony, for the audit record — never an exception for a declined ceremony
 - The signature-counter rule including the both-zero exemption platform authenticators need, and a counter regression reported distinctly from an authenticator that keeps no counter
 - Base64url owned on both sides of the JSON contract: lax about the spelling a browser sends, strict about the values your application stored and hands back
@@ -1236,6 +1275,19 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.9.0
+
+Version 5.10.0 is additive: the WebAuthn options generator can hand a credential's stored transports back to the browser. Nothing was removed and no existing signature changed, and options built from credential ids are written exactly as before.
+
+### New: `WebAuthnCredentialReference` and an overload of each options method
+- **`CreateAuthenticationOptions(IEnumerable<WebAuthnCredentialReference>, …)` and `CreateRegistrationOptions(user, userVerification, IEnumerable<WebAuthnCredentialReference>, …)`** write each credential's `transports` into its `allowCredentials` or `excludeCredentials` entry, so the browser can go straight to the authenticator the user enrolled. See [section 13](#13-webauthn--fido2-second-factor-security-keys-touch-id-face-id).
+- **`PublicKeyCredentialDescriptor.Transports`**, omitted from the JSON when null, which is what a credential handed in by id alone, or with no transports stored, gets.
+- **If you built the authentication options by hand to include transports**, delete that and pass `WebAuthnCredentialReference`s instead.
+
+### Watch: a literal `null` passed positionally for the excluded credentials is now ambiguous
+- **`CreateRegistrationOptions(user, uv, null, …)` stops compiling with `CS0121`**, since `null` fits both overloads. Calls that leave `excludeCredentialIds` out, name it, or pass a typed value are unaffected; the fix for the rest is to drop the `null` or name the parameter. Compiled binaries are unaffected.
+- **`CreateAuthenticationOptions(null, …)` is ambiguous too**, but it already threw `ArgumentNullException` at runtime, so no working call changes.
 
 ## Migration from 5.8.1
 

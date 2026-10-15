@@ -25,13 +25,13 @@ namespace EasyReasy.Auth
         /// <summary>
         /// Most transports this library will accept from one authenticator. The specification names six.
         /// </summary>
-        public const int MaximumTransportCount = 16;
+        public const int MaximumTransportCount = WebAuthnTransportBounds.MaximumCount;
 
         /// <summary>
         /// Longest transport name this library will accept. The longest the specification defines,
         /// <c>smart-card</c>, is ten characters.
         /// </summary>
-        public const int MaximumTransportLength = 32;
+        public const int MaximumTransportLength = WebAuthnTransportBounds.MaximumLength;
 
         /// <summary>The wire (JSON) name of <see cref="ClientDataJson"/>.</summary>
         public const string ClientDataJsonFieldName = "clientDataJSON";
@@ -103,50 +103,9 @@ namespace EasyReasy.Auth
 
             ClientDataJson = clientDataJson;
             AttestationObject = attestationObject;
-            Transports = CheckTransports(transports, nameof(transports));
-        }
-
-        /// <summary>
-        /// Bounds the reported transports before they become a value an application stores.
-        /// </summary>
-        /// <remarks>
-        /// Generous against reality — the specification names six, each under a dozen characters — and the
-        /// point is only that a bound exists. Without one, a response inside the 64 KB envelope can carry
-        /// thousands of transports or a single one tens of thousands of characters long, and the README
-        /// tells applications to write this straight to a database column.
-        /// </remarks>
-        private static IReadOnlyList<string>? CheckTransports(IEnumerable<string>? transports, string parameterName)
-        {
-            if (transports == null)
-            {
-                return null;
-            }
-
-            string[] reported = transports.ToArray();
-
-            if (reported.Length > MaximumTransportCount)
-            {
-                throw new ArgumentException(
-                    $"'{parameterName}' carries {reported.Length} transports; no authenticator reports more than {MaximumTransportCount}.",
-                    parameterName);
-            }
-
-            foreach (string transport in reported)
-            {
-                if (transport == null)
-                {
-                    throw new ArgumentException($"'{parameterName}' contains a null transport.", parameterName);
-                }
-
-                if (transport.Length > MaximumTransportLength)
-                {
-                    throw new ArgumentException(
-                        $"'{parameterName}' contains a transport of {transport.Length} characters; none is longer than {MaximumTransportLength}.",
-                        parameterName);
-                }
-            }
-
-            return reported;
+            // Bounded before they become a value an application stores, by the same rule the options
+            // generator applies when a stored list is handed back.
+            Transports = WebAuthnTransportBounds.Check(transports, nameof(transports), null);
         }
     }
 }
