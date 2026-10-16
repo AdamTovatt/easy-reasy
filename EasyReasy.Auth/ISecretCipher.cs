@@ -16,7 +16,7 @@ namespace EasyReasy.Auth
     {
         /// <summary>
         /// The envelope format version — the leading byte of every ciphertext produced by
-        /// <see cref="Encrypt"/>. Increases when the envelope layout changes.
+        /// <see cref="Encrypt"/>, identifying the envelope layout it writes.
         /// </summary>
         byte EnvelopeVersion { get; }
 
@@ -24,7 +24,7 @@ namespace EasyReasy.Auth
         /// Encrypts <paramref name="plaintext"/> into a self-describing envelope.
         /// </summary>
         /// <param name="plaintext">The secret bytes to encrypt.</param>
-        /// <returns>A new envelope of <c>[version][nonce][tag][ciphertext]</c> that <see cref="Decrypt"/> can recover.</returns>
+        /// <returns>A new envelope, led by its version byte, that <see cref="Decrypt"/> can recover.</returns>
         byte[] Encrypt(ReadOnlySpan<byte> plaintext);
 
         /// <summary>
