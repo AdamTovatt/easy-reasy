@@ -18,7 +18,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **Claim access**: Retrieve any claim value by key or enum with a single call
 - **Progressive delay**: Built-in middleware to slow down brute-force attacks (enabled by default)
 - **Refresh token rotation**: Opt-in refresh tokens with automatic theft detection via token family tracking
-- **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
+- **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher with key rotation — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **WebAuthn second factor**: Server-side verification of both FIDO2 ceremonies — security keys, Touch ID, Face ID and Windows Hello — for a user who has already passed a first factor
 - **WebSocket authentication**: Opt-in, per-path acceptance of the token in the `access_token` query string, for the browser `WebSocket` that cannot send an `Authorization` header
 - **Testable clock**: One `TimeProvider` registered in DI drives token issuing, refreshing and validation, so tests can mint expired or not-yet-valid tokens
@@ -760,7 +760,7 @@ app.UseSerilogRequestLogging(options =>
 
 ### 12. TOTP and Secret Encryption Primitives
 
-Low-level, storage-agnostic building blocks for multi-factor authentication: an RFC 6238 (TOTP) code generator covering the whole enrollment-to-validation path, a base32 codec, and an AES-256-GCM cipher for holding the shared secret encrypted at rest. They hold nothing — no clock, no persistence, no DI required (the only ambient dependency anywhere is the system CSPRNG the secret and the cipher's nonces come from) — so the enrollment, storage, and replay-protection policy stay entirely in your application.
+Low-level, storage-agnostic building blocks for multi-factor authentication: an RFC 6238 (TOTP) code generator covering the whole enrollment-to-validation path, a base32 codec, and an AES-256-GCM cipher for holding the shared secret encrypted at rest, whose key can be rotated without downtime. They hold nothing — no clock, no persistence, no DI required (the only ambient dependency anywhere is the system CSPRNG the secret and the cipher's nonces come from) — so the enrollment, storage, and replay-protection policy stay entirely in your application.
 
 ```csharp
 public sealed class Rfc6238TotpGenerator
@@ -786,8 +786,8 @@ public static class Base32   // RFC 4648, encodes without padding
 
 public interface ISecretCipher   // AesGcmSecretCipher is the AES-256-GCM implementation
 {
-    byte EnvelopeVersion { get; }                   // leading envelope byte; increases when the layout changes
-    byte[] Encrypt(ReadOnlySpan<byte> plaintext);   // self-describing envelope: [version][nonce][tag][ciphertext]
+    byte EnvelopeVersion { get; }                   // leading envelope byte; identifies the layout Encrypt writes
+    byte[] Encrypt(ReadOnlySpan<byte> plaintext);   // self-describing envelope, led by its version byte
     byte[] Decrypt(ReadOnlySpan<byte> envelope);    // throws on tamper / wrong key
 }
 ```
@@ -820,6 +820,7 @@ try
     manualEntrySecret = Base32.Encode(secret);                                     // for typing in by hand
 
     // Persisting EnvelopeVersion alongside the ciphertext lets you find rows on an older format to re-encrypt.
+    // To rotate keys, store CurrentKeyId too (see "Rotating the encryption key" below).
     await _store.SaveEnrollment(userId, _cipher.Encrypt(secret), _cipher.EnvelopeVersion);
 }
 finally
@@ -857,6 +858,73 @@ finally
 - **The same call is what confirms enrollment.** Validating the confirmation code through this path claims its step, so the code the user just typed cannot be replayed at the next step-up moments later.
 - **Zero the plaintext secret in a `finally`.** `CryptographicOperations.ZeroMemory` on every path out, including the rejection paths. It reaches the `byte[]` and nothing else: the provisioning URI and the manual-entry string are immutable managed strings holding the same secret, and .NET gives you no way to erase them — they live until they are collected. That is unavoidable, so treat it as the reason to build them once, at enrollment, and never to log or cache either one.
 
+#### Rotating the encryption key
+
+`new AesGcmSecretCipher(key)` writes version 1 envelopes, which do not record which key sealed them. To rotate the key, build the cipher from a keyring instead. Each key carries an id you choose, from 0 to 255, and every envelope it seals is version 2 and records that id: `[version=2][keyId][nonce][tag][ciphertext]`. The version byte and the key id are authenticated along with the ciphertext, so a rewritten id fails the tag check rather than opening under another key.
+
+```csharp
+public sealed class SecretCipherKey
+{
+    SecretCipherKey(byte id, byte[] key);   // the key bytes are copied
+    byte Id { get; }
+}
+
+public interface IRotatableSecretCipher : ISecretCipher   // AesGcmSecretCipher implements it
+{
+    byte? CurrentKeyId { get; }                      // the id Encrypt seals with; null for the single-key constructor
+    bool IsStale(ReadOnlySpan<byte> envelope);       // reads the header: an older version or another key than Encrypt writes now
+    byte[] ReEncrypt(ReadOnlySpan<byte> envelope);   // opens and reseals under the current key; a current envelope comes back unchanged
+}
+
+// Every problem is reported in one ArgumentException: no keys, a duplicate id, a key that is not
+// 32 bytes, or a currentKeyId or versionOneKeyId that names no held key.
+AesGcmSecretCipher(IEnumerable<SecretCipherKey> keys, byte currentKeyId, byte? versionOneKeyId);
+```
+
+`currentKeyId` is the key `Encrypt` seals with. `Decrypt` opens envelopes sealed by any held key. `versionOneKeyId` names the held key that opens version 1 envelopes, which carry no id: the key you used before rotation. Pass `null` once no version 1 values remain, after which one fails to decrypt. An envelope naming a key the cipher does not hold throws a `CryptographicException` that names the id, so a key retired too early is easy to spot.
+
+Ids are yours to assign, so they stay the same across restarts and deployments. Never reuse an id for a different key while values sealed by the old one may remain. Build the keyring in code, for example from environment variables:
+
+```csharp
+SecretCipherKey[] keys =
+{
+    new SecretCipherKey(1, Convert.FromBase64String(Environment.GetEnvironmentVariable("MFA_SECRET_ENCRYPTION_KEY_1")!)),
+    new SecretCipherKey(2, Convert.FromBase64String(Environment.GetEnvironmentVariable("MFA_SECRET_ENCRYPTION_KEY_2")!)),
+};
+byte currentKeyId = byte.Parse(Environment.GetEnvironmentVariable("MFA_SECRET_ENCRYPTION_CURRENT_KEY_ID")!);
+
+AesGcmSecretCipher cipher = new AesGcmSecretCipher(keys, currentKeyId, versionOneKeyId: 1);
+builder.Services.AddSingleton<IRotatableSecretCipher>(cipher);
+builder.Services.AddSingleton<ISecretCipher>(cipher);
+```
+
+**Finding stale values.** A value is stale when it was written in an older envelope version or under a key other than the current one. Version 1 values are always stale under a keyring, even when the key that opens them is current, because they don't record their key and so would keep it from ever being retired. There are two ways to find them:
+
+- **Store `CurrentKeyId` beside the ciphertext**, next to the `EnvelopeVersion` the enrollment example stores. With the cipher injected as `IRotatableSecretCipher`, that write becomes `SaveEnrollment(userId, _cipher.Encrypt(secret), _cipher.EnvelopeVersion, _cipher.CurrentKeyId)`. Then query: `WHERE envelope_version <> @envelopeVersion OR key_id <> @currentKeyId`. A version 1 row has no key id, and the first clause catches it.
+- **Call `IsStale` on each stored envelope**, if you didn't store the id. It reads the header only and decrypts nothing.
+
+**The walkthrough**, starting from a single key that has been writing version 1 values:
+
+1. **Add the new key, held but not current.** Give the existing key id 1 and the new key id 2, with `currentKeyId: 1` and `versionOneKeyId: 1`, and deploy that to every instance. Nothing new is sealed by key 2 yet, but every instance can now open what it will seal.
+2. **Make the new key current.** Set `currentKeyId: 2` and deploy. New values are sealed by key 2. Doing step 1 everywhere first is what keeps a multi-instance rollout safe: skip it, and an instance still running the old keyring meets key id 2 mid-rollout and fails to open it. The library can't enforce this order across instances, so the deployment has to.
+3. **Re-encrypt in the background.** `ReEncrypt` opens a stale value and seals it under the current key without the plaintext passing through your code:
+
+    ```csharp
+    foreach (StoredSecret row in await _store.GetStaleSecrets(_cipher.EnvelopeVersion, _cipher.CurrentKeyId))
+    {
+        byte[] reEncrypted = _cipher.ReEncrypt(row.Ciphertext);
+        // Write back only if the row still holds the ciphertext you read, so a user who re-enrolled
+        // while the job ran keeps the new secret instead of getting the old one back.
+        await _store.TryReplaceCiphertext(row.UserId, row.Ciphertext, reEncrypted, _cipher.EnvelopeVersion, _cipher.CurrentKeyId);
+    }
+    ```
+
+4. **Drop the old key** once no stale value remains: hold only key 2, with `versionOneKeyId: null`, and deploy. A value key 1 sealed now fails to decrypt with an exception naming key id 1.
+
+The next rotation repeats steps 1 to 4 with a key 3.
+
+**Upgrade every instance to 5.11.0 before step 1.** From 5.11.0 the single-key cipher opens version 2 envelopes with its one key whatever their id, so an instance still on `new AesGcmSecretCipher(key)` reads what step 1 instances write under that same key. The same rule makes rolling back from a keyring to `new AesGcmSecretCipher(key)` safe, since values written in between stay readable. An envelope sealed by a different key still fails the tag check, because the id is authenticated. The single-key cipher can't tell that apart from tampering, so it throws a plain `AuthenticationTagMismatchException` that names no key id, unlike a keyring meeting an id it does not hold. Earlier versions of the package reject version 2 envelopes outright, so neither guarantee covers an instance running one, nor a rollback to one once version 2 values exist.
+
 **Key Features:**
 - RFC 6238 TOTP over RFC 4226 HOTP with HMAC-SHA1 (what mainstream authenticator apps implement), configurable digit count and time-step
 - Enrollment covered end to end: a correctly-sized random secret, the `otpauth://` provisioning URI, and the base32 encoding both the URI and manual entry need
@@ -864,6 +932,7 @@ finally
 - Constant-time code comparison; validation reports the matched step so the caller can reject any code at or below the last accepted step (RFC 6238 §5.2 high-water-mark)
 - AES-256-GCM authenticated encryption — a tampered or wrong-key ciphertext fails closed rather than returning garbage
 - Self-describing ciphertext envelope with a leading, integrity-protected version byte for future format evolution
+- Key rotation without downtime: each envelope records the id of the key that sealed it, the cipher opens envelopes sealed by any key it holds, and `ReEncrypt` moves old values to the current key so the old key can be retired
 - Stateless: the application owns the clock, the secret store, and the atomic replay high-water-mark
 
 ### 13. WebAuthn / FIDO2 Second Factor (security keys, Touch ID, Face ID)
@@ -1244,7 +1313,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **Refresh token rotation**: Opt-in refresh tokens with token family tracking and automatic theft detection
 - **Secure password hashing**: PBKDF2 with HMAC-SHA512, max password length enforcement, and constant-time comparison
 - **Password reset tokens**: Cryptographically secure token generation with SHA-256 hashing for storage
-- **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
+- **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher with key rotation — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **WebAuthn/FIDO2 second factor**: Registration and authentication ceremonies verified server-side (attestation `none`, ES256/RS256), with result objects naming the individual check that declined a ceremony and the signature-counter rule platform authenticators need
 - **WebSocket authentication**: `QueryStringTokenPaths` lets listed paths read the token from the `access_token` query string, validated exactly as a header token, with the header taking precedence
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
@@ -1275,6 +1344,19 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.10.0
+
+Version 5.11.0 is additive: `AesGcmSecretCipher` can rotate its key. The single-key constructor writes and opens version 1 envelopes exactly as before, no existing signature changed, and `ISecretCipher`'s members are unchanged, so your own implementations of it still compile.
+
+### New: key rotation in `AesGcmSecretCipher`
+- **A keyring constructor**, `AesGcmSecretCipher(keys, currentKeyId, versionOneKeyId)`, seals version 2 envelopes that record the id of the sealing key, and opens envelopes sealed by any key it holds. Version 1 envelopes open with the key `versionOneKeyId` names. See [Rotating the encryption key](#rotating-the-encryption-key) in section 12 for the walkthrough.
+- **`IRotatableSecretCipher`**, which `AesGcmSecretCipher` implements: `CurrentKeyId`, `IsStale` and `ReEncrypt`, for finding values sealed by an older key and moving them to the current one.
+- **`SecretCipherKey`**, a key and its id.
+
+### Changed: the single-key cipher also opens version 2 envelopes
+- **`new AesGcmSecretCipher(key)` opens a version 2 envelope with its one key, whatever its key id**, so rolling back from a keyring to a single key does not strand values written in between. Before, such an envelope failed with "Unsupported ciphertext envelope version 2". One sealed by another key still fails the tag check.
+- **Upgrade every instance before any of them uses a keyring.** 5.10.0 and earlier reject version 2 envelopes.
 
 ## Migration from 5.9.0
 
