@@ -1,14 +1,71 @@
 using Microsoft.AspNetCore.Http;
 using System.Net;
+using System.Security.Claims;
 
 namespace EasyReasy.Auth.Tests
 {
     [TestClass]
     public class ProgressiveDelayMiddlewareTests
     {
+        private static readonly IPAddress ClientIp = IPAddress.Parse("10.0.0.1");
+
         private static ProgressiveDelayOptions CreateDefaultOptions()
         {
             return new ProgressiveDelayOptions();
+        }
+
+        /// <summary>
+        /// Creates a middleware whose delay grows by 500 ms per failure beyond <paramref name="freeFailures"/>.
+        /// The step is wide so that one failure more or less is told apart well clear of timer overshoot.
+        /// </summary>
+        private static ProgressiveDelayMiddleware CreateMiddleware(int freeFailures, RequestDelegate next)
+        {
+            ProgressiveDelayOptions options = new ProgressiveDelayOptions
+            {
+                FreeFailures = freeFailures,
+                DelayIncrement = TimeSpan.FromMilliseconds(500),
+            };
+            return new ProgressiveDelayMiddleware(next, options);
+        }
+
+        private static DefaultHttpContext CreateContext(bool authenticated = false)
+        {
+            DefaultHttpContext context = new DefaultHttpContext();
+            context.Connection.RemoteIpAddress = ClientIp;
+            if (authenticated)
+            {
+                ClaimsIdentity identity = new ClaimsIdentity(
+                    new[] { new Claim(ClaimTypes.NameIdentifier, "user-1") },
+                    authenticationType: "TestAuth");
+                context.User = new ClaimsPrincipal(identity);
+            }
+
+            return context;
+        }
+
+        private static async Task<TimeSpan> TimeInvocationAsync(ProgressiveDelayMiddleware middleware, HttpContext context)
+        {
+            DateTime before = DateTime.UtcNow;
+            await middleware.InvokeAsync(context);
+            return DateTime.UtcNow - before;
+        }
+
+        /// <summary>
+        /// Refuses an authenticated caller the way an app refuses a deactivated account, and answers any other
+        /// request with a plain 401, as a failed credential.
+        /// </summary>
+        private static Task RefuseAuthenticatedOtherwise401(HttpContext context)
+        {
+            if (context.User.Identity?.IsAuthenticated == true)
+            {
+                context.RefuseAuthenticatedCaller();
+            }
+            else
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            }
+
+            return Task.CompletedTask;
         }
 
         [TestMethod]
@@ -186,12 +243,7 @@ namespace EasyReasy.Auth.Tests
                 },
                 options: CreateDefaultOptions());
 
-            DefaultHttpContext requestContext = new DefaultHttpContext();
-            requestContext.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.1");
-
-            DateTime before = DateTime.UtcNow;
-            await middleware.InvokeAsync(requestContext);
-            TimeSpan elapsed = DateTime.UtcNow - before;
+            TimeSpan elapsed = await TimeInvocationAsync(middleware, CreateContext());
 
             Assert.IsTrue(elapsed.TotalMilliseconds < 1000);
         }
@@ -223,28 +275,17 @@ namespace EasyReasy.Auth.Tests
                 },
                 options: CreateDefaultOptions());
 
-            IPAddress clientIp = IPAddress.Parse("10.0.0.1");
-
             // Accumulate 15 failures
             for (int i = 0; i < 15; i++)
             {
-                DefaultHttpContext failContext = new DefaultHttpContext();
-                failContext.Connection.RemoteIpAddress = clientIp;
-                await middleware.InvokeAsync(failContext);
+                await middleware.InvokeAsync(CreateContext());
             }
 
             // Success resets the counter
-            DefaultHttpContext successContext = new DefaultHttpContext();
-            successContext.Connection.RemoteIpAddress = clientIp;
-            await middleware.InvokeAsync(successContext);
+            await middleware.InvokeAsync(CreateContext());
 
             // Next failure should have no delay (counter was reset)
-            DefaultHttpContext nextFailContext = new DefaultHttpContext();
-            nextFailContext.Connection.RemoteIpAddress = clientIp;
-
-            DateTime before = DateTime.UtcNow;
-            await middleware.InvokeAsync(nextFailContext);
-            TimeSpan elapsed = DateTime.UtcNow - before;
+            TimeSpan elapsed = await TimeInvocationAsync(middleware, CreateContext());
 
             Assert.IsTrue(elapsed.TotalMilliseconds < 1000);
         }
@@ -287,26 +328,122 @@ namespace EasyReasy.Auth.Tests
                 },
                 options: options);
 
-            IPAddress clientIp = IPAddress.Parse("10.0.0.1");
-
             // Two failures, then the request that must not clear them.
             for (int i = 0; i < 3; i++)
             {
-                DefaultHttpContext context = new DefaultHttpContext();
-                context.Connection.RemoteIpAddress = clientIp;
-                await middleware.InvokeAsync(context);
+                await middleware.InvokeAsync(CreateContext());
             }
 
-            DefaultHttpContext nextFailContext = new DefaultHttpContext();
-            nextFailContext.Connection.RemoteIpAddress = clientIp;
-
-            DateTime before = DateTime.UtcNow;
-            await middleware.InvokeAsync(nextFailContext);
-            TimeSpan elapsed = DateTime.UtcNow - before;
+            TimeSpan elapsed = await TimeInvocationAsync(middleware, CreateContext());
 
             Assert.IsTrue(
                 elapsed.TotalMilliseconds >= 250,
                 $"The accumulated failures should still be delaying the next attempt, but it took {elapsed.TotalMilliseconds} ms.");
+        }
+
+        [TestMethod]
+        public async Task InvokeAsync_WithPlain401ToAuthenticatedCaller_ShouldCountFailure()
+        {
+            // Only the refusal call exempts a 401; an authenticated principal alone does not.
+            ProgressiveDelayMiddleware middleware = CreateMiddleware(freeFailures: 0, next: ctx =>
+            {
+                ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return Task.CompletedTask;
+            });
+
+            for (int i = 0; i < 2; i++)
+            {
+                await middleware.InvokeAsync(CreateContext(authenticated: true));
+            }
+
+            TimeSpan elapsed = await TimeInvocationAsync(middleware, CreateContext(authenticated: true));
+
+            Assert.IsTrue(
+                elapsed.TotalMilliseconds >= 900,
+                $"Two plain 401s should delay the next request by 1000 ms, but it took {elapsed.TotalMilliseconds} ms.");
+        }
+
+        [TestMethod]
+        public async Task InvokeAsync_WithRefusedAuthenticatedCaller_ShouldNotCountFailure()
+        {
+            ProgressiveDelayMiddleware middleware = CreateMiddleware(freeFailures: 0, next: ctx =>
+            {
+                ctx.RefuseAuthenticatedCaller();
+                return Task.CompletedTask;
+            });
+
+            for (int i = 0; i < 3; i++)
+            {
+                await middleware.InvokeAsync(CreateContext(authenticated: true));
+            }
+
+            TimeSpan elapsed = await TimeInvocationAsync(middleware, CreateContext(authenticated: true));
+
+            Assert.IsTrue(
+                elapsed.TotalMilliseconds < 400,
+                $"Refusals of an authenticated caller should not count, but the next request took {elapsed.TotalMilliseconds} ms.");
+        }
+
+        [TestMethod]
+        public async Task InvokeAsync_WithRefusedAuthenticatedCallerAfterFailures_ShouldStillDelayTheRefusal()
+        {
+            // Three failures with one free failure delay the next request by (3 - 1) * 500 = 1000 ms, and the
+            // middleware cannot know before the request runs that it will be a refusal.
+            ProgressiveDelayMiddleware middleware = CreateMiddleware(freeFailures: 1, next: RefuseAuthenticatedOtherwise401);
+
+            for (int i = 0; i < 3; i++)
+            {
+                await middleware.InvokeAsync(CreateContext());
+            }
+
+            TimeSpan elapsed = await TimeInvocationAsync(middleware, CreateContext(authenticated: true));
+
+            Assert.IsTrue(
+                elapsed.TotalMilliseconds >= 900,
+                $"The refusal should still wait out the 1000 ms delay, but it took {elapsed.TotalMilliseconds} ms.");
+        }
+
+        [TestMethod]
+        public async Task InvokeAsync_WithRefusedAuthenticatedCallerAfterFailures_ShouldLeaveCountUnchanged()
+        {
+            // Three failures with one free failure delay the next request by (3 - 1) * 500 = 1000 ms. A refusal
+            // that cleared the count would leave no delay; one that counted would make it 1500 ms.
+            ProgressiveDelayMiddleware middleware = CreateMiddleware(freeFailures: 1, next: RefuseAuthenticatedOtherwise401);
+
+            for (int i = 0; i < 3; i++)
+            {
+                await middleware.InvokeAsync(CreateContext());
+            }
+
+            await middleware.InvokeAsync(CreateContext(authenticated: true));
+            TimeSpan elapsed = await TimeInvocationAsync(middleware, CreateContext());
+
+            Assert.IsTrue(
+                elapsed.TotalMilliseconds >= 900 && elapsed.TotalMilliseconds < 1300,
+                $"The count should still be three (1000 ms delay), but the next request took {elapsed.TotalMilliseconds} ms.");
+        }
+
+        [TestMethod]
+        public async Task InvokeAsync_WithRefusalOfAnonymousCaller_ShouldCountFailure()
+        {
+            // A refusal marked by mistake on a request without an authenticated principal must not let a
+            // password guess escape the delay.
+            ProgressiveDelayMiddleware middleware = CreateMiddleware(freeFailures: 0, next: ctx =>
+            {
+                ctx.RefuseAuthenticatedCaller();
+                return Task.CompletedTask;
+            });
+
+            for (int i = 0; i < 2; i++)
+            {
+                await middleware.InvokeAsync(CreateContext());
+            }
+
+            TimeSpan elapsed = await TimeInvocationAsync(middleware, CreateContext());
+
+            Assert.IsTrue(
+                elapsed.TotalMilliseconds >= 900,
+                $"Two refusals of an anonymous caller should delay the next request by 1000 ms, but it took {elapsed.TotalMilliseconds} ms.");
         }
 
         [TestMethod]
@@ -327,26 +464,17 @@ namespace EasyReasy.Auth.Tests
                 options: options,
                 timeProvider: timeProvider);
 
-            IPAddress clientIp = IPAddress.Parse("10.0.0.1");
-
             // Accumulate failures past the threshold
             for (int i = 0; i < 5; i++)
             {
-                DefaultHttpContext failContext = new DefaultHttpContext();
-                failContext.Connection.RemoteIpAddress = clientIp;
-                await middleware.InvokeAsync(failContext);
+                await middleware.InvokeAsync(CreateContext());
             }
 
             // Advance time past the entry lifetime
             timeProvider.Advance(TimeSpan.FromMinutes(15));
 
             // Next request should have no delay because the entry is stale
-            DefaultHttpContext nextContext = new DefaultHttpContext();
-            nextContext.Connection.RemoteIpAddress = clientIp;
-
-            DateTime before = DateTime.UtcNow;
-            await middleware.InvokeAsync(nextContext);
-            TimeSpan elapsed = DateTime.UtcNow - before;
+            TimeSpan elapsed = await TimeInvocationAsync(middleware, CreateContext());
 
             Assert.IsTrue(elapsed.TotalMilliseconds < 1000);
         }

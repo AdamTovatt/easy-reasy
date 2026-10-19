@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using System.Security.Claims;
 
 namespace EasyReasy.Auth.Tests
@@ -97,6 +98,54 @@ namespace EasyReasy.Auth.Tests
             DefaultHttpContext context = new DefaultHttpContext { User = principal };
 
             Assert.IsNull(context.GetRefreshFamilyId());
+        }
+
+        [TestMethod]
+        public void RefuseAuthenticatedCaller_OnFreshResponse_SetsStatus401AndMarksTheRefusal()
+        {
+            DefaultHttpContext context = CreateAuthenticatedContext();
+
+            context.RefuseAuthenticatedCaller();
+
+            Assert.AreEqual(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+            Assert.IsTrue(context.WasAuthenticatedCallerRefused());
+        }
+
+        [TestMethod]
+        public void RefuseAuthenticatedCaller_AfterResponseStarted_ThrowsWithoutMarkingTheRefusal()
+        {
+            DefaultHttpContext context = CreateAuthenticatedContext();
+            context.Features.Set<IHttpResponseFeature>(new StartedHttpResponseFeature());
+
+            Assert.ThrowsException<InvalidOperationException>(() => context.RefuseAuthenticatedCaller());
+            Assert.IsFalse(context.WasAuthenticatedCallerRefused());
+        }
+
+        [TestMethod]
+        public void WasAuthenticatedCallerRefused_WithPlain401_ReturnsFalse()
+        {
+            DefaultHttpContext context = CreateAuthenticatedContext();
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+
+            Assert.IsFalse(context.WasAuthenticatedCallerRefused());
+        }
+
+        [TestMethod]
+        public void WasAuthenticatedCallerRefused_WithAnonymousCaller_ReturnsFalse()
+        {
+            DefaultHttpContext context = new DefaultHttpContext();
+
+            context.RefuseAuthenticatedCaller();
+
+            Assert.IsFalse(context.WasAuthenticatedCallerRefused());
+        }
+
+        private static DefaultHttpContext CreateAuthenticatedContext()
+        {
+            ClaimsIdentity identity = new ClaimsIdentity(
+                new[] { new Claim(ClaimTypes.NameIdentifier, "user-1") },
+                authenticationType: "TestAuth");
+            return new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
         }
     }
 }

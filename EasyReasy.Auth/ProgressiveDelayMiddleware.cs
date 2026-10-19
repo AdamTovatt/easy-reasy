@@ -11,7 +11,9 @@ namespace EasyReasy.Auth
     /// A 401 increments an IP's failure count and a successful authentication clears it; any other outcome
     /// leaves the count as it stands, so a request that cannot authenticate anyone cannot be used to reset
     /// the delay. Endpoints report an authentication with
-    /// <see cref="HttpContextExtensions.MarkAuthenticationSucceeded"/>.
+    /// <see cref="HttpContextExtensions.MarkAuthenticationSucceeded"/>. A 401 written by
+    /// <see cref="HttpContextExtensions.RefuseAuthenticatedCaller"/> for a request with an authenticated principal
+    /// is an app refusal, not a failed credential, and neither increments nor clears the count.
     /// Stale failure entries are evicted after <see cref="ProgressiveDelayOptions.FailureEntryLifetime"/>.
     /// </summary>
     public class ProgressiveDelayMiddleware
@@ -79,10 +81,16 @@ namespace EasyReasy.Auth
 
             if (context.Response.StatusCode == StatusCodes.Status401Unauthorized)
             {
-                _failures.AddOrUpdate(
-                    ip,
-                    _ => new FailureEntry(1, now),
-                    (_, existing) => new FailureEntry(existing.Count + 1, now));
+                // A refusal of a caller whose token validated is no credential guess, so it does not count. Nor
+                // does it clear the count: an attacker could otherwise reset the delay between guesses with a
+                // request that gets refused this way.
+                if (!context.WasAuthenticatedCallerRefused())
+                {
+                    _failures.AddOrUpdate(
+                        ip,
+                        _ => new FailureEntry(1, now),
+                        (_, existing) => new FailureEntry(existing.Count + 1, now));
+                }
             }
             else if (context.HasAuthenticationSucceeded())
             {
