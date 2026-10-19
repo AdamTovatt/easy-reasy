@@ -143,5 +143,56 @@ namespace EasyReasy.Auth
         {
             return context.Items.TryGetValue(AuthenticationSucceededKey, out object? succeeded) && succeeded is true;
         }
+
+        /// <summary>
+        /// The <see cref="HttpContext.Items"/> key under which <see cref="RefuseAuthenticatedCaller"/> records that
+        /// the request's 401 refuses a caller whose token validated.
+        /// </summary>
+        private const string AuthenticatedCallerRefusedKey = "EasyReasy.Auth.AuthenticatedCallerRefused";
+
+        /// <summary>
+        /// Answers 401 Unauthorized to a caller whose token validated but whom the app refuses because of the
+        /// account's state, such as a deactivated account.
+        /// </summary>
+        /// <remarks>
+        /// Sets the response status to 401 and records, in the same step, that the 401 is a refusal rather than a
+        /// failed credential. <see cref="ProgressiveDelayMiddleware"/> neither counts such a 401 towards the IP's
+        /// delay nor clears the count it has, provided the request carries an authenticated principal; a refusal
+        /// of a request without one still counts, so a mistaken call cannot exempt an anonymous password guess.
+        /// The delay applied before the request runs is unchanged.
+        /// <para>
+        /// Never use it to reject a failed credential from a signed-in caller, such as a wrong current password
+        /// or a wrong TOTP or WebAuthn step-up code: those are guesses, and this call would exempt them from
+        /// the delay. Answer them with a plain 401.
+        /// </para>
+        /// </remarks>
+        /// <param name="context">The HTTP context of the request to refuse.</param>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown by the server when the response has already started, since its status can no longer change.
+        /// </exception>
+        public static void RefuseAuthenticatedCaller(this HttpContext context)
+        {
+            // Status first: if the response has already started this throws, and no marker is left behind.
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Items[AuthenticatedCallerRefusedKey] = true;
+        }
+
+        /// <summary>
+        /// Whether this request refused a caller whose token validated: it was refused through
+        /// <see cref="RefuseAuthenticatedCaller"/> and carries an authenticated principal.
+        /// </summary>
+        /// <param name="context">The HTTP context to inspect.</param>
+        /// <returns>
+        /// <c>true</c> when the request was refused through <see cref="RefuseAuthenticatedCaller"/> and its caller
+        /// is authenticated.
+        /// </returns>
+        internal static bool WasAuthenticatedCallerRefused(this HttpContext context)
+        {
+            // The marker alone is not enough: one set by mistake on an anonymous or bad-token request would
+            // otherwise let a password guess escape the progressive delay.
+            return context.Items.TryGetValue(AuthenticatedCallerRefusedKey, out object? refused)
+                && refused is true
+                && context.User.Identity?.IsAuthenticated == true;
+        }
     }
 }

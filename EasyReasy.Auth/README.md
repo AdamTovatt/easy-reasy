@@ -1282,6 +1282,24 @@ The progressive delay middleware helps protect your API from brute-force attacks
   - After that, each additional failed request adds an incremental delay (default: 500ms, configurable via `DelayIncrement`), up to a configurable maximum (default: 30 seconds, configurable via `MaxDelay`).
   - The delay is applied before the response is sent, so the attacker must wait.
   - The count is cleared only by a request that actually authenticated the caller — the built-in credential and refresh endpoints report this by calling `HttpContext.MarkAuthenticationSucceeded()` when they issue a token. Every other outcome leaves the count as it stands, so a request that cannot authenticate anyone (a 404, a credential-less 400, or the anonymous logout endpoint's 204) cannot be used to reset the delay between guesses. An endpoint of your own that issues tokens should call the same method.
+  - An app that answers 401 to a caller whose token validated, because of the account's state (a deactivated account, say), should do so with `HttpContext.RefuseAuthenticatedCaller()`. It sets the status to 401 and marks the response as a refusal in one step, and such a 401 neither counts towards the IP's delay nor clears the count it has. Without it, a deactivated user's open tab can push a shared IP, such as an office behind NAT, past `FreeFailures` and slow everyone's requests down. The exemption applies only when the request carries an authenticated principal, so a refusal of an anonymous or bad-token request still counts. The delay applied before the request runs is unchanged.
+  - **Never use it to reject a failed credential from a signed-in caller**, such as a wrong current password or a wrong TOTP or WebAuthn step-up code. Those are guesses, and the call would exempt them from the delay; answer them with a plain 401.
+  - Run the check after `app.UseEasyReasyAuth()`, so the caller is authenticated and the delay middleware sees the 401. Calling it after the response has started throws `InvalidOperationException`.
+    ```csharp
+    app.UseEasyReasyAuth();
+
+    app.Use(async (context, next) =>
+    {
+        string? userId = context.GetUserId();
+        if (userId != null && await accounts.IsDeactivatedAsync(userId))
+        {
+            context.RefuseAuthenticatedCaller();
+            return;
+        }
+
+        await next();
+    });
+    ```
   - Stale failure entries are automatically evicted after `FailureEntryLifetime` (default: 1 hour).
 - **Enabled by default:**
   - The middleware is included automatically when you call `app.UseEasyReasyAuth()`.
@@ -1344,6 +1362,14 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.11.0
+
+Version 5.12.0 is additive: no existing signature, option or default changed, and every 401 that counted towards the progressive delay before still counts.
+
+### New: refusing an authenticated caller without growing the delay
+- **`HttpContext.RefuseAuthenticatedCaller()`** answers 401 to a caller whose token validated but whom your app refuses because of the account's state, such as a deactivated account. `ProgressiveDelayMiddleware` neither counts such a 401 nor clears the IP's existing count, provided the request carries an authenticated principal. See [Progressive Delay Middleware](#progressive-delay-middleware).
+- **If you answer such requests with a bare 401 today, switch to this call**, or each of those requests keeps counting as a failed credential from the caller's IP.
 
 ## Migration from 5.10.0
 
