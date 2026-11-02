@@ -36,9 +36,9 @@ namespace EasyReasy.Auth.Tests
         }
 
         public static async Task<FallbackTokenTestApp> StartAsync(
-            IReadOnlyList<string> queryStringTokenPaths,
-            Action<JwtBearerOptions>? configureBearer = null,
+            IReadOnlyList<string>? queryStringTokenPaths = null,
             IReadOnlyList<string>? cookieTokenPaths = null,
+            Action<JwtBearerOptions>? configureBearer = null,
             string? pathBase = null)
         {
             WebApplicationBuilder builder = WebApplication.CreateBuilder();
@@ -47,7 +47,7 @@ namespace EasyReasy.Auth.Tests
 
             builder.Services.AddEasyReasyAuth(Secret, options =>
             {
-                options.QueryStringTokenPaths = queryStringTokenPaths;
+                options.QueryStringTokenPaths = queryStringTokenPaths ?? [];
                 options.CookieTokenPaths = cookieTokenPaths ?? [];
             });
 
@@ -71,7 +71,7 @@ namespace EasyReasy.Auth.Tests
 
             foreach (string path in new[] { "/ws/whoami", "/wsx/whoami", "/api/whoami", "/files/whoami", "/filesx/whoami" })
             {
-                app.MapMethods(path, ["GET", "HEAD", "POST", "PUT", "DELETE"], (HttpContext context) => context.GetUserId())
+                app.MapMethods(path, ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], (HttpContext context) => context.GetUserId())
                     .RequireAuthorization();
             }
 

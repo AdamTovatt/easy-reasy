@@ -7,8 +7,10 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 
 namespace EasyReasy.Auth.Google.Tests
 {
@@ -257,7 +259,7 @@ namespace EasyReasy.Auth.Google.Tests
             // The handler has already issued the session, so the sign-in survives a token that cannot fit; the
             // clear-and-log path is EasyReasy.Auth's, the same one the built-in login endpoint takes.
             string token = new JwtTokenService(Secret).CreateToken(
-                "sub-cookie", "user", [new System.Security.Claims.Claim("padding", new string('x', 5000))], [], DateTime.UtcNow.AddMinutes(5));
+                "sub-cookie", "user", [new Claim("padding", new string('x', 5000))], [], DateTime.UtcNow.AddMinutes(5));
             ErrorCountingLoggerProvider logs = new ErrorCountingLoggerProvider();
             await using HostedApp host = await HostedApp.StartAsync(
                 AcceptingValidator(), new FakeGoogleAuthHandler { ResponseToReturn = new AuthResponse(token, "unused") },
@@ -385,10 +387,15 @@ namespace EasyReasy.Auth.Google.Tests
         /// <summary>
         /// <see cref="ILoggerProvider"/> that keeps the category and message of every error logged through it.
         /// </summary>
+        /// <remarks>
+        /// A copy of the idea behind EasyReasy.Auth.Tests' RecordingLoggerProvider, kept here on purpose: this project
+        /// references only the two libraries, and a shared test-support project for one small fake is not worth its
+        /// weight.
+        /// </remarks>
         private sealed class ErrorCountingLoggerProvider : ILoggerProvider
         {
-            private readonly System.Collections.Concurrent.ConcurrentQueue<(string Category, string Message)> _errors =
-                new System.Collections.Concurrent.ConcurrentQueue<(string Category, string Message)>();
+            private readonly ConcurrentQueue<(string Category, string Message)> _errors =
+                new ConcurrentQueue<(string Category, string Message)>();
 
             public IReadOnlyList<(string Category, string Message)> ErrorMessages => _errors.ToArray();
 
@@ -401,9 +408,9 @@ namespace EasyReasy.Auth.Google.Tests
             private sealed class ErrorLogger : ILogger
             {
                 private readonly string _category;
-                private readonly System.Collections.Concurrent.ConcurrentQueue<(string Category, string Message)> _errors;
+                private readonly ConcurrentQueue<(string Category, string Message)> _errors;
 
-                public ErrorLogger(string category, System.Collections.Concurrent.ConcurrentQueue<(string Category, string Message)> errors)
+                public ErrorLogger(string category, ConcurrentQueue<(string Category, string Message)> errors)
                 {
                     _category = category;
                     _errors = errors;

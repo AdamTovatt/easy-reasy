@@ -1149,7 +1149,7 @@ Padding is tolerated on every field the library decodes, so an encoder written i
 
 ### 14. WebSocket Connections (token in the query string)
 
-A browser's `WebSocket` cannot send an `Authorization` header, so a token for a WebSocket connection has to travel in the URL. List the path prefixes where that is allowed, and the bearer handler will read the token from the `access_token` query-string parameter there, which is the convention SignalR and its clients use:
+A browser's `WebSocket` cannot send an `Authorization` header, so a token for a WebSocket connection has to travel in the URL. List the path prefixes where that is allowed, and the bearer handler will read the token from the `access_token` query-string parameter there, which is the convention SignalR and its clients use. (For a plain navigation such as a file opened in a new tab, the token can instead arrive in a cookie; see [section 15](#15-opening-files-in-a-new-tab-token-in-a-cookie).)
 
 ```csharp
 builder.Services.AddEasyReasyAuth(jwtSecret, options =>
@@ -1212,13 +1212,13 @@ window.open(`/files/${fileId}`, "_blank");
 
 **The cookie:**
 - **Named `__Secure-access_token`**, fixed like the `access_token` query parameter.
-- **Fixed attributes:** `HttpOnly`, `Secure` (browsers accept it on `http://localhost`), `SameSite=Strict`, no `Domain` (host-only), one cookie per listed prefix with `Path` set to `PathBase` plus the prefix, and `Max-Age` set to the token's own `exp` minus now on the registered `TimeProvider`. `Max-Age` rather than `Expires`, so a client clock that is off cannot move the expiry.
+- **Fixed attributes:** `HttpOnly`, `Secure` (browsers accept it on `http://localhost`), `SameSite=Strict`, no `Domain` (host-only), one cookie per listed prefix with `Path` set to `PathBase` plus the prefix (so behind a proxy that strips a path prefix, restore it as `PathBase`, for example with `UsePathBase`, or the cookie's `Path` will not match the URL the browser sees and the cookie is never sent), and `Max-Age` set to the token's own `exp` minus now on the registered `TimeProvider`. `Max-Age` rather than `Expires`, so a client clock that is off cannot move the expiry.
 - **Written as a raw `Set-Cookie` header**, so a cookie policy middleware cannot drop it for consent or strip `Secure`.
 
 **The rules:**
 - **Off by default.** With `CookieTokenPaths` empty, no cookie is read or written anywhere.
-- **Prefixes match as in section 14:** by whole path segments, ignoring case, against `HttpRequest.Path`. A prefix must start with `/` and must not end with one. **A prefix inside another listed one is rejected at startup**, since the browser would send two cookies of the same name there and a repeated cookie is ignored, so it could never authenticate.
-- **Only `GET` and `HEAD`.** On any other method the cookie is ignored; a header token still works on every method.
+- **Prefixes match as in section 14:** by whole path segments, ignoring case, against `HttpRequest.Path`. A prefix must start with `/` and must not end with one. **A prefix inside another listed one, or the same prefix listed twice in any case, is rejected at startup**, since the browser would send two cookies of the same name there and a repeated cookie is ignored, so it could never authenticate.
+- **Only `GET` and `HEAD`, and never a protocol upgrade.** On any other method the cookie is ignored, and so it is on a WebSocket handshake (or any request with an `Upgrade` header), which is a `GET` but opens a two-way channel. A WebSocket on a cookie path authenticates with a header or the query string (section 14) as before; a header token still works on every method.
 - **Precedence: `Authorization` header, then the query string, then the cookie.** The cookie is read only when the request carries no `Authorization` header at all and the query-string fallback supplied no token. An explicit token on the request beats the ambient one.
 - **A repeated cookie is ignored.** The reader counts the name in the raw `Cookie` header(s), since `Request.Cookies` keeps only one of several.
 - **Validation is unchanged,** and your own `JwtBearerEvents` keep working exactly as in section 14. Both fallbacks share one events wrapper, and `JwtBearerOptions.EventsType` cannot be combined with either.
@@ -1245,10 +1245,11 @@ if (context.IsAccessTokenCookieEnabled())
 **Lifetime and revocation:**
 - **The cookie lives exactly as long as the access token it carries**, and every successful refresh replaces it. Between the token's expiry and the app's next refresh, a newly opened tab gets 401.
 - **Logout clears this browser's cookie.** As with a header token, the access token itself stays valid until `exp`, so a value already copied out of the browser keeps working until then. `ConcurrentSessionPolicy.SingleSession`, `InvalidateAllSessionsAsync` and theft detection revoke other browsers' refresh families, but the server cannot clear those browsers' cookies; each lasts no longer than its access token, the same bound header tokens have, and the failed refresh that follows clears it at the built-in endpoint. There is no access-token revocation list (see section 9).
+- **The cookie belongs to the browser, not to a tab.** An app that keeps a separate session per tab (tokens in `sessionStorage`) shares one cookie across them: after signing in as another user in tab B, files opened from tab A are served as tab B's user until tab A refreshes, and a failed refresh or a logout in one tab clears the cookie the others rely on.
 
 **Why it is safe, and where the edges are:**
 - **`SameSite=Strict`** keeps a cross-site page from making the browser send the cookie: links, forms, images and fetches started from another site all arrive without it. A link to a file followed from another site (an email, a chat) therefore gets a 401. That is the intended trade.
-- **"Same-site" still includes sibling subdomains** of the same registrable domain. Honouring the cookie only on `GET` and `HEAD` bounds what such a request can do to a read.
+- **"Same-site" still includes sibling subdomains** of the same registrable domain. Honouring the cookie only on `GET` and `HEAD`, and never on a WebSocket handshake (which has no CORS check), bounds what such a request can do to a read.
 - **Cookie tossing:** a sibling subdomain can plant its own cookie with the same name and path. When both arrive, the duplicate rule ignores the request. A tossed cookie alone, in a browser that has none, authenticates a read as the attacker's own account. That exposes none of the user's data, unless the app renders that account's uploads inline: then the attacker's own HTML or SVG runs in the app's origin (see below). A `__Host-` prefix would block tossing but requires `Path=/`, which would send the token on every request to the host.
 
 **What stays with your application:**

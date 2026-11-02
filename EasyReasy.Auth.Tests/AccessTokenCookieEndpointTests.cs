@@ -139,7 +139,7 @@ namespace EasyReasy.Auth.Tests
 
             // The validation service has already issued the session; the response still hands it over.
             Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-            Assert.IsTrue((await ReadTokenAsync(response)).Length > CookieTokenFallback.MaxCookieBytes);
+            Assert.IsTrue((await ReadTokenAsync(response)).Length > AccessTokenCookie.MaxCookieBytes);
             AssertClearsCookie(response);
             AssertLoggedOversizedCookie(logs);
         }

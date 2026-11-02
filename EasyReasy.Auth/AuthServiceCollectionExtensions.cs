@@ -75,10 +75,10 @@ namespace EasyReasy.Auth
                     };
                 });
 
-            // Registered even when the option is off, so the cookie helpers can tell "off" from "AddEasyReasyAuth
-            // not called" and the reader and the writers share one prefix list.
-            CookieTokenFallback cookieFallback = new CookieTokenFallback(options.CookieTokenPaths);
-            services.AddSingleton(cookieFallback);
+            // One instance, registered whether or not the option is on, so the reader below and the cookie helpers
+            // share one prefix list and the helpers decide on/off by asking it IsEnabled.
+            AccessTokenCookie accessTokenCookie = new AccessTokenCookie(options.CookieTokenPaths);
+            services.AddSingleton(accessTokenCookie);
 
             // In precedence order: an explicit token on the request beats the ambient cookie.
             List<IBearerTokenSource> tokenSources = new List<IBearerTokenSource>();
@@ -88,9 +88,9 @@ namespace EasyReasy.Auth
                 tokenSources.Add(new QueryStringTokenFallback(options.QueryStringTokenPaths));
             }
 
-            if (cookieFallback.IsEnabled)
+            if (accessTokenCookie.IsEnabled)
             {
-                tokenSources.Add(cookieFallback);
+                tokenSources.Add(accessTokenCookie);
             }
 
             if (tokenSources.Count > 0)

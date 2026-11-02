@@ -23,7 +23,7 @@ namespace EasyReasy.Auth.Google
         /// failure) before the response is written; an exception thrown by the logger propagates as a 500.
         /// <para>
         /// When <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> is non-empty, a successful sign-in also sets the
-        /// access-token cookie through <see cref="HttpContextExtensions.SetAccessTokenCookie"/>, as the built-in
+        /// access-token cookie through <see cref="HttpContextExtensions.TrySetAccessTokenCookie"/>, as the built-in
         /// login endpoint does. A rejected sign-in sets none, and the JSON response is unchanged.
         /// </para>
         /// </remarks>

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 using System.Net;
@@ -11,12 +12,12 @@ namespace EasyReasy.Auth.Tests
     {
         private static readonly string[] FilePaths = ["/files"];
 
-        private static string CookieHeader(string token) => $"{CookieTokenFallback.CookieName}={token}";
+        private static string CookieHeader(string token) => $"{AccessTokenCookie.CookieName}={token}";
 
         [TestMethod]
         public async Task Get_ValidCookieOnListedPath_Authenticates()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -29,7 +30,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Head_ValidCookieOnListedPath_Authenticates()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -42,7 +43,7 @@ namespace EasyReasy.Auth.Tests
         public async Task Head_NoCookie_Returns401()
         {
             // Without this, the HEAD test above would pass against an endpoint that never required a token.
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
 
             using HttpResponseMessage response = await app.SendAsync(HttpMethod.Head, "/files/whoami");
 
@@ -53,9 +54,12 @@ namespace EasyReasy.Auth.Tests
         [DataRow("POST")]
         [DataRow("PUT")]
         [DataRow("DELETE")]
+        [DataRow("PATCH")]
+        [DataRow("OPTIONS")]
         public async Task NonReadMethod_ValidCookieOnListedPath_Returns401(string method)
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            // A valid token: had the cookie been read, the request would have been authenticated.
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -68,7 +72,7 @@ namespace EasyReasy.Auth.Tests
         public async Task Post_BearerHeaderOnListedPath_StillAuthenticates()
         {
             // The method rule bounds the cookie only, not the path: a header token works on every method.
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -78,11 +82,45 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public async Task WebSocketConnect_ValidCookieOnListedPath_HandshakeRejected()
+        {
+            // A handshake is a GET, but it opens a two-way channel, which is not a read; a sibling-subdomain page can
+            // open one with the user's cookie, since WebSockets have no CORS check.
+            string[] socketPaths = ["/ws"];
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: socketPaths);
+            string token = FallbackTokenTestApp.CreateToken("reader-1");
+
+            WebSocketClient client = app.Server.CreateWebSocketClient();
+            client.ConfigureRequest = request => request.Headers.Cookie = CookieHeader(token);
+
+            InvalidOperationException exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                client.ConnectAsync(new Uri("ws://localhost/ws/city"), CancellationToken.None));
+            StringAssert.Contains(exception.Message, "401");
+
+            // The same cookie on the same prefix still authenticates a plain GET, so the rejection is the upgrade's.
+            using HttpResponseMessage read = await app.SendAsync(HttpMethod.Get, "/ws/whoami", cookieHeader: CookieHeader(token));
+            Assert.AreEqual(HttpStatusCode.OK, read.StatusCode);
+        }
+
+        [TestMethod]
+        [DataRow("Upgrade", "websocket")]
+        [DataRow("Upgrade", "h2c")]
+        [DataRow("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")]
+        public void ReadToken_UpgradeRequest_ReturnsNull(string headerName, string headerValue)
+        {
+            AccessTokenCookie cookie = new AccessTokenCookie(FilePaths);
+            HttpRequest request = CreateGetRequest("/files/a", CookieHeader("token-a"));
+            request.Headers[headerName] = headerValue;
+
+            Assert.IsNull(cookie.ReadToken(request));
+        }
+
+        [TestMethod]
         [DataRow("/api/whoami")]
         [DataRow("/filesx/whoami")]
         public async Task Get_ValidCookieOnUnlistedPath_Returns401(string path)
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(HttpMethod.Get, path, cookieHeader: CookieHeader(token));
@@ -93,7 +131,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_ExpiredCookieToken_Returns401()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateExpiredToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -106,7 +144,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_CookieTokenSignedWithOtherSecret_Returns401()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateTokenSignedWithOtherSecret("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -119,7 +157,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_BearerHeaderAndCookie_HeaderWins()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string headerToken = FallbackTokenTestApp.CreateToken("header-user");
             string cookieToken = FallbackTokenTestApp.CreateToken("cookie-user");
 
@@ -133,7 +171,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_NonBearerHeaderAndValidCookie_Returns401()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string cookieToken = FallbackTokenTestApp.CreateToken("cookie-user");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -145,7 +183,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_QueryTokenAndCookie_QueryTokenWins()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(FilePaths, cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(queryStringTokenPaths: FilePaths, cookieTokenPaths: FilePaths);
             string queryToken = FallbackTokenTestApp.CreateToken("query-user");
             string cookieToken = FallbackTokenTestApp.CreateToken("cookie-user");
 
@@ -160,7 +198,7 @@ namespace EasyReasy.Auth.Tests
         public async Task Get_InvalidQueryTokenAndValidCookie_Returns401()
         {
             // The query string supplied a token, so the cookie is not a second chance for it.
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(FilePaths, cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(queryStringTokenPaths: FilePaths, cookieTokenPaths: FilePaths);
             string queryToken = FallbackTokenTestApp.CreateExpiredToken("query-user");
             string cookieToken = FallbackTokenTestApp.CreateToken("cookie-user");
 
@@ -174,7 +212,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_EmptyQueryTokenAndValidCookie_CookieAuthenticates()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(FilePaths, cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(queryStringTokenPaths: FilePaths, cookieTokenPaths: FilePaths);
             string cookieToken = FallbackTokenTestApp.CreateToken("cookie-user");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -187,7 +225,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_QueryTokenOnPathListedOnlyForCookie_Returns401()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/files/whoami?access_token={token}");
@@ -198,7 +236,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_CookieAmongOtherCookies_Authenticates()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -211,7 +249,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_RepeatedCookie_Returns401()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string userToken = FallbackTokenTestApp.CreateToken("reader-1");
             string tossedToken = FallbackTokenTestApp.CreateToken("attacker");
 
@@ -224,7 +262,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_RepeatedIdenticalCookie_Returns401()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -236,7 +274,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_CookieNameDifferingInCase_Returns401()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -248,17 +286,17 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void ReadToken_CookieSplitAcrossSeveralCookieHeaders_CountsEveryHeader()
         {
-            // HTTP/2 may send each cookie in a header field of its own.
-            CookieTokenFallback fallback = new CookieTokenFallback(FilePaths);
+            // HTTP/2 may send each cookie in a header field of its own, which the HTTP tests above cannot produce.
+            AccessTokenCookie cookie = new AccessTokenCookie(FilePaths);
 
-            Assert.AreEqual("token-a", fallback.ReadToken(CreateGetRequest("/files/a", "theme=dark", CookieHeader("token-a"))));
-            Assert.IsNull(fallback.ReadToken(CreateGetRequest("/files/a", CookieHeader("token-a"), CookieHeader("token-b"))));
+            Assert.AreEqual("token-a", cookie.ReadToken(CreateGetRequest("/files/a", "theme=dark", CookieHeader("token-a"))));
+            Assert.IsNull(cookie.ReadToken(CreateGetRequest("/files/a", CookieHeader("token-a"), CookieHeader("token-b"))));
         }
 
         [TestMethod]
         public async Task Get_OptionUnset_CookieIgnored()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([]);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync();
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -270,7 +308,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_OnlyQueryStringOptionSet_CookieIgnored()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(queryStringTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -285,8 +323,9 @@ namespace EasyReasy.Auth.Tests
             string? tokenSeenByConsumer = "not called";
             int consumerHandlerCalls = 0;
             await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(
-                FilePaths,
-                bearerOptions => bearerOptions.Events = new JwtBearerEvents
+                queryStringTokenPaths: FilePaths,
+                cookieTokenPaths: FilePaths,
+                configureBearer: bearerOptions => bearerOptions.Events = new JwtBearerEvents
                 {
                     OnMessageReceived = context =>
                     {
@@ -294,8 +333,7 @@ namespace EasyReasy.Auth.Tests
                         tokenSeenByConsumer = context.Token;
                         return Task.CompletedTask;
                     },
-                },
-                cookieTokenPaths: FilePaths);
+                });
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -314,16 +352,15 @@ namespace EasyReasy.Auth.Tests
         {
             string consumerToken = FallbackTokenTestApp.CreateToken("consumer-user");
             await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(
-                [],
-                bearerOptions => bearerOptions.Events = new JwtBearerEvents
+                cookieTokenPaths: FilePaths,
+                configureBearer: bearerOptions => bearerOptions.Events = new JwtBearerEvents
                 {
                     OnMessageReceived = context =>
                     {
                         context.Token = consumerToken;
                         return Task.CompletedTask;
                     },
-                },
-                cookieTokenPaths: FilePaths);
+                });
             string cookieToken = FallbackTokenTestApp.CreateToken("cookie-user");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -338,9 +375,8 @@ namespace EasyReasy.Auth.Tests
         {
             RecordingBearerEvents consumerEvents = new RecordingBearerEvents();
             await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(
-                [],
-                bearerOptions => bearerOptions.Events = consumerEvents,
-                cookieTokenPaths: FilePaths);
+                cookieTokenPaths: FilePaths,
+                configureBearer: bearerOptions => bearerOptions.Events = consumerEvents);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -356,7 +392,7 @@ namespace EasyReasy.Auth.Tests
         {
             // Where the writer and the reader have to agree: the writer puts PathBase into the cookie's Path,
             // which the browser matches against the full URL, while the reader compares Request.Path.
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths, pathBase: "/app");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths, pathBase: "/app");
 
             using HttpResponseMessage issued = await app.SendAsync(HttpMethod.Post, "/app/issue-cookie/reader-1");
             SetCookieHeaderValue cookie = SetCookieHeaderValue.Parse(issued.Headers.GetValues("Set-Cookie").Single());
@@ -373,7 +409,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_ListedPathInDifferentCase_Authenticates()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
             string token = FallbackTokenTestApp.CreateToken("reader-1");
 
             using HttpResponseMessage response = await app.SendAsync(
@@ -386,26 +422,13 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_EmptyCookieValue_TreatedAsNoToken()
         {
-            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([], cookieTokenPaths: FilePaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(cookieTokenPaths: FilePaths);
 
             using HttpResponseMessage response = await app.SendAsync(
                 HttpMethod.Get, "/files/whoami", cookieHeader: CookieHeader(""));
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-
-            // A bare "Bearer" challenge: no token reached validation.
-            string challenge = string.Join(", ", response.Headers.WwwAuthenticate.Select(header => header.ToString()));
-            Assert.IsFalse(challenge.Contains("invalid_token"), challenge);
-        }
-
-        [TestMethod]
-        public void ReadToken_RepeatedCookieInOneHeader_ReturnsNullAndSingleCookieReturnsToken()
-        {
-            CookieTokenFallback fallback = new CookieTokenFallback(FilePaths);
-
-            Assert.AreEqual("token-a", fallback.ReadToken(CreateGetRequest("/files/a", $"theme=dark; {CookieHeader("token-a")}")));
-            Assert.IsNull(fallback.ReadToken(CreateGetRequest("/files/a", $"{CookieHeader("token-a")}; {CookieHeader("token-b")}")));
-            Assert.IsNull(fallback.ReadToken(CreateGetRequest("/files/a", $"{CookieHeader("token-a")}; {CookieHeader("token-a")}")));
+            AssertNoTokenWasRead(response);
         }
 
         private static HttpRequest CreateGetRequest(string path, params string[] cookieHeaders)
@@ -421,8 +444,18 @@ namespace EasyReasy.Auth.Tests
         {
             // A token that was never read yields a bare "Bearer" challenge; one that was read and failed validation
             // names the error.
-            string challenge = string.Join(", ", response.Headers.WwwAuthenticate.Select(header => header.ToString()));
-            StringAssert.Contains(challenge, "invalid_token");
+            StringAssert.Contains(ReadChallenge(response), "invalid_token");
+        }
+
+        private static void AssertNoTokenWasRead(HttpResponseMessage response)
+        {
+            string challenge = ReadChallenge(response);
+            Assert.IsFalse(challenge.Contains("invalid_token"), challenge);
+        }
+
+        private static string ReadChallenge(HttpResponseMessage response)
+        {
+            return string.Join(", ", response.Headers.WwwAuthenticate.Select(header => header.ToString()));
         }
     }
 }
