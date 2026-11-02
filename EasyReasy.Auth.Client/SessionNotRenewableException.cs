@@ -7,14 +7,14 @@ namespace EasyReasy.Auth.Client
     /// </summary>
     /// <remarks>
     /// The type is the whole answer: the saved session is spent, and a new client has to be constructed from
-    /// credentials. It is not thrown when the refresh endpoint failed in a way worth retrying (<c>408</c>,
-    /// <c>429</c> or a <c>5xx</c>); that surfaces as an <see cref="HttpRequestException"/> carrying the status, and
-    /// the refresh token is kept for the next attempt. When the server refused the refresh token,
-    /// <see cref="Exception.InnerException"/> is its answer, as an <see cref="HttpRequestException"/> with the
-    /// status set. It derives from <see cref="InvalidOperationException"/>, so
-    /// <c>catch (InvalidOperationException)</c> catches it.
+    /// credentials. When the server refused the refresh token, <see cref="Exception.InnerException"/> is its
+    /// answer, as an <see cref="HttpRequestException"/> with the status set; a <c>404</c> there points at a
+    /// misconfigured refresh endpoint rather than a spent session. It is not thrown when the refresh endpoint
+    /// failed rather than refused — a status that is not a refusal as <see cref="SignInRefusedException"/>
+    /// defines one, or no answer. That surfaces as an <see cref="HttpRequestException"/>, and the refresh token is
+    /// kept for the next attempt.
     /// </remarks>
-    public class SessionNotRenewableException : InvalidOperationException
+    public class SessionNotRenewableException : AuthClientException
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="SessionNotRenewableException"/> class.

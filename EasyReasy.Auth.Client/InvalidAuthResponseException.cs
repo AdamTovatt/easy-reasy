@@ -13,7 +13,7 @@ namespace EasyReasy.Auth.Client
     /// The properties here carry what separates them — above all <see cref="RequestUri"/>, which is the address that
     /// actually produced the body.
     /// </remarks>
-    public class InvalidAuthResponseException : Exception
+    public class InvalidAuthResponseException : AuthClientException
     {
         /// <summary>
         /// The maximum number of characters of the response body carried in <see cref="BodySnippet"/>.

@@ -201,11 +201,7 @@ namespace EasyReasy.Auth.Client.Tests
 
             // Assert
             Assert.AreEqual(0, handler.SentRequests.Count);
-            Assert.AreEqual(
-                "Cannot re-authenticate a pre-authorized client. " +
-                "The token has expired and no refresh token is available. " +
-                "Create a new client with valid credentials.",
-                exception.Message);
+            StringAssert.Contains(exception.Message, "holds no refresh token");
             Assert.IsNull(exception.InnerException);
         }
 
@@ -290,7 +286,7 @@ namespace EasyReasy.Auth.Client.Tests
         }
 
         [TestMethod]
-        public async Task GetAsync_UsernamePassword_InvalidCredentials_ThrowsUnauthorizedAccessException()
+        public async Task GetAsync_UsernamePassword_InvalidCredentials_ThrowsSignInRefusedException()
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
@@ -305,7 +301,7 @@ namespace EasyReasy.Auth.Client.Tests
                 httpClient, username: "user", password: "wrong-pass");
 
             // Act & Assert
-            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+            await Assert.ThrowsExceptionAsync<SignInRefusedException>(
                 () => client.GetAsync("api/test"));
         }
 
@@ -354,7 +350,7 @@ namespace EasyReasy.Auth.Client.Tests
                 httpClient, username: "   ", password: "   ");
 
             // Act
-            UnauthorizedAccessException exception = await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+            SignInRefusedException exception = await Assert.ThrowsExceptionAsync<SignInRefusedException>(
                 () => client.GetAsync("api/test"));
 
             // Assert — the whitespace must reach the wire as given, not trimmed away into an empty credential.
@@ -439,7 +435,7 @@ namespace EasyReasy.Auth.Client.Tests
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "   ");
 
             // Act
-            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+            await Assert.ThrowsExceptionAsync<SignInRefusedException>(
                 () => client.GetAsync("api/test"));
 
             // Assert — the whitespace must reach the wire as given, not trimmed away into an empty credential.

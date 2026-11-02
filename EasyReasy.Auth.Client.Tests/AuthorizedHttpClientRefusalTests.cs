@@ -17,6 +17,7 @@ namespace EasyReasy.Auth.Client.Tests
         [DataRow(HttpStatusCode.Unauthorized)]
         [DataRow(HttpStatusCode.Forbidden)]
         [DataRow(HttpStatusCode.NotFound)]
+        [DataRow((HttpStatusCode)499)]
         public async Task GetAsync_PreAuthorized_RefreshRefused_ThrowsSessionNotRenewableWithRefusalAsInner(HttpStatusCode refusal)
         {
             // Arrange
@@ -27,10 +28,29 @@ namespace EasyReasy.Auth.Client.Tests
             // Act
             SessionNotRenewableException exception = await Assert.ThrowsExceptionAsync<SessionNotRenewableException>(() => client.GetAsync("api/test"));
 
-            // Assert
+            // Assert — and part of the family a single catch (AuthClientException) handles.
+            Assert.IsInstanceOfType(exception, typeof(AuthClientException));
             HttpRequestException? inner = exception.InnerException as HttpRequestException;
             Assert.IsNotNull(inner);
             Assert.AreEqual(refusal, inner.StatusCode);
+        }
+
+        [TestMethod]
+        public async Task GetAsync_PreAuthorized_RefusedAndMissingRefreshToken_MessagesTellThemApart()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueResponse(CreateStatusResponse(HttpStatusCode.NotFound));
+            using AuthorizedHttpClient refusedClient = CreateExpiredPreAuthorizedClient(handler, "refused-refresh");
+            using AuthorizedHttpClient missingClient = CreateExpiredPreAuthorizedClient(new FakeHttpHandler(), refreshToken: null);
+
+            // Act
+            SessionNotRenewableException refused = await Assert.ThrowsExceptionAsync<SessionNotRenewableException>(() => refusedClient.GetAsync("api/test"));
+            SessionNotRenewableException missing = await Assert.ThrowsExceptionAsync<SessionNotRenewableException>(() => missingClient.GetAsync("api/test"));
+
+            // Assert — a log line says which it was, and a refusal names its status.
+            Assert.AreNotEqual(missing.Message, refused.Message);
+            StringAssert.Contains(refused.Message, "404");
         }
 
         [DataTestMethod]
@@ -38,6 +58,7 @@ namespace EasyReasy.Auth.Client.Tests
         [DataRow(HttpStatusCode.Unauthorized)]
         [DataRow(HttpStatusCode.Forbidden)]
         [DataRow(HttpStatusCode.NotFound)]
+        [DataRow((HttpStatusCode)499)]
         public async Task GetAsync_PreAuthorized_RefreshRefused_NextCallDoesNotRetryTheRefusedToken(HttpStatusCode refusal)
         {
             // Arrange
@@ -55,10 +76,10 @@ namespace EasyReasy.Auth.Client.Tests
         }
 
         [TestMethod]
-        public void Constructors_AllOverloads_PassMessageAndInnerExceptionToBase()
+        public void SessionNotRenewableException_AllConstructors_PassMessageAndInnerExceptionToBase()
         {
             // Arrange — public, so a consumer's fake can throw one; the test project has no InternalsVisibleTo.
-            InvalidOperationException inner = new InvalidOperationException("inner");
+            HttpRequestException inner = new HttpRequestException("inner");
 
             // Act
             SessionNotRenewableException withoutArguments = new SessionNotRenewableException();
@@ -72,42 +93,64 @@ namespace EasyReasy.Auth.Client.Tests
             Assert.AreSame(inner, withInner.InnerException);
         }
 
+        [TestMethod]
+        public void SignInRefusedException_AllConstructors_KeepStatusMessageAndInnerException()
+        {
+            // Arrange — public, so a consumer's fake can throw one.
+            HttpRequestException inner = new HttpRequestException("inner");
+
+            // Act
+            SignInRefusedException withStatus = new SignInRefusedException(HttpStatusCode.Forbidden);
+            SignInRefusedException withMessage = new SignInRefusedException("refused", HttpStatusCode.BadRequest);
+            SignInRefusedException withInner = new SignInRefusedException("refused", HttpStatusCode.Unauthorized, inner);
+
+            // Assert
+            Assert.AreEqual(HttpStatusCode.Forbidden, withStatus.StatusCode);
+            StringAssert.Contains(withStatus.Message, "403");
+            Assert.AreEqual(HttpStatusCode.BadRequest, withMessage.StatusCode);
+            Assert.AreEqual("refused", withMessage.Message);
+            Assert.AreEqual(HttpStatusCode.Unauthorized, withInner.StatusCode);
+            Assert.AreSame(inner, withInner.InnerException);
+        }
+
         #endregion
 
-        #region Transient refresh failure
+        #region Refresh server failure
 
         [DataTestMethod]
+        [DataRow(HttpStatusCode.Found)]
         [DataRow(HttpStatusCode.RequestTimeout)]
         [DataRow(HttpStatusCode.TooManyRequests)]
         [DataRow(HttpStatusCode.InternalServerError)]
         [DataRow(HttpStatusCode.ServiceUnavailable)]
         [DataRow((HttpStatusCode)599)]
-        public async Task GetAsync_PreAuthorized_RefreshTransient_ThrowsWithStatus(HttpStatusCode transientStatus)
+        public async Task GetAsync_PreAuthorized_RefreshServerFailed_ThrowsWithStatus(HttpStatusCode failureStatus)
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
-            handler.EnqueueResponse(CreateStatusResponse(transientStatus));
+            handler.EnqueueResponse(CreateStatusResponse(failureStatus));
             using AuthorizedHttpClient client = CreateExpiredPreAuthorizedClient(handler, "kept-refresh");
 
             // Act
             HttpRequestException exception = await Assert.ThrowsExceptionAsync<HttpRequestException>(() => client.GetAsync("api/test"));
 
             // Assert
-            Assert.AreEqual(transientStatus, exception.StatusCode);
-            StringAssert.StartsWith(exception.Message, $"Token refresh failed. Status: {transientStatus}, Content: ");
+            Assert.AreEqual(failureStatus, exception.StatusCode);
+            StringAssert.StartsWith(exception.Message, $"Token refresh failed. Status: {(int)failureStatus} {failureStatus}, Content: ");
         }
 
         [DataTestMethod]
+        [DataRow(HttpStatusCode.Found)]
         [DataRow(HttpStatusCode.RequestTimeout)]
         [DataRow(HttpStatusCode.TooManyRequests)]
         [DataRow(HttpStatusCode.InternalServerError)]
         [DataRow(HttpStatusCode.ServiceUnavailable)]
         [DataRow((HttpStatusCode)599)]
-        public async Task GetAsync_PreAuthorized_RefreshTransient_NextCallRedeemsSameRefreshToken(HttpStatusCode transientStatus)
+        public async Task GetAsync_PreAuthorized_RefreshServerFailed_NextCallRedeemsSameRefreshToken(HttpStatusCode failureStatus)
         {
-            // Arrange
+            // Arrange — an unfollowed 3xx judged nothing about the token, so it is kept like a 5xx.
             FakeHttpHandler handler = new FakeHttpHandler();
-            handler.EnqueueResponse(CreateStatusResponse(transientStatus));
+            handler.EnqueueResponse(CreateStatusResponse(failureStatus));
             handler.EnqueueJsonResponse(CreateAuthResponse("new-token", 60, "new-refresh").ToJson());
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
             using AuthorizedHttpClient client = CreateExpiredPreAuthorizedClient(handler, "kept-refresh");
@@ -180,10 +223,34 @@ namespace EasyReasy.Auth.Client.Tests
 
         [DataTestMethod]
         [DataRow(HttpStatusCode.BadRequest)]
+        [DataRow(HttpStatusCode.Unauthorized)]
         [DataRow(HttpStatusCode.Forbidden)]
+        [DataRow(HttpStatusCode.NotFound)]
+        [DataRow((HttpStatusCode)499)]
+        public async Task GetAsync_UsernamePassword_SignInRefused_ThrowsSignInRefusedExceptionWithStatus(HttpStatusCode status)
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            handler.EnqueueResponse(CreateStatusResponse(status));
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(CreateHttpClient(handler), username: "user", password: "pass");
+
+            // Act
+            SignInRefusedException exception = await Assert.ThrowsExceptionAsync<SignInRefusedException>(() => client.GetAsync("api/test"));
+
+            // Assert — and part of the family a single catch (AuthClientException) handles.
+            Assert.AreEqual(status, exception.StatusCode);
+            StringAssert.Contains(exception.Message, StatusResponseBody);
+            Assert.IsInstanceOfType(exception, typeof(AuthClientException));
+        }
+
+        [DataTestMethod]
+        [DataRow(HttpStatusCode.Found)]
+        [DataRow(HttpStatusCode.RequestTimeout)]
         [DataRow(HttpStatusCode.TooManyRequests)]
         [DataRow(HttpStatusCode.InternalServerError)]
-        public async Task GetAsync_UsernamePassword_SignInUnsuccessful_ThrowsHttpRequestExceptionWithStatus(HttpStatusCode status)
+        [DataRow(HttpStatusCode.ServiceUnavailable)]
+        [DataRow((HttpStatusCode)599)]
+        public async Task GetAsync_UsernamePassword_SignInServerFails_ThrowsHttpRequestExceptionWithStatus(HttpStatusCode status)
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
@@ -195,19 +262,7 @@ namespace EasyReasy.Auth.Client.Tests
 
             // Assert
             Assert.AreEqual(status, exception.StatusCode);
-            StringAssert.StartsWith(exception.Message, $"Authentication failed. Status: {status}, Content: ");
-        }
-
-        [TestMethod]
-        public async Task GetAsync_UsernamePassword_SignInAnswered401_StillThrowsUnauthorizedAccessException()
-        {
-            // Arrange
-            FakeHttpHandler handler = new FakeHttpHandler();
-            handler.EnqueueResponse(CreateStatusResponse(HttpStatusCode.Unauthorized));
-            using AuthorizedHttpClient client = new AuthorizedHttpClient(CreateHttpClient(handler), username: "user", password: "wrong");
-
-            // Act & Assert
-            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(() => client.GetAsync("api/test"));
+            StringAssert.StartsWith(exception.Message, $"Sign-in failed. Status: {(int)status} {status}, Content: ");
         }
 
         [TestMethod]
