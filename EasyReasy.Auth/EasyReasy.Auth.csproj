@@ -19,6 +19,7 @@
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <VersionPrefix>5.13.0</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
+    <PackageReleaseNotes>Adds EasyReasyAuthOptions.CookieTokenPaths, off by default, so a browser can open a protected file in a new tab with its own session instead of a public link. On a listed path, a GET or HEAD request, never a WebSocket handshake, may carry its token in a path-scoped, HttpOnly, SameSite=Strict cookie, after the header and the query string. The built-in login, refresh and logout endpoints set and clear the cookie, and new HttpContext helpers do the same for your own endpoints. See https://github.com/AdamTovatt/easy-reasy/blob/auth-v$(VersionPrefix)/EasyReasy.Auth/README.md#migration-from-5120</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
