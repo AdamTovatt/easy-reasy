@@ -78,6 +78,12 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
 }
 ```
 
+When the API answers `401`, each of these renews the session once and sends a copy of the request with the same
+headers and body; a `401` to that copy is returned to you. A body read from a stream that cannot seek can't be
+read twice, so its retry throws `HttpRequestException` with no `StatusCode` and the consumed stream's
+`InvalidOperationException` as `InnerException`. Sending it again fails the same way, so give a body that must
+survive a `401` a seekable stream.
+
 ## Advanced Usage
 
 ### Custom Auth Endpoints
@@ -311,7 +317,8 @@ catch (HttpRequestException exception) when (exception.StatusCode is not null)
 The client automatically handles token expiration:
 1. Detects when token expires within 5 minutes
 2. Automatically re-authenticates before making requests
-3. Retries failed requests once with a fresh token
+3. Sends a request again once with a renewed token when the API answers `401` (see
+   [Use the client](#3-use-the-client-like-a-regular-httpclient))
 
 Requests that find the token expired at the same time share one authorization attempt. If it fails, every
 request that was waiting for it and still needs a token throws that attempt's exception instead of sending the
@@ -420,10 +427,16 @@ rule for both endpoints:
   The server judged nothing, and retrying later may succeed. It throws `HttpRequestException` with `StatusCode`
   set, and a refresh answered this way keeps the refresh token.
 
+`AuthorizedHttpClient.IsRefusalStatus(statusCode)` is this rule. If you run sign-in steps of your own against
+the auth server, judge their answers with it rather than with a copy of the rule. To word a status the way the
+client's messages do, such as `404 NotFound`, use `HttpStatusText.Describe(statusCode)`.
+
 `SignInRefusedException`, `SessionNotRenewableException` and `InvalidAuthResponseException` all derive from
 `AuthClientException`: outcomes that retrying the same request will not change — credentials refused, a session
 spent, or an address that is not an auth server. One `catch (AuthClientException)` handles them all. What is
-left is `HttpRequestException`, which retrying may fix. Every unsuccessful status this client throws as one
+left is `HttpRequestException`, which retrying may fix, with one exception: a `401` retry whose body was a stream
+that cannot seek throws it with an `InvalidOperationException` as `InnerException`, and sending that request
+again fails the same way. Every unsuccessful status this client throws as one
 carries `StatusCode`, and a transport failure from `HttpClient` leaves it `null`. So around the client's own
 calls, `exception.StatusCode is not null` separates "the server answered with a failure" from "the request did
 not complete". `HttpRequestError` cannot make that split, since both can read `Unknown`.
@@ -431,6 +444,23 @@ not complete". `HttpRequestError` cannot make that split, since both can read `U
 Note that construction itself throws when a credential carries nothing — `ArgumentNullException` for `null`, `ArgumentException` for an empty string. If your credentials come from configuration that may be unset, validate them before constructing the client, or the throw lands on the constructor line rather than inside the `try` above.
 
 ## Migration
+
+### From 2.0.0
+
+2.1.0 changes no signature, so no code needs to change.
+
+- **A request passed to `SendAsync` and answered `401` now gets its retry.** `SendAsync` used to send the same
+  `HttpRequestMessage` a second time after renewing, which .NET refuses, so the retry always threw
+  `InvalidOperationException`. It now sends a copy carrying the headers and options you set and the same content
+  object. Nothing is buffered: a `StreamContent` over a seekable stream is rewound to where it started, and one
+  over a stream that cannot seek (a network or pipe stream) makes the retry throw `HttpRequestException`, with
+  the consumed stream's `InvalidOperationException` as `InnerException`, rather than send an empty body. Give
+  such a body a seekable stream if it must survive a `401`.
+- The first `401` response is disposed before the retry, and a `401` after renewal is returned to you.
+  `GetAsync` and `PostAsync` now send through `SendAsync`, so all three follow that one rule, and they keep the
+  `HttpClient`'s default HTTP version and version policy.
+- New: `AuthorizedHttpClient.IsRefusalStatus`, the client's refusal rule, and `HttpStatusText.Describe`, the
+  way its messages word a status (see [Refused or failed](#refused-or-failed)).
 
 ### From 1.8.0
 

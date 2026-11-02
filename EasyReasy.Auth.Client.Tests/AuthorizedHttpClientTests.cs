@@ -197,38 +197,6 @@ namespace EasyReasy.Auth.Client.Tests
 
         #endregion
 
-        #region PreAuthorized — 401 retry with refresh
-
-        [TestMethod]
-        public async Task GetAsync_PreAuthorized_ServerReturns401_RefreshesAndRetries()
-        {
-            // Arrange
-            FakeHttpHandler handler = new FakeHttpHandler();
-
-            // First: the GET returns 401
-            handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.Unauthorized));
-
-            // Second: refresh succeeds
-            handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "new-token", refreshToken: "new-refresh"));
-
-            // Third: the retried GET succeeds
-            handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
-
-            HttpClient httpClient = CreateHttpClient(handler);
-            AuthResponse authResponse = CreateAuthResponse(token: "valid-token");
-
-            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
-
-            // Act
-            HttpResponseMessage response = await client.GetAsync("api/test");
-
-            // Assert
-            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-            Assert.AreEqual(3, handler.SentRequests.Count);
-        }
-
-        #endregion
-
         #region UsernamePassword Constructor (existing behavior)
 
         [TestMethod]

@@ -8,12 +8,36 @@ namespace EasyReasy.Auth.Client.Tests
     public class FakeHttpHandler : HttpMessageHandler
     {
         private readonly Queue<Func<CancellationToken, Task<HttpResponseMessage>>> _responses = new Queue<Func<CancellationToken, Task<HttpResponseMessage>>>();
-        private readonly List<HttpRequestMessage> _sentRequests = new List<HttpRequestMessage>();
+        private readonly List<SentRequest> _sent = new List<SentRequest>();
 
         /// <summary>
-        /// Gets the list of requests that were sent through this handler.
+        /// Gets the requests that reached this handler, each with the body it was sent with, in arrival order. A
+        /// request whose content could not be read is not among them: its send threw before anything went out.
         /// </summary>
-        public IReadOnlyList<HttpRequestMessage> SentRequests => _sentRequests;
+        public IReadOnlyList<SentRequest> Sent
+        {
+            get
+            {
+                lock (_responses)
+                {
+                    return _sent.ToList();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the messages of <see cref="Sent"/>, for a test that does not read bodies.
+        /// </summary>
+        public IReadOnlyList<HttpRequestMessage> SentRequests
+        {
+            get
+            {
+                lock (_responses)
+                {
+                    return _sent.Select(sent => sent.Message).ToList();
+                }
+            }
+        }
 
         /// <summary>
         /// Whether to leave <see cref="HttpResponseMessage.RequestMessage"/> unset on the responses this handler
@@ -116,14 +140,46 @@ namespace EasyReasy.Auth.Client.Tests
             };
         }
 
+        /// <summary>
+        /// Reads a request's body the way a real handler does while sending it, so a body that cannot be sent
+        /// again fails the send that tries.
+        /// </summary>
+        /// <remarks>
+        /// Copied rather than read with <see cref="HttpContent.ReadAsStringAsync()"/>, which buffers the content and
+        /// would serve every later send from that buffer instead of from the content itself. A failure to read is
+        /// wrapped as <see cref="SocketsHttpHandler"/> wraps it: an <see cref="HttpRequestException"/> with no
+        /// status whose inner exception is the content's own.
+        /// </remarks>
+        private static async Task<string?> ReadBodyAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Content == null)
+            {
+                return null;
+            }
+
+            using MemoryStream buffer = new MemoryStream();
+            try
+            {
+                await request.Content.CopyToAsync(buffer, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                throw new HttpRequestException("An error occurred while sending the request.", exception);
+            }
+
+            return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
+        }
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            string? body = await ReadBodyAsync(request, cancellationToken);
+
             Func<CancellationToken, Task<HttpResponseMessage>> next;
 
             lock (_responses)
             {
-                _sentRequests.Add(request);
+                _sent.Add(new SentRequest(request, body));
 
                 if (_responses.Count == 0)
                 {

@@ -6,7 +6,8 @@ namespace EasyReasy.Auth.Client
     /// Thrown when the sign-in endpoint refuses the client's credentials. A refusal is any <c>4xx</c> other than
     /// <c>408 Request Timeout</c> and <c>429 Too Many Requests</c>, <c>401 Unauthorized</c> included; every other
     /// unsuccessful status is the server failing rather than refusing, and surfaces as
-    /// <see cref="HttpRequestException"/> with its status set. The refresh endpoint is judged by the same rule.
+    /// <see cref="HttpRequestException"/> with its status set. The refresh endpoint is judged by the same rule,
+    /// which <see cref="AuthorizedHttpClient.IsRefusalStatus"/> applies.
     /// </summary>
     /// <remarks>
     /// A refusal is the server's judgement of the credentials, so sending them again will be refused again; fix
