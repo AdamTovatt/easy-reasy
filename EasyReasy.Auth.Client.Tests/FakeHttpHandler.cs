@@ -7,7 +7,7 @@ namespace EasyReasy.Auth.Client.Tests
     /// </summary>
     public class FakeHttpHandler : HttpMessageHandler
     {
-        private readonly Queue<HttpResponseMessage> _responses = new Queue<HttpResponseMessage>();
+        private readonly Queue<Func<HttpResponseMessage>> _responses = new Queue<Func<HttpResponseMessage>>();
         private readonly List<HttpRequestMessage> _sentRequests = new List<HttpRequestMessage>();
 
         /// <summary>
@@ -32,7 +32,17 @@ namespace EasyReasy.Auth.Client.Tests
         /// <param name="response">The response to return.</param>
         public void EnqueueResponse(HttpResponseMessage response)
         {
-            _responses.Enqueue(response);
+            _responses.Enqueue(() => response);
+        }
+
+        /// <summary>
+        /// Enqueues a failure to be thrown by the next request instead of a response, the way a handler throws
+        /// when the server cannot be reached.
+        /// </summary>
+        /// <param name="exception">The exception to throw.</param>
+        public void EnqueueFailure(Exception exception)
+        {
+            _responses.Enqueue(() => throw exception);
         }
 
         /// <summary>
@@ -46,7 +56,7 @@ namespace EasyReasy.Auth.Client.Tests
             {
                 Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
             };
-            _responses.Enqueue(response);
+            EnqueueResponse(response);
         }
 
         protected override Task<HttpResponseMessage> SendAsync(
@@ -60,7 +70,7 @@ namespace EasyReasy.Auth.Client.Tests
                     $"No more responses enqueued. Request: {request.Method} {request.RequestUri}");
             }
 
-            HttpResponseMessage response = _responses.Dequeue();
+            HttpResponseMessage response = _responses.Dequeue()();
 
             // The real handlers set this, and code that diagnoses a wrong host reads it — a fake that left it null
             // would report null where a running client reports an address, which is the whole of what is being tested.

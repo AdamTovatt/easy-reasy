@@ -186,7 +186,7 @@ namespace EasyReasy.Auth.Client.Tests
         }
 
         [TestMethod]
-        public async Task GetAsync_PreAuthorized_ExpiredTokenNoRefreshToken_ThrowsInvalidOperationException()
+        public async Task GetAsync_PreAuthorized_ExpiredTokenNoRefreshToken_ThrowsSessionNotRenewableException()
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
@@ -195,31 +195,18 @@ namespace EasyReasy.Auth.Client.Tests
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
-            // Act & Assert
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            // Act
+            SessionNotRenewableException exception = await Assert.ThrowsExceptionAsync<SessionNotRenewableException>(
                 () => client.GetAsync("api/test"));
-        }
 
-        [TestMethod]
-        public async Task GetAsync_PreAuthorized_RefreshFails_ThrowsInvalidOperationException()
-        {
-            // Arrange
-            FakeHttpHandler handler = new FakeHttpHandler();
-
-            // Refresh endpoint returns 401
-            handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.Unauthorized)
-            {
-                Content = new StringContent("Refresh token expired")
-            });
-
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(token: "expired-token", expiresInMinutes: -1, refreshToken: "bad-refresh");
-
-            using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
-
-            // Act & Assert
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-                () => client.GetAsync("api/test"));
+            // Assert
+            Assert.AreEqual(0, handler.SentRequests.Count);
+            Assert.AreEqual(
+                "Cannot re-authenticate a pre-authorized client. " +
+                "The token has expired and no refresh token is available. " +
+                "Create a new client with valid credentials.",
+                exception.Message);
+            Assert.IsNull(exception.InnerException);
         }
 
         #endregion
