@@ -19,7 +19,7 @@
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <VersionPrefix>1.2.0</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes></PackageReleaseNotes>
+    <PackageReleaseNotes>Google sign-in now sets the EasyReasy.Auth access-token cookie when EasyReasyAuthOptions.CookieTokenPaths is non-empty, as the built-in login endpoint does. A rejected sign-in sets no cookie, and a token too large for the cookie is logged instead of failing the sign-in. Requires EasyReasy.Auth 5.13.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-google-v$(VersionPrefix)/EasyReasy.Auth.Google/README.md#access-token-cookie</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
