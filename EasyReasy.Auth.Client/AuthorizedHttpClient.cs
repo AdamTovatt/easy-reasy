@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace EasyReasy.Auth.Client
 {
     /// <summary>
@@ -188,12 +190,20 @@ namespace EasyReasy.Auth.Client
         /// <see cref="InvalidAuthResponseException.BodySnippet"/> is.
         /// </exception>
         /// <exception cref="HttpRequestException">
-        /// Thrown when the auth endpoint answers with any other unsuccessful status, or when the request fails at
-        /// the network level.
+        /// Thrown when the auth endpoint answers with any other unsuccessful status, when a client constructed
+        /// pre-authorized has its refresh answered <c>408</c>, <c>429</c> or <c>5xx</c>, or when the request fails at
+        /// the network level. Every unsuccessful status this client throws as an <see cref="HttpRequestException"/>
+        /// carries <see cref="HttpRequestException.StatusCode"/>, and a transport failure leaves it <c>null</c>, so
+        /// <c>exception.StatusCode is not null</c> separates "the server answered with a failure" from "the request
+        /// did not complete". After a refresh answered <c>408</c>, <c>429</c> or <c>5xx</c>, or one that did not
+        /// complete, the refresh token is kept, so the call can be retried.
         /// </exception>
-        /// <exception cref="InvalidOperationException">
+        /// <exception cref="SessionNotRenewableException">
         /// Thrown when the client was constructed pre-authorized and its token has expired with no refresh token
-        /// left to redeem, so there are no credentials to re-authenticate with.
+        /// left to redeem, or with one the server refused, so there are no credentials to re-authenticate with.
+        /// After a refusal, <see cref="Exception.InnerException"/> is the server's answer as an
+        /// <see cref="HttpRequestException"/> with its status set. Derives from
+        /// <see cref="InvalidOperationException"/>.
         /// </exception>
         /// <exception cref="InvalidAuthResponseException">
         /// Thrown when the auth or refresh endpoint answers successfully with a body that is not an
@@ -210,7 +220,11 @@ namespace EasyReasy.Auth.Client
             await _authLock.WaitAsync(cancellationToken);
             try
             {
-                // Double-check after acquiring the lock — another thread may have already authorized
+                // Double-check after acquiring the lock — another thread may have already authorized.
+                // A caller that waited here while another's attempt failed makes its own attempt rather than
+                // inheriting that failure: each caller authorizes at most once, for sign-in and refresh alike, so
+                // callers queued behind a 429 or 5xx each send one request in turn. Sharing one failed attempt
+                // among them would change sign-in as well, which this method treats the same as refresh.
                 if (!_isAuthorized || IsTokenExpired())
                 {
                     await AuthorizeAsync(cancellationToken);
@@ -347,11 +361,14 @@ namespace EasyReasy.Auth.Client
         /// Thrown when the auth endpoint rejects the credentials with a <c>401 Unauthorized</c>.
         /// </exception>
         /// <exception cref="HttpRequestException">
-        /// Thrown when the auth endpoint answers with any other unsuccessful status.
+        /// Thrown, with <see cref="HttpRequestException.StatusCode"/> set, when the auth endpoint answers with any
+        /// other unsuccessful status, or when a client without credentials has its refresh answered <c>408</c>,
+        /// <c>429</c> or <c>5xx</c>.
         /// </exception>
-        /// <exception cref="InvalidOperationException">
+        /// <exception cref="SessionNotRenewableException">
         /// Thrown when the client was constructed pre-authorized and its token has expired with no refresh token
-        /// left to redeem, so there are no credentials to re-authenticate with.
+        /// left to redeem, or with one the server refused, so there are no credentials to re-authenticate with.
+        /// After a refusal, <see cref="Exception.InnerException"/> is the server's answer.
         /// </exception>
         /// <exception cref="InvalidAuthResponseException">
         /// Thrown when the auth or refresh endpoint answers successfully with a body that is not an
@@ -359,22 +376,39 @@ namespace EasyReasy.Auth.Client
         /// </exception>
         private async Task AuthorizeAsync(CancellationToken cancellationToken = default)
         {
+            HttpRequestException? transientRefreshFailure = null;
+            HttpRequestException? refreshRefusal = null;
+
             // Try refresh token first if available
             if (_refreshToken != null)
             {
-                bool refreshed = await TryRefreshTokenAsync(cancellationToken);
-                if (refreshed)
+                RefreshAttempt attempt = await TryRefreshTokenAsync(cancellationToken);
+                if (attempt.IsRenewed)
                 {
                     return;
                 }
+
+                transientRefreshFailure = attempt.TransientFailure;
+                refreshRefusal = attempt.Refusal;
             }
 
             if (_credentials == null)
             {
-                throw new InvalidOperationException(
+                // A refresh that failed in a way worth retrying kept its token, so the session is not spent: report
+                // the server's answer, not a session that needs signing in to again.
+                if (transientRefreshFailure != null)
+                {
+                    throw transientRefreshFailure;
+                }
+
+                // The message stays the same whether there was no refresh token or the server refused it, as issue
+                // #40 settled; which of the two it was is told by InnerException, which carries the refusal's
+                // status (a 404 there is a misconfigured refresh endpoint, not a spent session).
+                throw new SessionNotRenewableException(
                     "Cannot re-authenticate a pre-authorized client. " +
                     "The token has expired and no refresh token is available. " +
-                    "Create a new client with valid credentials.");
+                    "Create a new client with valid credentials.",
+                    refreshRefusal);
             }
 
             string json = _credentials.CreateAuthRequestJson(ClientId);
@@ -385,12 +419,12 @@ namespace EasyReasy.Auth.Client
             {
                 string errorSnippet = ResponseBodySnippet.Create(await ResponseBodyReader.ReadAsync(response, cancellationToken));
 
-                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
                 {
                     throw new UnauthorizedAccessException($"Authentication failed with status {response.StatusCode}. Additional information from the backend: {errorSnippet}");
                 }
 
-                throw new HttpRequestException($"Authentication failed. Status: {response.StatusCode}, Content: {errorSnippet}");
+                throw CreateUnsuccessfulStatusException("Authentication", response, errorSnippet);
             }
 
             string responseJson = await ResponseBodyReader.ReadAsync(response, cancellationToken);
@@ -463,14 +497,17 @@ namespace EasyReasy.Auth.Client
         /// Attempts to refresh the access token using the stored refresh token.
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>True if the refresh was successful; false if it failed and full re-authentication is needed.</returns>
+        /// <returns>
+        /// Whether the token was renewed and, when it was not, the server's answer: a transient failure, which keeps
+        /// the refresh token, or a refusal, which clears it.
+        /// </returns>
         /// <exception cref="InvalidAuthResponseException">
         /// Thrown when the refresh endpoint answers successfully with a body that is not an <see cref="AuthResponse"/>.
-        /// An unsuccessful status is a refusal to refresh and returns false; a success carrying something that is not
-        /// an auth response is the endpoint not being one, which falling back to full re-authentication would only
-        /// repeat against the same wrong address.
+        /// An unsuccessful status does not throw here; a success carrying something that is not an auth response is
+        /// the endpoint not being one, which falling back to full re-authentication would only repeat against the
+        /// same wrong address.
         /// </exception>
-        private async Task<bool> TryRefreshTokenAsync(CancellationToken cancellationToken = default)
+        private async Task<RefreshAttempt> TryRefreshTokenAsync(CancellationToken cancellationToken = default)
         {
             RefreshRequest refreshRequest = new RefreshRequest(_refreshToken!);
 
@@ -478,16 +515,56 @@ namespace EasyReasy.Auth.Client
 
             if (!response.IsSuccessStatusCode)
             {
-                // Refresh failed — clear the refresh token and fall back to full re-auth
+                string errorSnippet = ResponseBodySnippet.Create(await ResponseBodyReader.ReadAsync(response, cancellationToken));
+                HttpRequestException failure = CreateUnsuccessfulStatusException("Token refresh", response, errorSnippet);
+
+                if (IsTransientStatus(response.StatusCode))
+                {
+                    // The server did not judge the refresh token, so it may still be valid: keep it for the next
+                    // attempt rather than declare a session spent that a retry would renew.
+                    return RefreshAttempt.Transient(failure);
+                }
+
+                // Refused — clear the refresh token and fall back to full re-auth
                 _refreshToken = null;
-                return false;
+                return RefreshAttempt.Refused(failure);
             }
 
             string responseJson = await ResponseBodyReader.ReadAsync(response, cancellationToken);
             AuthResponse authResponse = ParseAuthResponse(response, responseJson);
 
             ApplyAuthResponse(authResponse);
-            return true;
+            return RefreshAttempt.Renewed;
+        }
+
+        /// <summary>
+        /// Builds the exception for an auth endpoint that answered with an unsuccessful status, carrying that status
+        /// in <see cref="HttpRequestException.StatusCode"/> so a caller can tell an answer from a transport failure.
+        /// </summary>
+        /// <param name="operation">What failed, as the message's first words, such as <c>"Authentication"</c>.</param>
+        /// <param name="response">The unsuccessful response.</param>
+        /// <param name="bodySnippet">The response body, already capped and redacted by <see cref="ResponseBodySnippet"/>.</param>
+        /// <returns>The exception to throw or carry.</returns>
+        private static HttpRequestException CreateUnsuccessfulStatusException(string operation, HttpResponseMessage response, string bodySnippet)
+        {
+            return new HttpRequestException(
+                $"{operation} failed. Status: {response.StatusCode}, Content: {bodySnippet}",
+                inner: null,
+                statusCode: response.StatusCode);
+        }
+
+        /// <summary>
+        /// Whether an unsuccessful status says the server could not answer now, rather than that it judged the
+        /// request: <c>408 Request Timeout</c>, <c>429 Too Many Requests</c> or any <c>5xx</c>.
+        /// </summary>
+        /// <param name="statusCode">The unsuccessful status the server answered with.</param>
+        /// <returns><c>true</c> when retrying the same request later may succeed.</returns>
+        private static bool IsTransientStatus(HttpStatusCode statusCode)
+        {
+            int code = (int)statusCode;
+            return statusCode == HttpStatusCode.RequestTimeout
+                || statusCode == HttpStatusCode.TooManyRequests
+                || (code >= 500 && code <= 599);
         }
 
         /// <summary>
@@ -536,7 +613,7 @@ namespace EasyReasy.Auth.Client
 
             HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
 
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 // Token might be expired, try to re-authorize once
                 await ForceAuthorizeAsync(cancellationToken);
@@ -559,7 +636,7 @@ namespace EasyReasy.Auth.Client
 
             HttpResponseMessage response = await _httpClient.GetAsync(requestUri, cancellationToken);
 
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 // Token might be expired, try to re-authorize once
                 await ForceAuthorizeAsync(cancellationToken);
@@ -583,7 +660,7 @@ namespace EasyReasy.Auth.Client
 
             HttpResponseMessage response = await _httpClient.PostAsync(requestUri, content, cancellationToken);
 
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 // Token might be expired, try to re-authorize once
                 await ForceAuthorizeAsync(cancellationToken);
@@ -684,6 +761,66 @@ namespace EasyReasy.Auth.Client
             public string CreateAuthRequestJson(string? clientId)
             {
                 return new LoginAuthRequest(_username, _password).ToJson();
+            }
+        }
+
+        /// <summary>
+        /// The outcome of one attempt to redeem the refresh token.
+        /// </summary>
+        /// <remarks>
+        /// Built only through <see cref="Renewed"/>, <see cref="Refused"/> and <see cref="Transient"/>, so a
+        /// renewal cannot carry a failure, a failure cannot be reported without the answer the server gave, and no
+        /// attempt carries both a refusal and a transient failure.
+        /// </remarks>
+        private sealed class RefreshAttempt
+        {
+            /// <summary>
+            /// The token was renewed.
+            /// </summary>
+            public static readonly RefreshAttempt Renewed = new RefreshAttempt(isRenewed: true, transientFailure: null, refusal: null);
+
+            private RefreshAttempt(bool isRenewed, HttpRequestException? transientFailure, HttpRequestException? refusal)
+            {
+                IsRenewed = isRenewed;
+                TransientFailure = transientFailure;
+                Refusal = refusal;
+            }
+
+            /// <summary>
+            /// Whether the token was renewed.
+            /// </summary>
+            public bool IsRenewed { get; }
+
+            /// <summary>
+            /// The server's answer when it failed in a way worth retrying and the refresh token was kept, or
+            /// <c>null</c> otherwise.
+            /// </summary>
+            public HttpRequestException? TransientFailure { get; }
+
+            /// <summary>
+            /// The server's answer when it refused the refresh token and the token was cleared, or <c>null</c>
+            /// otherwise.
+            /// </summary>
+            public HttpRequestException? Refusal { get; }
+
+            /// <summary>
+            /// The server failed in a way worth retrying, and the refresh token was kept.
+            /// </summary>
+            /// <param name="failure">The server's answer, with its status set.</param>
+            /// <returns>An attempt carrying <paramref name="failure"/> as its transient failure.</returns>
+            public static RefreshAttempt Transient(HttpRequestException failure)
+            {
+                return new RefreshAttempt(isRenewed: false, transientFailure: failure, refusal: null);
+            }
+
+            /// <summary>
+            /// The server refused the refresh token, which has been cleared.
+            /// </summary>
+            /// <param name="refusal">The server's answer, with its status set.</param>
+            /// <returns>An attempt carrying <paramref name="refusal"/> as its refusal.</returns>
+            public static RefreshAttempt Refused(HttpRequestException refusal)
+            {
+                return new RefreshAttempt(isRenewed: false, transientFailure: null, refusal: refusal);
             }
         }
     }

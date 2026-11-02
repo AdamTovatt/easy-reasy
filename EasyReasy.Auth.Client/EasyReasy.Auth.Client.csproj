@@ -13,12 +13,12 @@
     <PackageIcon>BaseIcon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/AdamTovatt/easy-reasy</RepositoryUrl>
-    <PackageReleaseNotes></PackageReleaseNotes>
+    <VersionPrefix>1.9.0</VersionPrefix>
+    <PackageReleaseNotes>Adds SessionNotRenewableException, derived from InvalidOperationException, thrown when a client built from an AuthResponse has no refresh token left or the server refused it, so a caller can tell a spent session from any other InvalidOperationException. A refresh answered 408, 429 or 5xx now keeps the refresh token: a client with credentials signs in as before, and one without now throws HttpRequestException carrying the status where it used to throw InvalidOperationException. An unsuccessful sign-in other than 401 now sets HttpRequestException.StatusCode; a transport failure leaves it null. See https://github.com/AdamTovatt/easy-reasy/blob/auth-client-v$(VersionPrefix)/EasyReasy.Auth.Client/README.md#from-180</PackageReleaseNotes>
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <VersionPrefix>1.8.0</VersionPrefix>
   </PropertyGroup>
 
   <ItemGroup>
