@@ -137,18 +137,14 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
 {
     AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, "api-key");
 
-    try
+    // GetAsync already renews the token and retries once when the API answers 401.
+    HttpResponseMessage response = await client.GetAsync("api/data");
+
+    if (response.StatusCode == HttpStatusCode.Unauthorized)
     {
-        HttpResponseMessage response = await client.GetAsync("api/data");
-        // Process response
-    }
-    catch (UnauthorizedAccessException)
-    {
-        // Force a fresh authorization attempt
-        await client.ForceAuthorizeAsync();
-        
-        // Try the request again
-        HttpResponseMessage response = await client.GetAsync("api/data");
+        // Still rejected: clear all state, sign in afresh, and try once more.
+        await client.ForceReauthorizeAsync();
+        response = await client.GetAsync("api/data");
     }
 }
 ```
@@ -194,7 +190,7 @@ that parses but is not an auth response has no `JsonException` under it — what
 The body is read under a cap of 64 K characters. An auth response is a token, an expiry and a refresh token, so
 nothing near that size is one; a longer body is read only that far and reported as the body that is not an auth
 response. The same cap and the same redaction apply to the body of an *unsuccessful* answer, which reaches the
-message of the `UnauthorizedAccessException` or `HttpRequestException` reporting it.
+message of the `SignInRefusedException` or `HttpRequestException` reporting it.
 
 Redaction reads the text rather than a parsed document, which is what lets it blank a token in a body no parser
 will accept — one cut off mid-value, or JSON embedded in a page. The cost is an outer bound on what it can
@@ -217,12 +213,12 @@ catch (InvalidAuthResponseException exception)
 }
 ```
 
-The same exception covers the refresh endpoint. An unsuccessful status there is a refusal to refresh, and the
-client falls back as before — to full re-authentication when it holds credentials, and to a
-`SessionNotRenewableException` when it was constructed pre-authorized and so has none. A `408`, `429` or `5xx`
-is not a refusal. The refresh token is kept, a client with credentials still signs in, and a client without
-throws `HttpRequestException` with that status; see [Persisting Auth State with
-Callbacks](#persisting-auth-state-with-callbacks). A *success* carrying
+The same exception covers the refresh endpoint. An unsuccessful status there is judged by the same rule as
+sign-in (see [Refused or failed](#refused-or-failed)). A refusal makes the client fall back — to full
+re-authentication when it holds credentials, and to a `SessionNotRenewableException` when it was constructed
+pre-authorized and so has none. Any other unsuccessful status keeps the refresh token: a client with credentials
+still signs in, and a client without throws `HttpRequestException` with that status; see [Persisting Auth State
+with Callbacks](#persisting-auth-state-with-callbacks). A *success* carrying
 something that is not an auth response is neither: that is the endpoint not being one, which re-authenticating
 against the same address would only repeat, so it throws here instead of falling back.
 
@@ -285,14 +281,13 @@ A client constructed from an `AuthResponse` holds no credentials. It works for a
 and its refresh token is accepted; once the token has expired with no refresh token left to redeem, or with one
 the server refused, there is nothing to re-authenticate with and the next request throws
 `SessionNotRenewableException`. That is the point at which a new client has to be constructed from credentials
-— it is not a failure the client can retry past. The exception derives from `InvalidOperationException`, so
-`catch (InvalidOperationException)` catches it, but catching the narrower type keeps unrelated failures out of
-your "sign in again" path. When the server refused the refresh token, its answer is
+— it is not a failure the client can retry past. When the server refused the refresh token, its answer is
 carried as an `HttpRequestException` in `InnerException`, with `StatusCode` set; when the client had no refresh
 token, `InnerException` is null. A `404` there points at a misconfigured `refreshEndpoint` rather than a spent
 session.
 
-A refresh the server could not answer — `408`, `429` or a `5xx` — does not spend the session. The client keeps
+A refresh the server failed rather than refused (see [Refused or failed](#refused-or-failed)) does not spend
+the session. The client keeps
 the refresh token and throws `HttpRequestException` with `StatusCode` set to the answer, and the next call
 tries the same refresh token again. A refresh that never reached the server keeps it too, and surfaces as the
 `HttpRequestException` from `HttpClient`, with `StatusCode` null.
@@ -377,7 +372,7 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
         HttpResponseMessage response = await authorizedClient.GetAsync("api/data");
 
         // Checked here rather than with EnsureSuccessStatusCode(), which would throw an HttpRequestException
-        // with StatusCode set and land your own API's failure in the sign-in branch below.
+        // with StatusCode set and land your own API's failure in the auth-server branch below.
         if (!response.IsSuccessStatusCode)
         {
             Console.WriteLine($"api/data failed: {(int)response.StatusCode}");
@@ -387,9 +382,11 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
         string content = await response.Content.ReadAsStringAsync();
         // Process response
     }
-    catch (UnauthorizedAccessException)
+    catch (SignInRefusedException exception)
     {
-        // Handle credentials the server rejected (the auth endpoint answered 401)
+        // The sign-in endpoint refused the credentials (see "Refused or failed" below).
+        // Sending them again will be refused again; fix the credentials.
+        Console.WriteLine($"Sign-in refused: {(int)exception.StatusCode}");
     }
     catch (InvalidAuthResponseException exception)
     {
@@ -400,9 +397,8 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
     }
     catch (HttpRequestException exception) when (exception.StatusCode is not null)
     {
-        // The auth server answered with an unsuccessful status. Only a 401 from the auth endpoint
-        // surfaces as UnauthorizedAccessException; any other status lands here, with StatusCode set.
-        Console.WriteLine($"Sign-in failed: {(int)exception.StatusCode}");
+        // The auth server failed rather than refused (see "Refused or failed" below). Retrying later may succeed.
+        Console.WriteLine($"Auth server unavailable: {(int)exception.StatusCode}");
     }
     catch (HttpRequestException)
     {
@@ -411,10 +407,25 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
 }
 ```
 
-Every unsuccessful status this client throws as an `HttpRequestException` carries `StatusCode`, and a
-transport failure from `HttpClient` leaves it `null`. So around the client's own calls,
-`exception.StatusCode is not null` separates "the server answered with a failure" from "the request did not
-complete". `HttpRequestError` cannot make that split, since both can read `Unknown`.
+#### Refused or failed
+
+An unsuccessful answer from the sign-in or refresh endpoint is either a **refusal** or a **failure**, by one
+rule for both endpoints:
+
+- **Refused:** any `4xx` other than `408` and `429`, `401` included. The server judged the request; sending it
+  again gets the same answer. Sign-in throws `SignInRefusedException`; a refused refresh clears the refresh
+  token.
+- **Failed:** every other unsuccessful status — `408`, `429`, `5xx`, and a `3xx` the handler did not follow.
+  The server judged nothing, and retrying later may succeed. It throws `HttpRequestException` with `StatusCode`
+  set, and a refresh answered this way keeps the refresh token.
+
+`SignInRefusedException`, `SessionNotRenewableException` and `InvalidAuthResponseException` all derive from
+`AuthClientException`: outcomes that retrying the same request will not change — credentials refused, a session
+spent, or an address that is not an auth server. One `catch (AuthClientException)` handles them all. What is
+left is `HttpRequestException`, which retrying may fix. Every unsuccessful status this client throws as one
+carries `StatusCode`, and a transport failure from `HttpClient` leaves it `null`. So around the client's own
+calls, `exception.StatusCode is not null` separates "the server answered with a failure" from "the request did
+not complete". `HttpRequestError` cannot make that split, since both can read `Unknown`.
 
 Note that construction itself throws when a credential carries nothing — `ArgumentNullException` for `null`, `ArgumentException` for an empty string. If your credentials come from configuration that may be unset, validate them before constructing the client, or the throw lands on the constructor line rather than inside the `try` above.
 
@@ -422,36 +433,42 @@ Note that construction itself throws when a credential carries nothing — `Argu
 
 ### From 1.8.0
 
-Two things can reach a `catch` block differently. A client constructed from an `AuthResponse` whose refresh is
-answered `408`, `429` or `5xx` used to throw `InvalidOperationException` and now throws
-`HttpRequestException`. And a call that waited while another call's authorization failed now throws that
-failure, where its own retry might have succeeded; see the last entry below.
+2.0.0 is a breaking release. Every authorization outcome that retrying the same request will not change is now
+an `AuthClientException` (see [Refused or failed](#refused-or-failed)), and nothing the client throws derives from `InvalidOperationException` or `UnauthorizedAccessException` any
+more. Each exception message is rewritten, so if you match on message text, match on type and `StatusCode`
+instead.
 
-**A spent session throws `SessionNotRenewableException`.** A client constructed from an `AuthResponse` whose
-token has expired, with no refresh token left or one the server refused, previously threw a plain
-`InvalidOperationException`. After a refusal, the server's answer is now its `InnerException`, as an
-`HttpRequestException` with `StatusCode` set. The new type derives from `InvalidOperationException`, so
-`catch (InvalidOperationException)` still works;
-switch to `catch (SessionNotRenewableException)` to stop catching unrelated failures in that path. An
-`Assert.ThrowsExceptionAsync<InvalidOperationException>` in your tests matches the exact type and needs the new
-one. Its constructors are public, so a fake in your own tests can throw one.
+| Situation | 1.8.0 threw | 2.0.0 throws |
+|---|---|---|
+| Sign-in answered `401` | `UnauthorizedAccessException` | `SignInRefusedException`, `StatusCode` `401` |
+| Sign-in answered any other `4xx` except `408` and `429` | `HttpRequestException`, `StatusCode` null | `SignInRefusedException` with `StatusCode` |
+| Sign-in answered any other unsuccessful status (`408`, `429`, `5xx`, an unfollowed `3xx`) | `HttpRequestException`, `StatusCode` null | `HttpRequestException` with `StatusCode` |
+| Client built from an `AuthResponse`: expired, no refresh token | `InvalidOperationException` | `SessionNotRenewableException` |
+| Client built from an `AuthResponse`: refresh refused (`4xx` except `408`, `429`) | `InvalidOperationException` | `SessionNotRenewableException`, the refusal as `InnerException` |
+| Client built from an `AuthResponse`: refresh answered any other unsuccessful status (`408`, `429`, `5xx`, an unfollowed `3xx`) | `InvalidOperationException`, refresh token cleared | `HttpRequestException` with `StatusCode`, refresh token kept |
+| Auth or refresh endpoint answered success with a body that is not an auth response | `InvalidAuthResponseException` | `InvalidAuthResponseException`, now an `AuthClientException` |
+| No answer at all | `HttpRequestException`, `StatusCode` null | unchanged |
+| A call waiting on the authorization lock while another call's sign-in or refresh failed | made its own attempt | throws that attempt's exception without sending anything |
 
-**A refresh answered `408`, `429` or `5xx` keeps the refresh token.** It was previously cleared on any
-unsuccessful status, so a server hiccup during refresh spent the session of a client without credentials. Now
-only a refusal clears it. A client with credentials still falls back to signing in; a client without throws
-`HttpRequestException` with `StatusCode` set, and the next call tries the same refresh token again.
+So:
 
-**A refused sign-in sets `HttpRequestException.StatusCode`.** A non-401 answer from the auth endpoint was
-thrown with `StatusCode` null. It now carries the response's status; message and type are unchanged. If you
-were parsing the status out of the message, read `StatusCode` instead. A `401` still throws
-`UnauthorizedAccessException`.
+- Replace `catch (UnauthorizedAccessException)` around the client with `catch (SignInRefusedException)`, and
+  read `StatusCode` for which refusal it was.
+- Replace `catch (InvalidOperationException)` for a spent session with `catch (SessionNotRenewableException)`.
+  A `catch (InvalidOperationException)` no longer catches it.
+- A `catch (HttpRequestException)` that handled refused sign-ins no longer sees refusals; catch
+  `SignInRefusedException` for those.
+- Or catch `AuthClientException` once for every outcome that retrying will not change.
 
-**Concurrent callers share a finished authorization attempt.** Calls that waited on the authorization lock
-while a sign-in or refresh failed each made their own attempt in turn. A call that still needs a token now
-throws the failed attempt's exception without sending anything, so it can see a failure its own retry would
-not have hit; a call that starts after the failed attempt finished tries again. `ForceAuthorizeAsync()`, which
-the send methods call after a `401`, also returns without a new attempt when another call's attempt succeeded
-while it waited. `ForceReauthorizeAsync()` always makes its own attempt.
+A client with credentials whose refresh fails rather than is refused keeps its refresh token and falls back to
+signing in, as any unsuccessful refresh did before. `SessionNotRenewableException` and `SignInRefusedException`
+have public constructors, so a fake in your own tests can throw one.
+
+The waiting-call row is described in [Token Expiration](#token-expiration): a call that waited through a failed
+attempt can now see a failure its own retry would not have hit, and a call that starts after the attempt
+finished tries again. `ForceAuthorizeAsync()`, which the send methods call after a `401`, also returns without
+a new attempt when another call's attempt succeeded while it waited; `ForceReauthorizeAsync()` always makes its
+own attempt.
 
 ### From 1.7.0
 

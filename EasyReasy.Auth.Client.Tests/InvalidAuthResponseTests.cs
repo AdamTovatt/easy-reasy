@@ -56,6 +56,20 @@ namespace EasyReasy.Auth.Client.Tests
         }
 
         [TestMethod]
+        public async Task GetAsync_ApiKey_AuthEndpointAnswersHtml_IsAnAuthClientException()
+        {
+            // Arrange — the release promises one catch (AuthClientException) handles a wrong host too.
+            FakeHttpHandler handler = new FakeHttpHandler();
+            EnqueueHtmlResponse(handler, SignInPageHost.SignInPageHtml);
+
+            // Act
+            InvalidAuthResponseException exception = await CaptureApiKeyFailureAsync(handler);
+
+            // Assert
+            Assert.IsInstanceOfType(exception, typeof(AuthClientException));
+        }
+
+        [TestMethod]
         public async Task GetAsync_ApiKey_AuthEndpointAnswersHtml_MessageNamesTheEndpointStatusAndContentType()
         {
             // Arrange
@@ -442,7 +456,7 @@ namespace EasyReasy.Auth.Client.Tests
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, "api-key");
 
             // Act
-            UnauthorizedAccessException exception = await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+            SignInRefusedException exception = await Assert.ThrowsExceptionAsync<SignInRefusedException>(
                 () => client.GetAsync("api/test"));
 
             // Assert

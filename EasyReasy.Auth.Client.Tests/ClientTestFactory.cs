@@ -18,6 +18,11 @@ namespace EasyReasy.Auth.Client.Tests
         public const string ApiKeySignInUri = "https://example.com/api/auth/apikey";
 
         /// <summary>
+        /// The body <see cref="CreateStatusResponse"/> answers with, so a test can check it was quoted in a message.
+        /// </summary>
+        public const string StatusResponseBody = "server says no";
+
+        /// <summary>
         /// Builds an auth response expiring the given number of minutes from now.
         /// </summary>
         /// <param name="token">The access token.</param>
@@ -58,7 +63,7 @@ namespace EasyReasy.Auth.Client.Tests
         /// <returns>The response.</returns>
         public static HttpResponseMessage CreateStatusResponse(HttpStatusCode statusCode)
         {
-            return new HttpResponseMessage(statusCode) { Content = new StringContent("server says no") };
+            return new HttpResponseMessage(statusCode) { Content = new StringContent(StatusResponseBody) };
         }
 
         /// <summary>
