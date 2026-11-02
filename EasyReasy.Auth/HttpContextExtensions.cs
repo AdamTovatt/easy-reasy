@@ -235,7 +235,7 @@ namespace EasyReasy.Auth
         {
             return FindEnabledAccessTokenCookie(context)
                 ?? throw new InvalidOperationException(
-                    $"{helperName} needs {nameof(EasyReasyAuthOptions)}.{nameof(EasyReasyAuthOptions.CookieTokenPaths)} to list at least one prefix in AddEasyReasyAuth, " +
+                    $"{helperName} needs {nameof(EasyReasyAuthOptions)}.{nameof(EasyReasyAuthOptions.CookieTokenPaths)} to list at least one prefix in {nameof(AuthServiceCollectionExtensions.AddEasyReasyAuth)}, " +
                     $"since without one no cookie would be written or read. Check {nameof(IsAccessTokenCookieEnabled)} first in code that runs either way.");
         }
 

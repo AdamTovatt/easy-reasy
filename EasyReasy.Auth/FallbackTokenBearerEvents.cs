@@ -1,19 +1,30 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
 namespace EasyReasy.Auth
 {
     /// <summary>
-    /// Bearer events that delegate every event to the consumer's own <see cref="JwtBearerEvents"/> and, after
-    /// <see cref="MessageReceived"/>, fill a token the consumer left unset from the first <see cref="IBearerTokenSource"/>
-    /// that holds one: the query string, then the cookie.
+    /// Bearer events that delegate every event to the consumer's own <see cref="JwtBearerEvents"/>, then to any
+    /// <c>On...</c> handler set on this wrapper after it was installed, and, after <see cref="MessageReceived"/>, fill a
+    /// token neither left set from the first <see cref="IBearerTokenSource"/> that holds one: the query string, then
+    /// the cookie.
     /// </summary>
     /// <remarks>
     /// Wrapping rather than mutating the consumer's instance keeps a shared instance untouched when the options
     /// are rebuilt, and calling the virtual methods rather than the <c>On...</c> delegates keeps a consumer's
-    /// subclass overrides working. Every virtual method must be overridden here, or that event would stop
-    /// reaching the consumer; a test enumerates them.
+    /// subclass overrides working. A consumer's <c>PostConfigure</c> registered after <c>AddEasyReasyAuth</c> sees
+    /// this wrapper as <see cref="JwtBearerOptions.Events"/>, so each override also runs the wrapper's own delegate
+    /// through <c>base</c>, but only while the inner events have left the outcome open: no result set, or for
+    /// <see cref="Challenge"/> no handled response, so a later handler never overwrites a decided result or writes a
+    /// response twice. The bearer handler stops at a decided outcome in every event but <see cref="Forbidden"/>, which
+    /// it never reads a result from; the gate there is this library's own rule, kept so one rule holds for every event.
+    /// Every virtual method must be overridden here and take both paths, or that event would
+    /// stop reaching the consumer; a test enumerates them against the events the forwarding tests cover.
+    /// <see cref="FallbackTokenBearerEventsValidator"/> fails startup if a later <c>PostConfigure</c> replaces this
+    /// wrapper.
     /// </remarks>
     internal sealed class FallbackTokenBearerEvents : JwtBearerEvents
     {
@@ -27,26 +38,30 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
+        /// Turns the token fallback on for the bearer scheme: installs the wrapper around the consumer's events after
+        /// every <c>Configure</c>, and fails startup through <see cref="FallbackTokenBearerEventsValidator"/> if the
+        /// final options no longer reach it. One wrapper serves every source, so the consumer's events are wrapped once.
+        /// </summary>
+        /// <param name="services">The service collection the bearer scheme is registered in.</param>
+        /// <param name="sources">The token sources, in precedence order.</param>
+        internal static void AddTo(IServiceCollection services, IReadOnlyList<IBearerTokenSource> sources)
+        {
+            // Post-configure runs after every Configure, so it wraps a consumer's own events rather than being
+            // replaced by them. A consumer's PostConfigure registered later runs after it, so only validation, which
+            // sees the final options, can tell that it replaced the wrapper; on start, not on the first request.
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, bearerOptions => Install(bearerOptions, sources));
+            services.AddSingleton<IValidateOptions<JwtBearerOptions>>(new FallbackTokenBearerEventsValidator(sources));
+            services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme).ValidateOnStart();
+        }
+
+        /// <summary>
         /// Replaces the events on <paramref name="bearerOptions"/> with a wrapper around them that consults
         /// <paramref name="sources"/> in order, so a consumer who assigned their own events keeps every handler and
-        /// gains the fallbacks. One wrapper serves every source, so the consumer's events are wrapped once.
+        /// gains the fallbacks. An <see cref="AuthenticationSchemeOptions.EventsType"/> that makes the handler ignore
+        /// the wrapper is the validator's to report, wherever it was set.
         /// </summary>
-        /// <exception cref="InvalidOperationException">
-        /// Thrown when <see cref="AuthenticationSchemeOptions.EventsType"/> is set, since the handler then resolves its events
-        /// from DI and never calls the ones installed here.
-        /// </exception>
-        internal static void Install(JwtBearerOptions bearerOptions, IReadOnlyList<IBearerTokenSource> sources)
+        private static void Install(JwtBearerOptions bearerOptions, IReadOnlyList<IBearerTokenSource> sources)
         {
-            if (bearerOptions.EventsType != null)
-            {
-                string optionNames = string.Join(" and ", sources.Select(source => source.OptionName));
-
-                throw new InvalidOperationException(
-                    $"{optionNames} cannot be combined with {nameof(JwtBearerOptions)}.{nameof(JwtBearerOptions.EventsType)}, " +
-                    $"because the bearer handler then ignores {nameof(JwtBearerOptions)}.{nameof(JwtBearerOptions.Events)}, where the token fallback is installed. " +
-                    $"Assign {nameof(JwtBearerOptions)}.{nameof(JwtBearerOptions.Events)} instead; the fallback wraps it.");
-            }
-
             bearerOptions.Events = new FallbackTokenBearerEvents(bearerOptions.Events ?? new JwtBearerEvents(), sources.ToArray());
         }
 
@@ -55,9 +70,14 @@ namespace EasyReasy.Auth
         {
             await _inner.MessageReceived(context);
 
-            // A result the consumer set needs no check here: the handler returns it without reading the token.
+            if (context.Result == null)
+            {
+                await base.MessageReceived(context);
+            }
+
+            // A result needs no token: the handler returns it without reading one.
             // Any Authorization header, Bearer or not, is the client's explicit choice and beats every fallback.
-            if (context.Token != null || context.Request.Headers.ContainsKey(HeaderNames.Authorization))
+            if (context.Result != null || context.Token != null || context.Request.Headers.ContainsKey(HeaderNames.Authorization))
             {
                 return;
             }
@@ -76,15 +96,48 @@ namespace EasyReasy.Auth
         }
 
         /// <inheritdoc />
-        public override Task AuthenticationFailed(AuthenticationFailedContext context) => _inner.AuthenticationFailed(context);
+        public override async Task AuthenticationFailed(AuthenticationFailedContext context)
+        {
+            await _inner.AuthenticationFailed(context);
+
+            if (context.Result == null)
+            {
+                await base.AuthenticationFailed(context);
+            }
+        }
 
         /// <inheritdoc />
-        public override Task TokenValidated(TokenValidatedContext context) => _inner.TokenValidated(context);
+        public override async Task TokenValidated(TokenValidatedContext context)
+        {
+            await _inner.TokenValidated(context);
+
+            if (context.Result == null)
+            {
+                await base.TokenValidated(context);
+            }
+        }
 
         /// <inheritdoc />
-        public override Task Challenge(JwtBearerChallengeContext context) => _inner.Challenge(context);
+        public override async Task Challenge(JwtBearerChallengeContext context)
+        {
+            await _inner.Challenge(context);
+
+            // A handled challenge has written its response; a second handler must not write another.
+            if (!context.Handled)
+            {
+                await base.Challenge(context);
+            }
+        }
 
         /// <inheritdoc />
-        public override Task Forbidden(ForbiddenContext context) => _inner.Forbidden(context);
+        public override async Task Forbidden(ForbiddenContext context)
+        {
+            await _inner.Forbidden(context);
+
+            if (context.Result == null)
+            {
+                await base.Forbidden(context);
+            }
+        }
     }
 }
