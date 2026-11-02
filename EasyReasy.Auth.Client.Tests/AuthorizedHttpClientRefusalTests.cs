@@ -1,4 +1,5 @@
 using System.Net;
+using static EasyReasy.Auth.Client.Tests.ClientTestFactory;
 
 namespace EasyReasy.Auth.Client.Tests
 {
@@ -9,29 +10,6 @@ namespace EasyReasy.Auth.Client.Tests
     [TestClass]
     public class AuthorizedHttpClientRefusalTests
     {
-        private const string RefreshUri = "https://example.com/api/auth/refresh";
-
-        private static AuthResponse CreateAuthResponse(string token, int expiresInMinutes, string? refreshToken)
-        {
-            string expiresAt = DateTime.UtcNow.AddMinutes(expiresInMinutes).ToString("O");
-            return new AuthResponse(token, expiresAt, refreshToken);
-        }
-
-        private static HttpClient CreateHttpClient(FakeHttpHandler handler)
-        {
-            return new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-        }
-
-        private static AuthorizedHttpClient CreateExpiredPreAuthorizedClient(FakeHttpHandler handler, string? refreshToken)
-        {
-            return new AuthorizedHttpClient(CreateHttpClient(handler), CreateAuthResponse("expired-token", -1, refreshToken));
-        }
-
-        private static HttpResponseMessage CreateStatusResponse(HttpStatusCode statusCode)
-        {
-            return new HttpResponseMessage(statusCode) { Content = new StringContent("server says no") };
-        }
-
         #region Session not renewable
 
         [DataTestMethod]
@@ -192,7 +170,7 @@ namespace EasyReasy.Auth.Client.Tests
             Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
             Assert.AreEqual(5, handler.SentRequests.Count);
             Assert.AreEqual(RefreshUri, handler.SentRequests[2].RequestUri?.ToString());
-            Assert.AreEqual("https://example.com/api/auth/apikey", handler.SentRequests[3].RequestUri?.ToString());
+            Assert.AreEqual(ApiKeySignInUri, handler.SentRequests[3].RequestUri?.ToString());
             Assert.AreEqual("signed-in-token", handler.SentRequests[4].Headers.Authorization?.Parameter);
         }
 
