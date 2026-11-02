@@ -17,9 +17,9 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>5.13.0</VersionPrefix>
+    <VersionPrefix>5.13.1</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>Adds EasyReasyAuthOptions.CookieTokenPaths, off by default, so a browser can open a protected file in a new tab with its own session instead of a public link. On a listed path, a GET or HEAD request, never a WebSocket handshake, may carry its token in a path-scoped, HttpOnly, SameSite=Strict cookie, after the header and the query string. The built-in login, refresh and logout endpoints set and clear the cookie, and new HttpContext helpers do the same for your own endpoints. See https://github.com/AdamTovatt/easy-reasy/blob/auth-v$(VersionPrefix)/EasyReasy.Auth/README.md#migration-from-5120</PackageReleaseNotes>
+    <PackageReleaseNotes>With QueryStringTokenPaths or CookieTokenPaths set, a JwtBearerEvents handler set in a PostConfigure registered after AddEasyReasyAuth now runs, after the handlers set in Configure, unless those already decided the outcome. A later PostConfigure that replaces JwtBearerOptions.Events or sets EventsType, and so drops the token fallback, now fails at startup with an OptionsValidationException instead of silently. See https://github.com/AdamTovatt/easy-reasy/blob/auth-v$(VersionPrefix)/EasyReasy.Auth/README.md#migration-from-5130</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

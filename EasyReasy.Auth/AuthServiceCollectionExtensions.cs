@@ -95,11 +95,7 @@ namespace EasyReasy.Auth
 
             if (tokenSources.Count > 0)
             {
-                // Post-configure runs after every Configure, so it wraps a consumer's own events rather than
-                // being replaced by them. One wrapper for every source, so the consumer's events are wrapped once.
-                services.PostConfigure<JwtBearerOptions>(
-                    JwtBearerDefaults.AuthenticationScheme,
-                    bearerOptions => FallbackTokenBearerEvents.Install(bearerOptions, tokenSources));
+                FallbackTokenBearerEvents.AddTo(services, tokenSources);
             }
 
             services.AddAuthorization(authzOptions =>

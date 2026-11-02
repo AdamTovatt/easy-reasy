@@ -1179,7 +1179,8 @@ const socket = new WebSocket(`wss://example.com/ws/city?access_token=${encodeURI
 - **The header wins.** The query string is read only when the request carries no `Authorization` header at all. A request with any `Authorization` header, Bearer or not, is authenticated from the header alone.
 - **A repeated `access_token` is ignored**, since it is ambiguous which token the client meant.
 - **Validation is unchanged.** A query-string token is checked against the same signature, lifetime, issuer and audience as a header token.
-- **Your own `JwtBearerEvents` keep working.** The library wraps the events you assign in `Configure<JwtBearerOptions>` — whether you set the `On...` delegates or subclass and override the methods — and passes every event through to them, without modifying your instance. Your `MessageReceived` runs first, and the query string is consulted only if it set no token and no result. Assigning `Events` in a `PostConfigure` of your own registered after `AddEasyReasyAuth` would replace the fallback. `JwtBearerOptions.EventsType` cannot be combined with it, because the handler then ignores `Events`; that combination throws `InvalidOperationException` when the bearer options are first resolved.
+- **Your own `JwtBearerEvents` keep working, in `Configure` or `PostConfigure`.** The library wraps the events you assign in `Configure<JwtBearerOptions>` — whether you set the `On...` delegates or subclass and override the methods — and passes every event through to them, without modifying your instance. A `PostConfigure` of your own registered after `AddEasyReasyAuth` sees the wrapper as `options.Events`; set or chain its `On...` delegates there (read `options.Events.OnMessageReceived`, wrap it, assign it back) and they run after your `Configure` handlers, unless those already decided the outcome (set a result, or called `HandleResponse()` in `Challenge`). A result set in `Forbidden` counts too, although the bearer handler itself ignores it there, so one rule holds for every event. In `MessageReceived`, your handlers run first, and the query string is consulted only if they set no token and no result.
+- **Losing the fallback fails at startup.** A later `PostConfigure` that assigns new `Events` or wraps the wrapper in events of its own, or `JwtBearerOptions.EventsType` set anywhere (the handler then ignores `Events`), would drop the fallback, so the app stops at startup with an `OptionsValidationException` naming the option that needs it. Add handlers to the existing events instead, or assign `Events` in `Configure`. With this option set, the bearer options are therefore built when the app starts, so your `Configure<JwtBearerOptions>` runs then rather than on the first request.
 
 **What stays with your application:**
 - **Redact `access_token` from your own logs.** The library records no URL — bearer validation calls no `IAuthAuditLogger` hook — but your reverse proxy's access log, `Microsoft.AspNetCore.HttpLogging` with `HttpLoggingFields.RequestQuery`, and request-logging middleware all may. A token in a URL can also end up in browser history, so keep these tokens short-lived.
@@ -1221,7 +1222,7 @@ window.open(`/files/${fileId}`, "_blank");
 - **Only `GET` and `HEAD`, and never a protocol upgrade.** On any other method the cookie is ignored, and so it is on a WebSocket handshake (or any request with an `Upgrade` header), which is a `GET` but opens a two-way channel. A WebSocket on a cookie path authenticates with a header or the query string (section 14) as before; a header token still works on every method.
 - **Precedence: `Authorization` header, then the query string, then the cookie.** The cookie is read only when the request carries no `Authorization` header at all and the query-string fallback supplied no token. An explicit token on the request beats the ambient one.
 - **A repeated cookie is ignored.** The reader counts the name in the raw `Cookie` header(s), since `Request.Cookies` keeps only one of several.
-- **Validation is unchanged,** and your own `JwtBearerEvents` keep working exactly as in section 14. Both fallbacks share one events wrapper, and `JwtBearerOptions.EventsType` cannot be combined with either.
+- **Validation is unchanged,** and your own `JwtBearerEvents` keep working exactly as in section 14, set in `Configure` or `PostConfigure`. Both fallbacks share one events wrapper, so losing it fails at startup for either, as described in section 14.
 
 **The built-in endpoints, when `CookieTokenPaths` is non-empty:**
 - **Login** (`/api/auth/login`) and **Google sign-in** (`/api/auth/google`, from EasyReasy.Auth.Google) set the cookie on success.
@@ -1440,6 +1441,19 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.13.0
+
+Version 5.13.1 changes nothing unless `QueryStringTokenPaths` or `CookieTokenPaths` is set, and no signature or default changed.
+
+### Fixed: a bearer event handler set in a later `PostConfigure` was dropped
+- **A handler set on `options.Events` in a `PostConfigure` registered after `AddEasyReasyAuth` now runs**, for every event, after the handlers you set in `Configure` (and, in `MessageReceived`, before the fallback fills a token). Before, it was accepted and never called. It does not run when your `Configure` handlers already decided the outcome. See [section 14](#14-websocket-connections-token-in-the-query-string).
+- **If you moved handlers from `PostConfigure` to `Configure` to make them run**, both places now work.
+
+### Changed: losing the token fallback fails at startup
+- **An app that replaced `Events` in a later `PostConfigure` used to lose the fallback silently, and now fails at startup** with an `OptionsValidationException`. The same holds for wrapping the library's events in your own forwarding subclass there, and for setting `EventsType` there. Add your handlers to the existing `options.Events`, or assign your events in `Configure`, where the fallback wraps them.
+- **The bearer options are now built when the app starts.** With either option set, your `Configure<JwtBearerOptions>` and `PostConfigure<JwtBearerOptions>` run at startup rather than on the first request, so an exception they throw stops the app there.
+- **`EventsType` set in a `Configure` now fails as an `OptionsValidationException` at startup**, with the same message, instead of an `InvalidOperationException` on the first request.
 
 ## Migration from 5.12.0
 

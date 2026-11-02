@@ -39,6 +39,7 @@ namespace EasyReasy.Auth.Tests
             IReadOnlyList<string>? queryStringTokenPaths = null,
             IReadOnlyList<string>? cookieTokenPaths = null,
             Action<JwtBearerOptions>? configureBearer = null,
+            Action<JwtBearerOptions>? postConfigureBearer = null,
             string? pathBase = null)
         {
             WebApplicationBuilder builder = WebApplication.CreateBuilder();
@@ -54,6 +55,12 @@ namespace EasyReasy.Auth.Tests
             if (configureBearer != null)
             {
                 builder.Services.Configure(JwtBearerDefaults.AuthenticationScheme, configureBearer);
+            }
+
+            // Registered after AddEasyReasyAuth, so it runs after the fallback is installed, as an app's own would.
+            if (postConfigureBearer != null)
+            {
+                builder.Services.PostConfigure(JwtBearerDefaults.AuthenticationScheme, postConfigureBearer);
             }
 
             WebApplication app = builder.Build();
@@ -75,6 +82,12 @@ namespace EasyReasy.Auth.Tests
                     .RequireAuthorization();
             }
 
+            // A user token authenticates here but fails the policy, so the bearer handler raises Forbidden.
+            foreach (string path in new[] { "/ws/apikey-only", "/files/apikey-only" })
+            {
+                app.MapGet(path, (HttpContext context) => context.GetUserId()).RequireAuthorization("ApiKeyOnly");
+            }
+
             app.Map("/ws/city", (RequestDelegate)AnswerWithUserIdOverWebSocketAsync).RequireAuthorization();
 
             // A stand-in sign-in endpoint, so a test can take the cookie exactly as the writer produced it.
@@ -84,7 +97,17 @@ namespace EasyReasy.Auth.Tests
                 return Results.NoContent();
             });
 
-            await app.StartAsync();
+            try
+            {
+                await app.StartAsync();
+            }
+            catch
+            {
+                // A test that expects startup to fail still owns no app, so release this one here.
+                await app.DisposeAsync();
+                throw;
+            }
+
             TestServer server = (TestServer)app.Services.GetRequiredService<IServer>();
             return new FallbackTokenTestApp(app, server);
         }
