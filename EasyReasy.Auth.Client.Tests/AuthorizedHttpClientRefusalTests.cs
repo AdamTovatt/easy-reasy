@@ -134,7 +134,7 @@ namespace EasyReasy.Auth.Client.Tests
 
             // Assert
             Assert.AreEqual(failureStatus, exception.StatusCode);
-            StringAssert.Contains(exception.Message, $"{(int)failureStatus} {failureStatus}");
+            StringAssert.Contains(exception.Message, HttpStatusText.Describe(failureStatus));
         }
 
         [DataTestMethod]
@@ -230,7 +230,7 @@ namespace EasyReasy.Auth.Client.Tests
 
             // Assert — and part of the family a single catch (AuthClientException) handles.
             Assert.AreEqual(status, exception.StatusCode);
-            StringAssert.Contains(exception.Message, $"{(int)status} {status}");
+            StringAssert.Contains(exception.Message, HttpStatusText.Describe(status));
             StringAssert.Contains(exception.Message, StatusResponseBody);
             Assert.IsInstanceOfType(exception, typeof(AuthClientException));
         }
@@ -249,7 +249,7 @@ namespace EasyReasy.Auth.Client.Tests
 
             // Assert
             Assert.AreEqual(status, exception.StatusCode);
-            StringAssert.Contains(exception.Message, $"{(int)status} {status}");
+            StringAssert.Contains(exception.Message, HttpStatusText.Describe(status));
         }
 
         [TestMethod]
