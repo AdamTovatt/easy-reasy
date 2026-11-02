@@ -57,16 +57,19 @@ namespace EasyReasy.Auth
         /// <para>
         /// This exists for plain navigations, such as a protected file opened in a new tab, which cannot send an
         /// <c>Authorization</c> header. The built-in login, refresh and logout endpoints set and clear the cookie
-        /// when this list is non-empty; an endpoint of your own calls
-        /// <see cref="HttpContextExtensions.SetAccessTokenCookie"/> and <see cref="HttpContextExtensions.ClearAccessTokenCookie"/>.
+        /// when this list is non-empty. An endpoint of your own calls
+        /// <see cref="HttpContextExtensions.SetAccessTokenCookie"/> where it issues a token,
+        /// <see cref="HttpContextExtensions.TrySetAccessTokenCookie"/> where the session is already committed (after a
+        /// refresh), and <see cref="HttpContextExtensions.ClearAccessTokenCookie"/> where it ends or refuses a session.
         /// One cookie is written per prefix, with <c>Path</c> set to <c>PathBase</c> plus the prefix.
         /// </para>
         /// <para>
         /// Prefixes match as for <see cref="QueryStringTokenPaths"/>: by whole path segments, ignoring case, against
         /// <c>HttpRequest.Path</c>. Each must start with <c>/</c>, must not end with one, and must not lie inside
-        /// another listed prefix, since the browser would then send two cookies of the same name there and a
-        /// repeated cookie is ignored. The cookie is read only when the request carries no <c>Authorization</c>
-        /// header and the query string supplied no token.
+        /// another listed prefix or repeat one in any case, since the browser would then send two cookies of the
+        /// same name there and a repeated cookie is ignored. The cookie is read only when the request carries no
+        /// <c>Authorization</c> header and the query string supplied no token, and never on a WebSocket or other
+        /// protocol upgrade.
         /// </para>
         /// </summary>
         public IReadOnlyList<string> CookieTokenPaths { get; set; } = [];

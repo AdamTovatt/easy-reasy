@@ -8,16 +8,18 @@ using System.Text;
 namespace EasyReasy.Auth
 {
     /// <summary>
-    /// Lets a <c>GET</c> or <c>HEAD</c> request on a configured path carry its bearer token in the
-    /// <c>__Secure-access_token</c> cookie, for the plain navigations (a file opened in a new tab) a browser cannot
-    /// attach an <c>Authorization</c> header to, and writes and expires that cookie.
+    /// The <c>__Secure-access_token</c> cookie: reads the bearer token from it on a <c>GET</c> or <c>HEAD</c> request on
+    /// a configured path, for the plain navigations (a file opened in a new tab) a browser cannot attach an
+    /// <c>Authorization</c> header to, and writes and expires it.
     /// </summary>
     /// <remarks>
     /// Reading and writing live together because they share one contract: the cookie's name, the prefixes it is
     /// scoped to, and the attributes that make it safe to honour. <see cref="AuthServiceCollectionExtensions"/>
-    /// registers one instance, with an empty prefix list when the option is off.
+    /// registers one instance, with an empty prefix list when the option is off. Its full name is also the logger
+    /// category of the error <see cref="TryWriteCookies"/> logs, <c>EasyReasy.Auth.AccessTokenCookie</c>, which the
+    /// README tells consumers to watch, so renaming this class changes a public contract.
     /// </remarks>
-    internal sealed class CookieTokenFallback : IBearerTokenSource
+    internal sealed class AccessTokenCookie : IBearerTokenSource
     {
         /// <summary>
         /// The cookie's fixed name. The <c>__Secure-</c> prefix makes a browser refuse it unless it is set with
@@ -32,13 +34,13 @@ namespace EasyReasy.Auth
         internal const int MaxCookieBytes = 4096;
 
         /// <summary>
-        /// The logger category of the error written when a built-in endpoint cannot fit the token in the cookie.
+        /// The advice that ends both the exception and the log entry for a token too large for the cookie.
         /// </summary>
-        internal const string LoggerCategory = "EasyReasy.Auth.AccessTokenCookie";
+        private const string FewerClaimsAdvice = "Put fewer claims on tokens issued to browsers.";
 
         private readonly PathPrefixList _paths;
 
-        internal CookieTokenFallback(IEnumerable<string> paths)
+        internal AccessTokenCookie(IEnumerable<string> paths)
         {
             _paths = new PathPrefixList(paths);
         }
@@ -52,14 +54,23 @@ namespace EasyReasy.Auth
         internal bool IsEnabled => _paths.Prefixes.Count > 0;
 
         /// <summary>
-        /// Returns the cookie token of a <c>GET</c> or <c>HEAD</c> request on a configured path that carries the
-        /// cookie exactly once, or <c>null</c> when the request does not qualify.
+        /// Returns the cookie token of a <c>GET</c> or <c>HEAD</c> request on a configured path that is not a protocol
+        /// upgrade and carries the cookie exactly once, or <c>null</c> when the request does not qualify.
         /// </summary>
         public string? ReadToken(HttpRequest request)
         {
             // Only reads: a same-site page (a sibling subdomain counts) can still make the browser send the cookie,
             // so honouring it on a state-changing method would hand that page the user's authority.
             if (!HttpMethods.IsGet(request.Method) && !HttpMethods.IsHead(request.Method))
+            {
+                return null;
+            }
+
+            // A WebSocket handshake is a GET, but it opens a two-way channel rather than a read, and browsers send a
+            // SameSite=Strict cookie on a handshake from any same-site page with no CORS check. Read from the headers,
+            // not only IsWebSocketRequest, because the WebSocket middleware that sets that may run after
+            // authentication. (An HTTP/2 WebSocket is a CONNECT, which the method check has already refused.)
+            if (IsUpgradeRequest(request))
             {
                 return null;
             }
@@ -102,8 +113,7 @@ namespace EasyReasy.Auth
             if (!FitsInCookie(accessToken, out int cookieBytes))
             {
                 throw new InvalidOperationException(
-                    $"The access-token cookie would be {cookieBytes} bytes (name and value), over the {MaxCookieBytes}-byte limit browsers store; " +
-                    $"a browser would drop it silently. Put fewer claims on tokens issued to browsers.");
+                    $"{DescribeOversizedCookie(cookieBytes)} A browser would drop it silently. {FewerClaimsAdvice}");
             }
 
             AppendCookies(context, accessToken, maxAgeSeconds);
@@ -120,7 +130,7 @@ namespace EasyReasy.Auth
         /// grow between refreshes; a token without <c>exp</c> is a bug in the issuer and still throws.
         /// </remarks>
         /// <exception cref="ArgumentException">Thrown when the token is not a JWT or has no <c>exp</c> claim.</exception>
-        internal bool TryWriteCookies(HttpContext context, string accessToken, TimeProvider timeProvider, ILogger logger)
+        internal bool TryWriteCookies(HttpContext context, string accessToken, TimeProvider timeProvider, ILogger<AccessTokenCookie> logger)
         {
             long maxAgeSeconds = ReadSecondsUntilExpiry(accessToken, timeProvider);
 
@@ -128,11 +138,9 @@ namespace EasyReasy.Auth
             {
                 ClearCookies(context);
                 logger.LogError(
-                    "The access-token cookie would be {CookieBytes} bytes (name and value), over the {MaxCookieBytes}-byte limit browsers store, " +
-                    "so it was cleared instead of written. The sign-in succeeded, but this browser cannot open cookie-path tabs until a token fits. " +
-                    "Put fewer claims on tokens issued to browsers.",
-                    cookieBytes,
-                    MaxCookieBytes);
+                    "{Problem} It was cleared instead of written. The sign-in succeeded, but this browser cannot open cookie-path tabs until a token fits. {Advice}",
+                    DescribeOversizedCookie(cookieBytes),
+                    FewerClaimsAdvice);
                 return false;
             }
 
@@ -149,6 +157,25 @@ namespace EasyReasy.Auth
             {
                 AppendCookie(context, value: "", TimeSpan.Zero, path);
             }
+        }
+
+        /// <summary>
+        /// Whether the request asks to switch protocols: an <c>Upgrade</c> header of any kind, a WebSocket key, or a
+        /// request the WebSocket middleware has already recognised.
+        /// </summary>
+        private static bool IsUpgradeRequest(HttpRequest request)
+        {
+            return request.Headers.ContainsKey(HeaderNames.Upgrade)
+                || request.Headers.ContainsKey(HeaderNames.SecWebSocketKey)
+                || request.HttpContext.WebSockets.IsWebSocketRequest;
+        }
+
+        /// <summary>
+        /// The sentence naming the size and the limit, shared by the exception and the log entry so they cannot drift.
+        /// </summary>
+        private static string DescribeOversizedCookie(int cookieBytes)
+        {
+            return $"The access-token cookie would be {cookieBytes} bytes (name and value), over the {MaxCookieBytes}-byte limit browsers store.";
         }
 
         /// <summary>

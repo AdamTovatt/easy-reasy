@@ -204,7 +204,8 @@ namespace EasyReasy.Auth
         /// </para>
         /// <para>
         /// When <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> is non-empty, a successful login also sets the
-        /// access-token cookie through <see cref="HttpContextExtensions.SetAccessTokenCookie"/>. The JSON response is unchanged.
+        /// access-token cookie through <see cref="HttpContextExtensions.TrySetAccessTokenCookie"/>, so a token too large
+        /// for the cookie is logged and the sign-in still succeeds. The JSON response is unchanged.
         /// </para>
         /// </remarks>
         /// <param name="app">The web application.</param>
@@ -236,7 +237,11 @@ namespace EasyReasy.Auth
                 {
                     // The validation service has already issued the session, so a token too large for the cookie
                     // is logged and the sign-in still succeeds.
-                    httpContext.TrySetAccessTokenCookieIfEnabled(result.AuthResponse.Token);
+                    if (httpContext.IsAccessTokenCookieEnabled())
+                    {
+                        httpContext.TrySetAccessTokenCookie(result.AuthResponse.Token);
+                    }
+
                     httpContext.MarkAuthenticationSucceeded();
                     return Results.Ok(result.AuthResponse);
                 }
@@ -276,9 +281,9 @@ namespace EasyReasy.Auth
                 {
                     // The old refresh token is already used up, so failing here would lose the new one: a token
                     // too large for the cookie is logged and the refresh still succeeds.
-                    if (result.AuthResponse != null)
+                    if (result.AuthResponse != null && httpContext.IsAccessTokenCookieEnabled())
                     {
-                        httpContext.TrySetAccessTokenCookieIfEnabled(result.AuthResponse.Token);
+                        httpContext.TrySetAccessTokenCookie(result.AuthResponse.Token);
                     }
 
                     httpContext.MarkAuthenticationSucceeded();
@@ -287,7 +292,10 @@ namespace EasyReasy.Auth
 
                 // A refused refresh ends this browser's session, so its cookie goes with it rather than outliving
                 // the session until the access token's exp.
-                httpContext.ClearAccessTokenCookieIfEnabled();
+                if (httpContext.IsAccessTokenCookieEnabled())
+                {
+                    httpContext.ClearAccessTokenCookie();
+                }
 
                 return Results.Unauthorized();
             }).AllowAnonymous();
@@ -322,7 +330,10 @@ namespace EasyReasy.Auth
                 await refreshTokenService.LogoutAsync(request.RefreshToken, httpContext, httpContext.RequestAborted);
 
                 // On every 204, known token or not, so the response still does not reveal which it was.
-                httpContext.ClearAccessTokenCookieIfEnabled();
+                if (httpContext.IsAccessTokenCookieEnabled())
+                {
+                    httpContext.ClearAccessTokenCookie();
+                }
 
                 return Results.NoContent();
             }).AllowAnonymous();

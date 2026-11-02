@@ -134,28 +134,34 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void SetAndClearAccessTokenCookie_OptionUnset_ThrowAndWriteNothing()
+        [DataRow(nameof(HttpContextExtensions.SetAccessTokenCookie))]
+        [DataRow(nameof(HttpContextExtensions.TrySetAccessTokenCookie))]
+        [DataRow(nameof(HttpContextExtensions.ClearAccessTokenCookie))]
+        public void CookieHelper_OptionUnset_ThrowsNamingTheOptionAndWritesNothing(string helperName)
         {
             FakeTimeProvider clock = new FakeTimeProvider(Now);
             using ServiceProvider services = BuildServices([], clock);
             DefaultHttpContext context = CreateContext(services, pathBase: "");
             string token = CreateToken(clock, expiresAt: Now.AddMinutes(5));
 
-            InvalidOperationException setException = Assert.ThrowsException<InvalidOperationException>(() => context.SetAccessTokenCookie(token));
-            InvalidOperationException clearException = Assert.ThrowsException<InvalidOperationException>(() => context.ClearAccessTokenCookie());
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => InvokeHelper(context, helperName, token));
 
-            StringAssert.Contains(setException.Message, nameof(EasyReasyAuthOptions.CookieTokenPaths));
-            StringAssert.Contains(clearException.Message, nameof(EasyReasyAuthOptions.CookieTokenPaths));
+            StringAssert.Contains(exception.Message, helperName);
+            StringAssert.Contains(exception.Message, nameof(EasyReasyAuthOptions.CookieTokenPaths));
             Assert.AreEqual(0, SetCookieHeaders(context).Length);
         }
 
         [TestMethod]
-        public void SetAndClearAccessTokenCookie_AddEasyReasyAuthNotCalled_Throw()
+        [DataRow(nameof(HttpContextExtensions.SetAccessTokenCookie))]
+        [DataRow(nameof(HttpContextExtensions.TrySetAccessTokenCookie))]
+        [DataRow(nameof(HttpContextExtensions.ClearAccessTokenCookie))]
+        public void CookieHelper_AddEasyReasyAuthNotCalled_Throws(string helperName)
         {
             DefaultHttpContext context = new DefaultHttpContext();
 
-            Assert.ThrowsException<InvalidOperationException>(() => context.SetAccessTokenCookie("a.b.c"));
-            Assert.ThrowsException<InvalidOperationException>(() => context.ClearAccessTokenCookie());
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => InvokeHelper(context, helperName, "a.b.c"));
+
+            StringAssert.Contains(exception.Message, helperName);
         }
 
         [TestMethod]
@@ -267,16 +273,25 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual(0, SetCookieHeaders(context).Length);
         }
 
-        [TestMethod]
-        public void TrySetAccessTokenCookie_OptionUnset_Throws()
+        /// <summary>
+        /// Calls the public cookie helper named <paramref name="helperName"/>, so one test can cover each in a row of its own.
+        /// </summary>
+        private static void InvokeHelper(HttpContext context, string helperName, string accessToken)
         {
-            FakeTimeProvider clock = new FakeTimeProvider(Now);
-            using ServiceProvider services = BuildServices([], clock);
-            DefaultHttpContext context = CreateContext(services, pathBase: "");
-
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() =>
-                context.TrySetAccessTokenCookie(CreateToken(clock, expiresAt: Now.AddMinutes(5))));
-            StringAssert.Contains(exception.Message, nameof(EasyReasyAuthOptions.CookieTokenPaths));
+            switch (helperName)
+            {
+                case nameof(HttpContextExtensions.SetAccessTokenCookie):
+                    context.SetAccessTokenCookie(accessToken);
+                    break;
+                case nameof(HttpContextExtensions.TrySetAccessTokenCookie):
+                    context.TrySetAccessTokenCookie(accessToken);
+                    break;
+                case nameof(HttpContextExtensions.ClearAccessTokenCookie):
+                    context.ClearAccessTokenCookie();
+                    break;
+                default:
+                    throw new ArgumentException($"No helper named {helperName}.", nameof(helperName));
+            }
         }
 
         private static ServiceProvider BuildServices(IReadOnlyList<string> cookieTokenPaths, TimeProvider clock, ILoggerProvider? loggerProvider = null)
@@ -317,10 +332,10 @@ namespace EasyReasy.Auth.Tests
         private static string CreateTokenWithCookieSize(int cookieBytes)
         {
             long exp = Now.AddMinutes(5).ToUnixTimeSeconds();
-            int unpaddedLength = CookieTokenFallback.CookieName.Length + CreateUnsignedToken(exp, signatureLength: 0).Length;
+            int unpaddedLength = AccessTokenCookie.CookieName.Length + CreateUnsignedToken(exp, signatureLength: 0).Length;
             string token = CreateUnsignedToken(exp, signatureLength: cookieBytes - unpaddedLength);
 
-            Assert.AreEqual(cookieBytes, CookieTokenFallback.CookieName.Length + token.Length);
+            Assert.AreEqual(cookieBytes, AccessTokenCookie.CookieName.Length + token.Length);
             return token;
         }
 
