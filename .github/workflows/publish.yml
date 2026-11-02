@@ -9,6 +9,12 @@ jobs:
   publish:
     runs-on: ubuntu-latest
 
+    # id-token: write lets NuGet/login exchange GitHub's OIDC token for a short-lived
+    # nuget.org API key through the trusted publishing policy, so no long-lived key is stored.
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
     - uses: actions/checkout@v6
     - name: Setup .NET
@@ -86,5 +92,12 @@ jobs:
     - name: Pack
       run: dotnet pack ${{ steps.project.outputs.PROJECT }} --no-build --configuration Release --output ./nupkgs
 
+    # Right before the push: the key this returns lives for about an hour.
+    - name: Log in to NuGet through trusted publishing
+      id: nuget-login
+      uses: NuGet/login@v1
+      with:
+        user: AdamTovatt
+
     - name: Publish to NuGet
-      run: dotnet nuget push ./nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} --skip-duplicate
+      run: dotnet nuget push ./nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate
