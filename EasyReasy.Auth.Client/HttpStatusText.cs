@@ -17,13 +17,13 @@ namespace EasyReasy.Auth.Client
         /// </summary>
         /// <remarks>
         /// The name is the <see cref="HttpStatusCode"/> member's name. A status with no member, such as
-        /// <c>499</c>, has no name to write, so its number is written twice: <c>499 499</c>.
+        /// <c>499</c>, has no name to write and is written as its number alone: <c>499</c>.
         /// </remarks>
         /// <param name="statusCode">The status to write.</param>
         /// <returns>The status as text.</returns>
         public static string Describe(HttpStatusCode statusCode)
         {
-            return $"{(int)statusCode} {statusCode}";
+            return Enum.IsDefined(statusCode) ? $"{(int)statusCode} {statusCode}" : $"{(int)statusCode}";
         }
     }
 }
