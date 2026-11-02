@@ -32,7 +32,7 @@ namespace EasyReasy.Auth.Client.Tests
         /// <returns>The exception the request failed with.</returns>
         private static async Task<InvalidAuthResponseException> CaptureApiKeyFailureAsync(FakeHttpHandler handler)
         {
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = ClientTestFactory.CreateHttpClient(handler);
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, "api-key");
 
             return await Assert.ThrowsExceptionAsync<InvalidAuthResponseException>(() => client.GetAsync("api/test"));
@@ -58,7 +58,7 @@ namespace EasyReasy.Auth.Client.Tests
         [TestMethod]
         public async Task GetAsync_ApiKey_AuthEndpointAnswersHtml_IsAnAuthClientException()
         {
-            // Arrange — the release promises one catch (AuthClientException) handles a wrong host too.
+            // Arrange — AuthClientException covers an address that is not an auth server, so one catch handles it.
             FakeHttpHandler handler = new FakeHttpHandler();
             EnqueueHtmlResponse(handler, SignInPageHost.SignInPageHtml);
 
@@ -122,7 +122,7 @@ namespace EasyReasy.Auth.Client.Tests
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
             EnqueueHtmlResponse(handler, SignInPageHost.SignInPageHtml);
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = ClientTestFactory.CreateHttpClient(handler);
             AuthResponse expired = new AuthResponse("expired-token", DateTime.UtcNow.AddMinutes(-1).ToString("O"), "old-refresh");
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, expired);
 
@@ -151,7 +151,7 @@ namespace EasyReasy.Auth.Client.Tests
             handler.EnqueueJsonResponse(new AuthResponse("second-token", DateTime.UtcNow.AddMinutes(60).ToString("O"), "another-refresh-token").ToJson());
             handler.EnqueueJsonResponse("{\"data\":\"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = ClientTestFactory.CreateHttpClient(handler);
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, "api-key");
 
             // Act — the first request authenticates and comes back with a token already inside the expiry margin,
@@ -452,7 +452,7 @@ namespace EasyReasy.Auth.Client.Tests
                     System.Text.Encoding.UTF8,
                     "application/json"),
             });
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = ClientTestFactory.CreateHttpClient(handler);
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, "api-key");
 
             // Act
@@ -475,7 +475,7 @@ namespace EasyReasy.Auth.Client.Tests
             {
                 Content = new StringContent(new string('x', 200_000), System.Text.Encoding.UTF8, "text/plain"),
             });
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = ClientTestFactory.CreateHttpClient(handler);
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, "api-key");
 
             // Act
@@ -496,7 +496,7 @@ namespace EasyReasy.Auth.Client.Tests
             FakeHttpHandler handler = new FakeHttpHandler();
             handler.EnqueueJsonResponse(new AuthResponse("a-token", DateTime.UtcNow.AddMinutes(60).ToString("O"), "a-refresh-token").ToJson());
             handler.EnqueueJsonResponse("{\"data\":\"hello\"}");
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = ClientTestFactory.CreateHttpClient(handler);
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, "api-key");
 
             // Act

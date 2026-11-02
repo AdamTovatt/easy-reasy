@@ -148,7 +148,7 @@ namespace EasyReasy.Auth.Client.Tests
             FakeHttpHandler handler = new FakeHttpHandler();
             using AuthorizedHttpClient client = CreateExpiredPreAuthorizedClient(handler, "refresh");
             await FailOneRefreshAsync(handler, client);
-            handler.EnqueueJsonResponse(CreateAuthResponse("new-token", 60, "new-refresh").ToJson());
+            handler.EnqueueJsonResponse(CreateAuthResponseJson("new-token", 60, "new-refresh"));
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
             // Act
@@ -168,7 +168,7 @@ namespace EasyReasy.Auth.Client.Tests
             FakeHttpHandler handler = new FakeHttpHandler();
             using AuthorizedHttpClient client = CreateExpiredPreAuthorizedClient(handler, "refresh");
             await FailOneRefreshAsync(handler, client);
-            HandlerGate gate = handler.EnqueueGatedResponse(CreateAuthResponseMessage(CreateAuthResponse("new-token", 60, "new-refresh")));
+            HandlerGate gate = handler.EnqueueGatedJsonResponse(CreateAuthResponseJson("new-token", 60, "new-refresh"));
             for (int index = 0; index < WaiterCount + 1; index++)
             {
                 handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
@@ -178,16 +178,82 @@ namespace EasyReasy.Auth.Client.Tests
             await gate.Entered;
             List<Task<HttpResponseMessage>> waiters = StartGetCalls(client, WaiterCount);
 
-            // A forced authorize takes the finished attempt's outcome whether or not a token is still needed, so it
-            // is the waiter that would be handed a failure left over from before the success.
-            Task forced = client.ForceAuthorizeAsync();
-
             // Act
             gate.Release();
 
             // Assert
             await AssertAllOkAsync(waiters.Prepend(first));
-            Assert.IsNull(await CaptureFailureAsync(forced));
+        }
+
+        [TestMethod]
+        [Timeout(TestTimeoutMilliseconds)]
+        public async Task ForceAuthorizeAsync_WaitingBehindSuccessAfterReportedFailure_DoesNotGetTheOldFailure()
+        {
+            // Arrange — a forced authorize takes the finished attempt's outcome whether or not a token is still
+            // needed, so it is the waiter that would be handed a failure left over from before the success.
+            FakeHttpHandler handler = new FakeHttpHandler();
+            using AuthorizedHttpClient client = CreateExpiredPreAuthorizedClient(handler, "refresh");
+            await FailOneRefreshAsync(handler, client);
+            HandlerGate gate = handler.EnqueueGatedJsonResponse(CreateAuthResponseJson("new-token", 60, "new-refresh"));
+            handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
+
+            Task<HttpResponseMessage> first = client.GetAsync("api/test");
+            await gate.Entered;
+            Task forced = client.ForceAuthorizeAsync();
+
+            // Act
+            gate.Release();
+            await AssertAllOkAsync(new[] { first });
+
+            // Assert — completes without throwing.
+            await forced;
+        }
+
+        [TestMethod]
+        [Timeout(TestTimeoutMilliseconds)]
+        public async Task ForceAuthorizeAsync_WaitingBehindCancelledAttempt_MakesItsOwnAttempt()
+        {
+            // Arrange — a cancelled attempt renewed nothing, so taking it as a success would return without a token.
+            FakeHttpHandler handler = new FakeHttpHandler();
+            HandlerGate gate = handler.EnqueueGatedResponse(CreateStatusResponse(HttpStatusCode.ServiceUnavailable));
+            handler.EnqueueJsonResponse(CreateAuthResponseJson("signed-in-token", 60, "refresh"));
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(CreateHttpClient(handler), "api-key");
+            using CancellationTokenSource firstCallerCancellation = new CancellationTokenSource();
+
+            Task<HttpResponseMessage> first = client.GetAsync("api/test", firstCallerCancellation.Token);
+            await gate.Entered;
+            Task forced = client.ForceAuthorizeAsync();
+
+            // Act
+            firstCallerCancellation.Cancel();
+            await Assert.ThrowsExceptionAsync<TaskCanceledException>(() => first);
+            await forced;
+
+            // Assert — the cancelled sign-in, then the forced call's own.
+            Assert.AreEqual(2, handler.SentRequests.Count);
+            Assert.AreEqual(ApiKeySignInUri, handler.SentRequests[1].RequestUri?.ToString());
+        }
+
+        [TestMethod]
+        [Timeout(TestTimeoutMilliseconds)]
+        public async Task ForceReauthorizeAsync_FailsWithWaiters_WaitersShareTheFailure()
+        {
+            // Arrange
+            FakeHttpHandler handler = new FakeHttpHandler();
+            HandlerGate gate = handler.EnqueueGatedResponse(CreateStatusResponse(HttpStatusCode.ServiceUnavailable));
+            using AuthorizedHttpClient client = new AuthorizedHttpClient(CreateHttpClient(handler), "api-key");
+
+            Task reauthorized = client.ForceReauthorizeAsync();
+            await gate.Entered;
+            List<Task<HttpResponseMessage>> waiters = StartGetCalls(client, WaiterCount);
+
+            // Act
+            gate.Release();
+            HttpRequestException failure = await Assert.ThrowsExceptionAsync<HttpRequestException>(() => reauthorized);
+
+            // Assert
+            await AssertAllShareAsync(failure, waiters);
+            Assert.AreEqual(1, handler.SentRequests.Count);
         }
 
         [TestMethod]
@@ -196,7 +262,7 @@ namespace EasyReasy.Auth.Client.Tests
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
-            HandlerGate gate = handler.EnqueueGatedResponse(CreateAuthResponseMessage(CreateAuthResponse("signed-in-token", 60, "refresh")));
+            HandlerGate gate = handler.EnqueueGatedJsonResponse(CreateAuthResponseJson("signed-in-token", 60, "refresh"));
             for (int index = 0; index < WaiterCount + 1; index++)
             {
                 handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
@@ -233,7 +299,7 @@ namespace EasyReasy.Auth.Client.Tests
             }
 
             HandlerGate gate = handler.EnqueueGatedResponse(CreateStatusResponse(HttpStatusCode.ServiceUnavailable));
-            handler.EnqueueJsonResponse(CreateAuthResponse("new-token", 60, "new-refresh").ToJson());
+            handler.EnqueueJsonResponse(CreateAuthResponseJson("new-token", 60, "new-refresh"));
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
             using CancellationTokenSource firstCallerCancellation = new CancellationTokenSource();
 
@@ -279,7 +345,7 @@ namespace EasyReasy.Auth.Client.Tests
         {
             // Arrange — as when several requests answered 401 at once: the first renewal serves them all.
             FakeHttpHandler handler = new FakeHttpHandler();
-            HandlerGate gate = handler.EnqueueGatedResponse(CreateAuthResponseMessage(CreateAuthResponse("signed-in-token", 60, "refresh")));
+            HandlerGate gate = handler.EnqueueGatedJsonResponse(CreateAuthResponseJson("signed-in-token", 60, "refresh"));
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
             using AuthorizedHttpClient client = new AuthorizedHttpClient(CreateHttpClient(handler), "api-key");
 
@@ -303,7 +369,7 @@ namespace EasyReasy.Auth.Client.Tests
             // Arrange — an explicit reauthorize always clears and tries afresh.
             FakeHttpHandler handler = new FakeHttpHandler();
             HandlerGate gate = handler.EnqueueGatedResponse(CreateStatusResponse(HttpStatusCode.ServiceUnavailable));
-            handler.EnqueueJsonResponse(CreateAuthResponse("signed-in-token", 60, "refresh").ToJson());
+            handler.EnqueueJsonResponse(CreateAuthResponseJson("signed-in-token", 60, "refresh"));
             using AuthorizedHttpClient client = new AuthorizedHttpClient(CreateHttpClient(handler), "api-key");
 
             Task<HttpResponseMessage> first = client.GetAsync("api/test");

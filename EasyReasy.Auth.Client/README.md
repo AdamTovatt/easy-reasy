@@ -336,7 +336,8 @@ await client.LogoutAsync();
 
 // Subsequent requests will trigger a fresh authentication flow
 // (only possible when the client has credentials — API key or username/password.
-// A pre-authorized client cannot re-authenticate after logout.)
+// A pre-authorized client cannot re-authenticate after logout: its next request
+// throws SessionNotRenewableException.)
 ```
 
 You can override the logout endpoint path via the `logoutEndpoint` constructor parameter if your server mounts it elsewhere.

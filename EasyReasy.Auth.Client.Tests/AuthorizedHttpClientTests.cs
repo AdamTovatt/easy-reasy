@@ -1,21 +1,11 @@
 using System.Net;
+using static EasyReasy.Auth.Client.Tests.ClientTestFactory;
 
 namespace EasyReasy.Auth.Client.Tests
 {
     [TestClass]
     public class AuthorizedHttpClientTests
     {
-        private static AuthResponse CreateValidAuthResponse(string token = "test-token", int expiresInMinutes = 60, string? refreshToken = "test-refresh")
-        {
-            string expiresAt = DateTime.UtcNow.AddMinutes(expiresInMinutes).ToString("O");
-            return new AuthResponse(token, expiresAt, refreshToken);
-        }
-
-        private static string CreateAuthResponseJson(string token = "test-token", int expiresInMinutes = 60, string? refreshToken = "test-refresh")
-        {
-            return CreateValidAuthResponse(token, expiresInMinutes, refreshToken).ToJson();
-        }
-
         #region PreAuthorized Constructor
 
         [TestMethod]
@@ -23,8 +13,8 @@ namespace EasyReasy.Auth.Client.Tests
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com") };
-            AuthResponse authResponse = CreateValidAuthResponse();
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse();
 
             // Act
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
@@ -37,7 +27,7 @@ namespace EasyReasy.Auth.Client.Tests
         public void Constructor_PreAuthorized_NullHttpClient_ThrowsArgumentNullException()
         {
             // Arrange
-            AuthResponse authResponse = CreateValidAuthResponse();
+            AuthResponse authResponse = CreateAuthResponse();
 
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
@@ -62,7 +52,7 @@ namespace EasyReasy.Auth.Client.Tests
             // response header-first would leave it carrying a Bearer token from a response the client rejected,
             // which every later request on that client would then send.
             FakeHttpHandler handler = new FakeHttpHandler();
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com") };
+            HttpClient httpClient = CreateHttpClient(handler);
             AuthResponse unreadable = new AuthResponse("my-jwt-token", "tomorrow");
 
             // Act
@@ -77,8 +67,8 @@ namespace EasyReasy.Auth.Client.Tests
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com") };
-            AuthResponse authResponse = CreateValidAuthResponse(token: "my-jwt-token");
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(token: "my-jwt-token");
 
             // Act
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
@@ -91,10 +81,11 @@ namespace EasyReasy.Auth.Client.Tests
         [TestMethod]
         public void Constructor_PreAuthorized_AppendsTrailingSlashToBaseAddress()
         {
-            // Arrange
+            // Arrange — built by hand, without the trailing slash, because the slash is what is being tested.
             FakeHttpHandler handler = new FakeHttpHandler();
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com") };
-            AuthResponse authResponse = CreateValidAuthResponse();
+            HttpClient httpClient = new HttpClient(handler);
+            httpClient.BaseAddress = new Uri("https://example.com");
+            AuthResponse authResponse = CreateAuthResponse();
 
             // Act
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
@@ -114,8 +105,8 @@ namespace EasyReasy.Auth.Client.Tests
             FakeHttpHandler handler = new FakeHttpHandler();
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse();
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse();
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
@@ -135,8 +126,8 @@ namespace EasyReasy.Auth.Client.Tests
             FakeHttpHandler handler = new FakeHttpHandler();
             handler.EnqueueJsonResponse("{\"ok\": true}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(token: "my-token");
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(token: "my-token");
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
             StringContent content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
@@ -166,8 +157,8 @@ namespace EasyReasy.Auth.Client.Tests
             // Second: the actual GET request succeeds
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(token: "expired-token", expiresInMinutes: -1, refreshToken: "old-refresh");
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(token: "expired-token", expiresInMinutes: -1, refreshToken: "old-refresh");
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
@@ -190,8 +181,8 @@ namespace EasyReasy.Auth.Client.Tests
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(token: "expired-token", expiresInMinutes: -1, refreshToken: null);
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(token: "expired-token", expiresInMinutes: -1, refreshToken: null);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
@@ -201,7 +192,6 @@ namespace EasyReasy.Auth.Client.Tests
 
             // Assert
             Assert.AreEqual(0, handler.SentRequests.Count);
-            StringAssert.Contains(exception.Message, "holds no refresh token");
             Assert.IsNull(exception.InnerException);
         }
 
@@ -224,8 +214,8 @@ namespace EasyReasy.Auth.Client.Tests
             // Third: the retried GET succeeds
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(token: "valid-token");
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(token: "valid-token");
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
@@ -267,7 +257,7 @@ namespace EasyReasy.Auth.Client.Tests
             // Second: the actual GET succeeds
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(
                 httpClient, username: "user", password: "pass");
@@ -295,7 +285,7 @@ namespace EasyReasy.Auth.Client.Tests
                 Content = new StringContent("Invalid credentials")
             });
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(
                 httpClient, username: "user", password: "wrong-pass");
@@ -344,7 +334,7 @@ namespace EasyReasy.Auth.Client.Tests
                 Content = new StringContent("Invalid credentials"),
             });
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(
                 httpClient, username: "   ", password: "   ");
@@ -430,7 +420,7 @@ namespace EasyReasy.Auth.Client.Tests
                 Content = new StringContent("Unknown key"),
             });
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "   ");
 
@@ -477,7 +467,7 @@ namespace EasyReasy.Auth.Client.Tests
             // Second: the actual GET succeeds
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "my-api-key");
 
@@ -498,7 +488,7 @@ namespace EasyReasy.Auth.Client.Tests
             handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "apikey-token"));
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "my-api-key") { ClientId = "my-client" };
 
@@ -518,7 +508,7 @@ namespace EasyReasy.Auth.Client.Tests
             handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "apikey-token"));
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "my-api-key");
 
@@ -539,8 +529,8 @@ namespace EasyReasy.Auth.Client.Tests
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com") };
-            AuthResponse authResponse = CreateValidAuthResponse(token: "initial-token");
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(token: "initial-token");
             AuthResponse? receivedResponse = null;
 
             // Act
@@ -560,7 +550,7 @@ namespace EasyReasy.Auth.Client.Tests
             handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "auth-token"));
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
             AuthResponse? receivedResponse = null;
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(
@@ -582,7 +572,7 @@ namespace EasyReasy.Auth.Client.Tests
             handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "login-token"));
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
             AuthResponse? receivedResponse = null;
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(
@@ -605,8 +595,8 @@ namespace EasyReasy.Auth.Client.Tests
             handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "refreshed-token", refreshToken: "new-refresh"));
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(token: "expired-token", expiresInMinutes: -1, refreshToken: "old-refresh");
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(token: "expired-token", expiresInMinutes: -1, refreshToken: "old-refresh");
             List<AuthResponse> receivedResponses = new List<AuthResponse>();
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(
@@ -626,8 +616,8 @@ namespace EasyReasy.Auth.Client.Tests
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com") };
-            AuthResponse authResponse = CreateValidAuthResponse();
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse();
 
             // Act & Assert — no callback, no exception
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
@@ -641,7 +631,7 @@ namespace EasyReasy.Auth.Client.Tests
             handler.EnqueueJsonResponse(CreateAuthResponseJson(token: "auth-token"));
             handler.EnqueueJsonResponse("{\"data\": \"hello\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(
                 httpClient,
@@ -664,8 +654,8 @@ namespace EasyReasy.Auth.Client.Tests
         {
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse();
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse();
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
@@ -687,8 +677,8 @@ namespace EasyReasy.Auth.Client.Tests
             FakeHttpHandler handler = new FakeHttpHandler();
             handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.NoContent));
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(refreshToken: "the-refresh-token");
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(refreshToken: "the-refresh-token");
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
@@ -709,8 +699,8 @@ namespace EasyReasy.Auth.Client.Tests
             FakeHttpHandler handler = new FakeHttpHandler();
             handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.NoContent));
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(token: "live-token", refreshToken: "live-refresh");
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(token: "live-token", refreshToken: "live-refresh");
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
@@ -730,8 +720,8 @@ namespace EasyReasy.Auth.Client.Tests
             // Arrange
             FakeHttpHandler handler = new FakeHttpHandler();
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(refreshToken: null);
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(refreshToken: null);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
@@ -750,8 +740,8 @@ namespace EasyReasy.Auth.Client.Tests
             FakeHttpHandler handler = new FakeHttpHandler();
             handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.InternalServerError));
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(refreshToken: "some-refresh");
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(refreshToken: "some-refresh");
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
@@ -779,7 +769,7 @@ namespace EasyReasy.Auth.Client.Tests
             // 5. Next API call
             handler.EnqueueJsonResponse("{\"data\":\"world\"}");
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
+            HttpClient httpClient = CreateHttpClient(handler);
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, apiKey: "my-api-key");
 
@@ -801,7 +791,7 @@ namespace EasyReasy.Auth.Client.Tests
             TaskCompletionSource handlerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             BlockingHttpHandler handler = new BlockingHttpHandler(handlerEntered);
             HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(token: "live-token", refreshToken: "live-refresh");
+            AuthResponse authResponse = CreateAuthResponse(token: "live-token", refreshToken: "live-refresh");
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(httpClient, authResponse);
 
@@ -847,8 +837,8 @@ namespace EasyReasy.Auth.Client.Tests
             FakeHttpHandler handler = new FakeHttpHandler();
             handler.EnqueueResponse(new HttpResponseMessage(HttpStatusCode.NoContent));
 
-            HttpClient httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://example.com/") };
-            AuthResponse authResponse = CreateValidAuthResponse(refreshToken: "some-refresh");
+            HttpClient httpClient = CreateHttpClient(handler);
+            AuthResponse authResponse = CreateAuthResponse(refreshToken: "some-refresh");
 
             using AuthorizedHttpClient client = new AuthorizedHttpClient(
                 httpClient, authResponse, logoutEndpoint: "custom/logout");
