@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Runtime.ExceptionServices;
 
 namespace EasyReasy.Auth.Client
@@ -676,10 +677,17 @@ namespace EasyReasy.Auth.Client
         /// refresh endpoint that only ever redirects reports a server failure on every call instead of ending the
         /// session; the status on the <see cref="HttpRequestException"/> names the redirect.
         /// </para>
+        /// <para>
+        /// Public so that code running its own sign-in steps against an auth server judges their answers by this
+        /// same rule rather than by a copy of it.
+        /// </para>
         /// </remarks>
         /// <param name="statusCode">The unsuccessful status the server answered with.</param>
-        /// <returns><c>true</c> when the server refused the request.</returns>
-        private static bool IsRefusalStatus(HttpStatusCode statusCode)
+        /// <returns>
+        /// <c>true</c> when the server refused the request; <c>false</c> for any status outside <c>4xx</c>,
+        /// a success included, and for <c>408</c> and <c>429</c>.
+        /// </returns>
+        public static bool IsRefusalStatus(HttpStatusCode statusCode)
         {
             int code = (int)statusCode;
             return code >= 400 && code <= 499
@@ -704,7 +712,7 @@ namespace EasyReasy.Auth.Client
             // client went on to reject.
             DateTime expirationTime = authResponse.ExpirationTime;
 
-            _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", authResponse.Token);
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", authResponse.Token);
             _isAuthorized = true;
             _tokenExpiresAt = expirationTime;
 
@@ -723,26 +731,80 @@ namespace EasyReasy.Auth.Client
         /// <summary>
         /// Sends an HTTP request and ensures authorization before sending.
         /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Can throw another call's failed authorization attempt without sending anything; see
+        /// <see cref="EnsureAuthorizedAsync"/>.
+        /// </para>
+        /// <para>
+        /// When the server answers <c>401</c>, that response is disposed, the session is renewed once through
+        /// <see cref="ForceAuthorizeAsync"/>, and a copy of <paramref name="request"/> is sent, since a request
+        /// message cannot be sent twice. The copy carries the method, URI, version and version policy, and the
+        /// headers and <see cref="HttpRequestMessage.Options"/> set on <paramref name="request"/> before it was
+        /// sent, not what sending added to them. It shares the same <see cref="HttpRequestMessage.Content"/>
+        /// object, which is sent again rather than buffered. The renewed token comes from the client's default
+        /// headers; an <c>Authorization</c> header set on <paramref name="request"/> itself is copied as it was set.
+        /// A <c>401</c> answered to the copy is returned.
+        /// </para>
+        /// <para>
+        /// <see cref="ByteArrayContent"/>, <see cref="StringContent"/>, <see cref="FormUrlEncodedContent"/>,
+        /// <see cref="ReadOnlyMemoryContent"/> and <c>JsonContent</c> are resent in full, and a
+        /// <see cref="StreamContent"/> over a seekable stream is rewound to where it started, so none of them is
+        /// resent empty or partial. A <see cref="StreamContent"/> over a stream that cannot seek, such as a network
+        /// or pipe stream, cannot be read again, so the retry fails without sending a body: the handler throws an
+        /// <see cref="HttpRequestException"/> with no <see cref="HttpRequestException.StatusCode"/> whose
+        /// <see cref="Exception.InnerException"/> is the <see cref="InvalidOperationException"/> .NET throws for a
+        /// consumed stream. Unlike other failures this client reports that way, sending the same request again
+        /// fails the same way; give a body that must survive a <c>401</c> a seekable stream. Any other
+        /// <see cref="HttpContent"/> is resent however it serializes a second time.
+        /// </para>
+        /// </remarks>
         /// <param name="request">The HTTP request message.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The HTTP response message.</returns>
-        /// <remarks>Can throw another call's failed authorization attempt without sending anything; see <see cref="EnsureAuthorizedAsync"/>.</remarks>
         /// <exception cref="AuthClientException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which authorizing runs first and which lists everything it can throw.</exception>
-        /// <exception cref="HttpRequestException">Thrown as on <see cref="EnsureAuthorizedAsync"/>.</exception>
+        /// <exception cref="HttpRequestException">
+        /// Thrown as on <see cref="EnsureAuthorizedAsync"/>, and when the server answers <c>401</c> to a request
+        /// whose body is a stream that cannot seek, as the remarks describe.
+        /// </exception>
         public async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
         {
             await EnsureAuthorizedAsync(cancellationToken);
 
+            RequestSnapshot unsentRequest = new RequestSnapshot(request);
+
             HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
 
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            if (response.StatusCode != HttpStatusCode.Unauthorized)
             {
-                // Token might be expired, try to re-authorize once
-                await ForceAuthorizeAsync(cancellationToken);
-                response = await _httpClient.SendAsync(request, cancellationToken);
+                return response;
             }
 
-            return response;
+            response.Dispose();
+
+            await ForceAuthorizeAsync(cancellationToken);
+
+            // Not disposed after sending, the way HttpClient leaves the request it is given: disposing a request
+            // message disposes its content, which is the caller's.
+            HttpRequestMessage retryRequest = unsentRequest.CreateCopy();
+            return await _httpClient.SendAsync(retryRequest, cancellationToken);
+        }
+
+        /// <summary>
+        /// Builds a request for one of the convenience send methods with the HTTP version and version policy the
+        /// <see cref="HttpClient"/> defaults to, as <see cref="HttpClient.GetAsync(string?)"/> and its siblings do;
+        /// a new <see cref="HttpRequestMessage"/> would otherwise always ask for HTTP/1.1.
+        /// </summary>
+        /// <param name="method">The HTTP method.</param>
+        /// <param name="requestUri">The request URI.</param>
+        /// <returns>The request.</returns>
+        private HttpRequestMessage CreateRequest(HttpMethod method, string requestUri)
+        {
+            return new HttpRequestMessage(method, requestUri)
+            {
+                Version = _httpClient.DefaultRequestVersion,
+                VersionPolicy = _httpClient.DefaultVersionPolicy,
+            };
         }
 
         /// <summary>
@@ -751,23 +813,13 @@ namespace EasyReasy.Auth.Client
         /// <param name="requestUri">The request URI.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The HTTP response message.</returns>
-        /// <remarks>Can throw another call's failed authorization attempt without sending anything; see <see cref="EnsureAuthorizedAsync"/>.</remarks>
+        /// <remarks>Sent through <see cref="SendAsync"/>, which states what happens on a <c>401</c>.</remarks>
         /// <exception cref="AuthClientException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which authorizing runs first and which lists everything it can throw.</exception>
         /// <exception cref="HttpRequestException">Thrown as on <see cref="EnsureAuthorizedAsync"/>.</exception>
         public async Task<HttpResponseMessage> GetAsync(string requestUri, CancellationToken cancellationToken = default)
         {
-            await EnsureAuthorizedAsync(cancellationToken);
-
-            HttpResponseMessage response = await _httpClient.GetAsync(requestUri, cancellationToken);
-
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
-            {
-                // Token might be expired, try to re-authorize once
-                await ForceAuthorizeAsync(cancellationToken);
-                response = await _httpClient.GetAsync(requestUri, cancellationToken);
-            }
-
-            return response;
+            HttpRequestMessage request = CreateRequest(HttpMethod.Get, requestUri);
+            return await SendAsync(request, cancellationToken);
         }
 
         /// <summary>
@@ -777,23 +829,17 @@ namespace EasyReasy.Auth.Client
         /// <param name="content">The HTTP content.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The HTTP response message.</returns>
-        /// <remarks>Can throw another call's failed authorization attempt without sending anything; see <see cref="EnsureAuthorizedAsync"/>.</remarks>
+        /// <remarks>
+        /// Sent through <see cref="SendAsync"/>, which states what happens on a <c>401</c>, including which
+        /// <paramref name="content"/> cannot be sent again.
+        /// </remarks>
         /// <exception cref="AuthClientException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which authorizing runs first and which lists everything it can throw.</exception>
-        /// <exception cref="HttpRequestException">Thrown as on <see cref="EnsureAuthorizedAsync"/>.</exception>
+        /// <exception cref="HttpRequestException">Thrown as on <see cref="SendAsync"/>.</exception>
         public async Task<HttpResponseMessage> PostAsync(string requestUri, HttpContent content, CancellationToken cancellationToken = default)
         {
-            await EnsureAuthorizedAsync(cancellationToken);
-
-            HttpResponseMessage response = await _httpClient.PostAsync(requestUri, content, cancellationToken);
-
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
-            {
-                // Token might be expired, try to re-authorize once
-                await ForceAuthorizeAsync(cancellationToken);
-                response = await _httpClient.PostAsync(requestUri, content, cancellationToken);
-            }
-
-            return response;
+            HttpRequestMessage request = CreateRequest(HttpMethod.Post, requestUri);
+            request.Content = content;
+            return await SendAsync(request, cancellationToken);
         }
 
         /// <summary>
