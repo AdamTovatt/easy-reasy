@@ -7,7 +7,7 @@ namespace EasyReasy.Auth.Client.Tests
     /// </summary>
     public class FakeHttpHandler : HttpMessageHandler
     {
-        private readonly Queue<Func<HttpResponseMessage>> _responses = new Queue<Func<HttpResponseMessage>>();
+        private readonly Queue<Func<CancellationToken, Task<HttpResponseMessage>>> _responses = new Queue<Func<CancellationToken, Task<HttpResponseMessage>>>();
         private readonly List<HttpRequestMessage> _sentRequests = new List<HttpRequestMessage>();
 
         /// <summary>
@@ -32,7 +32,40 @@ namespace EasyReasy.Auth.Client.Tests
         /// <param name="response">The response to return.</param>
         public void EnqueueResponse(HttpResponseMessage response)
         {
-            _responses.Enqueue(() => response);
+            Enqueue(_ => Task.FromResult(response));
+        }
+
+        /// <summary>
+        /// Enqueues a response that the next request receives only once the returned gate is released, so a test
+        /// can hold a request in flight while it starts other calls.
+        /// </summary>
+        /// <param name="response">The response to return once released.</param>
+        /// <returns>The gate holding the request.</returns>
+        public HandlerGate EnqueueGatedResponse(HttpResponseMessage response)
+        {
+            HandlerGate gate = new HandlerGate();
+            Enqueue(async cancellationToken =>
+            {
+                await gate.PassAsync(cancellationToken);
+                return response;
+            });
+            return gate;
+        }
+
+        /// <summary>
+        /// Enqueues a failure that the next request throws only once the returned gate is released.
+        /// </summary>
+        /// <param name="exception">The exception to throw once released.</param>
+        /// <returns>The gate holding the request.</returns>
+        public HandlerGate EnqueueGatedFailure(Exception exception)
+        {
+            HandlerGate gate = new HandlerGate();
+            Enqueue(async cancellationToken =>
+            {
+                await gate.PassAsync(cancellationToken);
+                throw exception;
+            });
+            return gate;
         }
 
         /// <summary>
@@ -42,7 +75,16 @@ namespace EasyReasy.Auth.Client.Tests
         /// <param name="exception">The exception to throw.</param>
         public void EnqueueFailure(Exception exception)
         {
-            _responses.Enqueue(() => throw exception);
+            Enqueue(_ => throw exception);
+        }
+
+        private void Enqueue(Func<CancellationToken, Task<HttpResponseMessage>> next)
+        {
+            // Locked like the dequeue in SendAsync, because concurrency tests send requests from several callers.
+            lock (_responses)
+            {
+                _responses.Enqueue(next);
+            }
         }
 
         /// <summary>
@@ -59,18 +101,25 @@ namespace EasyReasy.Auth.Client.Tests
             EnqueueResponse(response);
         }
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            _sentRequests.Add(request);
+            Func<CancellationToken, Task<HttpResponseMessage>> next;
 
-            if (_responses.Count == 0)
+            lock (_responses)
             {
-                throw new InvalidOperationException(
-                    $"No more responses enqueued. Request: {request.Method} {request.RequestUri}");
+                _sentRequests.Add(request);
+
+                if (_responses.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"No more responses enqueued. Request: {request.Method} {request.RequestUri}");
+                }
+
+                next = _responses.Dequeue();
             }
 
-            HttpResponseMessage response = _responses.Dequeue()();
+            HttpResponseMessage response = await next(cancellationToken);
 
             // The real handlers set this, and code that diagnoses a wrong host reads it — a fake that left it null
             // would report null where a running client reports an address, which is the whole of what is being tested.
@@ -79,7 +128,7 @@ namespace EasyReasy.Auth.Client.Tests
                 response.RequestMessage ??= request;
             }
 
-            return Task.FromResult(response);
+            return response;
         }
     }
 }

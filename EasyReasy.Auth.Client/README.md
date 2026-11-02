@@ -155,9 +155,9 @@ using (HttpClient httpClient = AuthorizedHttpClient.CreateHttpClient("https://ap
 
 #### Force Authorization Methods
 
-- **`ForceAuthorizeAsync()`**: Bypasses the authorization check and always performs a fresh authentication. Useful when the server rejects a token that the client thinks is still valid.
+- **`ForceAuthorizeAsync()`**: Bypasses the token-expiry check and authenticates again. Useful when the server rejects a token that the client thinks is still valid. If another authorization finished while this call waited for it, the call takes that outcome instead of making its own: it returns after a success, whose token is newer than the rejected one, and throws that attempt's exception after a failure.
 
-- **`ForceReauthorizeAsync()`**: Clears all current authorization state and performs a completely fresh authentication. This ensures no residual state interferes with the new authentication.
+- **`ForceReauthorizeAsync()`**: Clears all current authorization state and performs a completely fresh authentication, even when another authorization finished while it waited. This ensures no residual state interferes with the new authentication.
 
 On a client constructed from an `AuthResponse`, `ForceAuthorizeAsync()` redeems the refresh token first, so it renews the session when the server accepts it. `ForceReauthorizeAsync()` clears the refresh token before authorizing, and such a client has no credentials to fall back on, so it always throws `SessionNotRenewableException` and spends a session that may still have been good. Use `ForceAuthorizeAsync()` there.
 
@@ -318,6 +318,13 @@ The client automatically handles token expiration:
 2. Automatically re-authenticates before making requests
 3. Retries failed requests once with a fresh token
 
+Requests that find the token expired at the same time share one authorization attempt. If it fails, every
+request that was waiting for it and still needs a token throws that attempt's exception instead of sending the
+sign-in or refresh again, so a burst of requests behind a `429` or `5xx` does not send one more auth request
+each. A request that starts after the failed attempt finished tries again. Requests retrying after a `401` share
+the attempt's outcome either way: one renewal serves them all. An attempt cancelled through its own caller's
+`CancellationToken` is not shared; the next waiting request makes its own.
+
 ### Logging Out
 
 `LogoutAsync()` posts the current refresh token to the server's logout endpoint (default `/api/auth/logout`) and then clears all local auth state. The server call is best-effort — HTTP failures do not prevent local state from being cleared, so the client always ends up in an unauthenticated state after the call.
@@ -415,9 +422,10 @@ Note that construction itself throws when a credential carries nothing — `Argu
 
 ### From 1.8.0
 
-One case changes type: a client constructed from an `AuthResponse` whose refresh is answered `408`, `429` or
-`5xx` used to throw `InvalidOperationException` and now throws `HttpRequestException`. Every other existing
-`catch` block keeps catching what it caught before.
+Two things can reach a `catch` block differently. A client constructed from an `AuthResponse` whose refresh is
+answered `408`, `429` or `5xx` used to throw `InvalidOperationException` and now throws
+`HttpRequestException`. And a call that waited while another call's authorization failed now throws that
+failure, where its own retry might have succeeded; see the last entry below.
 
 **A spent session throws `SessionNotRenewableException`.** A client constructed from an `AuthResponse` whose
 token has expired, with no refresh token left or one the server refused, previously threw a plain
@@ -437,6 +445,13 @@ only a refusal clears it. A client with credentials still falls back to signing 
 thrown with `StatusCode` null. It now carries the response's status; message and type are unchanged. If you
 were parsing the status out of the message, read `StatusCode` instead. A `401` still throws
 `UnauthorizedAccessException`.
+
+**Concurrent callers share a finished authorization attempt.** Calls that waited on the authorization lock
+while a sign-in or refresh failed each made their own attempt in turn. A call that still needs a token now
+throws the failed attempt's exception without sending anything, so it can see a failure its own retry would
+not have hit; a call that starts after the failed attempt finished tries again. `ForceAuthorizeAsync()`, which
+the send methods call after a `401`, also returns without a new attempt when another call's attempt succeeded
+while it waited. `ForceReauthorizeAsync()` always makes its own attempt.
 
 ### From 1.7.0
 

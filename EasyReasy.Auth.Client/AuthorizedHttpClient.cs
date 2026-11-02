@@ -1,4 +1,5 @@
 using System.Net;
+using System.Runtime.ExceptionServices;
 
 namespace EasyReasy.Auth.Client
 {
@@ -44,6 +45,18 @@ namespace EasyReasy.Auth.Client
         private DateTime? _tokenExpiresAt;
         private bool _isAuthorized;
         private bool _disposed;
+
+        /// <summary>
+        /// The number of authorization attempts that have finished, successfully or not. Written under
+        /// <see cref="_authLock"/>; read before waiting for it, to tell whether an attempt finished meanwhile.
+        /// </summary>
+        private long _completedAttempts;
+
+        /// <summary>
+        /// The failure of the most recent authorization attempt, or <c>null</c> when it succeeded or was cancelled
+        /// by its own caller. Only read and written under <see cref="_authLock"/>.
+        /// </summary>
+        private ExceptionDispatchInfo? _lastAttemptFailure;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AuthorizedHttpClient"/> class with API key authentication.
@@ -183,6 +196,13 @@ namespace EasyReasy.Auth.Client
         /// <summary>
         /// Ensures the client is authorized and the token is not expired.
         /// </summary>
+        /// <remarks>
+        /// Concurrent calls make one authorization attempt between them. When that attempt fails, a call that was
+        /// waiting for it and still needs a token throws that attempt's exception instead of sending the request
+        /// again; a call that starts after the failed attempt finished makes a new attempt. An attempt cancelled
+        /// through its own caller's token is not shared. The send methods authorize through this method, and
+        /// through <see cref="ForceAuthorizeAsync"/> when the server answers <c>401</c>.
+        /// </remarks>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <exception cref="UnauthorizedAccessException">
         /// Thrown when the auth endpoint rejects the credentials with a <c>401 Unauthorized</c>. The body it
@@ -217,57 +237,139 @@ namespace EasyReasy.Auth.Client
                 return;
             }
 
-            await _authLock.WaitAsync(cancellationToken);
-            try
-            {
-                // Double-check after acquiring the lock — another thread may have already authorized.
-                // A caller that waited here while another's attempt failed makes its own attempt rather than
-                // inheriting that failure: each caller authorizes at most once, for sign-in and refresh alike, so
-                // callers queued behind a 429 or 5xx each send one request in turn. Sharing one failed attempt
-                // among them would change sign-in as well, which this method treats the same as refresh.
-                if (!_isAuthorized || IsTokenExpired())
-                {
-                    await AuthorizeAsync(cancellationToken);
-                }
-            }
-            finally
-            {
-                _authLock.Release();
-            }
+            await AuthorizeUnderLockAsync(
+                () => AuthorizeAsync(cancellationToken),
+                FinishedAttemptUse.ShareFailure,
+                isAttemptNeeded: () => !_isAuthorized || IsTokenExpired(),
+                cancellationToken);
         }
 
         /// <summary>
         /// Forces a fresh authorization regardless of current authorization state.
         /// This is useful when the server rejects a token that the client thinks is still valid.
         /// </summary>
+        /// <remarks>
+        /// A call that waited while another authorization attempt finished does not make its own: it returns when
+        /// that attempt succeeded, since the token it got is newer than the one the server rejected, and throws
+        /// that attempt's exception when it failed. See <see cref="EnsureAuthorizedAsync"/> for the sharing rule.
+        /// </remarks>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <exception cref="InvalidAuthResponseException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which lists everything authorizing can throw.</exception>
         public async Task ForceAuthorizeAsync(CancellationToken cancellationToken = default)
         {
-            await _authLock.WaitAsync(cancellationToken);
-            try
-            {
-                await AuthorizeAsync(cancellationToken);
-            }
-            finally
-            {
-                _authLock.Release();
-            }
+            await AuthorizeUnderLockAsync(
+                () => AuthorizeAsync(cancellationToken),
+                FinishedAttemptUse.ShareOutcome,
+                isAttemptNeeded: null,
+                cancellationToken);
         }
 
         /// <summary>
         /// Clears the current authorization state and forces a fresh authorization.
         /// This is useful when you want to ensure a completely fresh authentication flow.
         /// </summary>
+        /// <remarks>
+        /// Always clears and makes its own attempt, even when another attempt finished while it waited; its own
+        /// failure is shared with the calls waiting behind it, as described on <see cref="EnsureAuthorizedAsync"/>.
+        /// </remarks>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <exception cref="InvalidAuthResponseException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which lists everything authorizing can throw.</exception>
         public async Task ForceReauthorizeAsync(CancellationToken cancellationToken = default)
         {
+            await AuthorizeUnderLockAsync(
+                async () =>
+                {
+                    ClearLocalAuthState();
+                    await AuthorizeAsync(cancellationToken);
+                },
+                FinishedAttemptUse.None,
+                isAttemptNeeded: null,
+                cancellationToken);
+        }
+
+        /// <summary>
+        /// What a call does with an authorization attempt that finished while it waited for <see cref="_authLock"/>.
+        /// </summary>
+        private enum FinishedAttemptUse
+        {
+            /// <summary>
+            /// Makes its own attempt regardless.
+            /// </summary>
+            None,
+
+            /// <summary>
+            /// Throws that attempt's failure; makes its own attempt after a success.
+            /// </summary>
+            ShareFailure,
+
+            /// <summary>
+            /// Throws that attempt's failure; returns without an attempt after a success.
+            /// </summary>
+            ShareOutcome,
+        }
+
+        /// <summary>
+        /// Takes <see cref="_authLock"/> and makes <paramref name="attempt"/>, recording how it ended for the calls
+        /// waiting behind it, unless <paramref name="isAttemptNeeded"/> or <paramref name="finishedAttemptUse"/>
+        /// settles the call first. The public rule is on <see cref="EnsureAuthorizedAsync"/>.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="_completedAttempts"/> is read before waiting, so a changed count under the lock means an
+        /// attempt finished while this call waited, and <see cref="_lastAttemptFailure"/> says how it ended. A call
+        /// that starts after an attempt has finished reads a count that already includes it, so it is never handed
+        /// that attempt's failure. A failure is recorded unless it is the attempt's own caller cancelling, which
+        /// says nothing about whether another caller's attempt would succeed; an <see cref="HttpClient"/> timeout,
+        /// which also surfaces as a cancellation, is recorded.
+        /// </remarks>
+        /// <param name="attempt">The authorization attempt to make.</param>
+        /// <param name="finishedAttemptUse">What to do with an attempt that finished while this call waited.</param>
+        /// <param name="isAttemptNeeded">Evaluated first under the lock; whether an attempt is still needed, or <c>null</c> when it always is.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        private async Task AuthorizeUnderLockAsync(
+            Func<Task> attempt,
+            FinishedAttemptUse finishedAttemptUse,
+            Func<bool>? isAttemptNeeded,
+            CancellationToken cancellationToken)
+        {
+            long attemptsBeforeWaiting = Interlocked.Read(ref _completedAttempts);
+
             await _authLock.WaitAsync(cancellationToken);
             try
             {
-                ClearLocalAuthState();
-                await AuthorizeAsync(cancellationToken);
+                if (isAttemptNeeded != null && !isAttemptNeeded())
+                {
+                    return;
+                }
+
+                if (finishedAttemptUse != FinishedAttemptUse.None && _completedAttempts != attemptsBeforeWaiting)
+                {
+                    _lastAttemptFailure?.Throw();
+
+                    if (finishedAttemptUse == FinishedAttemptUse.ShareOutcome)
+                    {
+                        return;
+                    }
+                }
+
+                try
+                {
+                    await attempt();
+                    _lastAttemptFailure = null;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    _lastAttemptFailure = null;
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    _lastAttemptFailure = ExceptionDispatchInfo.Capture(exception);
+                    throw;
+                }
+                finally
+                {
+                    Interlocked.Increment(ref _completedAttempts);
+                }
             }
             finally
             {
@@ -606,6 +708,7 @@ namespace EasyReasy.Auth.Client
         /// <param name="request">The HTTP request message.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The HTTP response message.</returns>
+        /// <remarks>Can throw another call's failed authorization attempt without sending anything; see <see cref="EnsureAuthorizedAsync"/>.</remarks>
         /// <exception cref="InvalidAuthResponseException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which authorizing runs first and which lists everything it can throw.</exception>
         public async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
         {
@@ -629,6 +732,7 @@ namespace EasyReasy.Auth.Client
         /// <param name="requestUri">The request URI.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The HTTP response message.</returns>
+        /// <remarks>Can throw another call's failed authorization attempt without sending anything; see <see cref="EnsureAuthorizedAsync"/>.</remarks>
         /// <exception cref="InvalidAuthResponseException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which authorizing runs first and which lists everything it can throw.</exception>
         public async Task<HttpResponseMessage> GetAsync(string requestUri, CancellationToken cancellationToken = default)
         {
@@ -653,6 +757,7 @@ namespace EasyReasy.Auth.Client
         /// <param name="content">The HTTP content.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The HTTP response message.</returns>
+        /// <remarks>Can throw another call's failed authorization attempt without sending anything; see <see cref="EnsureAuthorizedAsync"/>.</remarks>
         /// <exception cref="InvalidAuthResponseException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which authorizing runs first and which lists everything it can throw.</exception>
         public async Task<HttpResponseMessage> PostAsync(string requestUri, HttpContent content, CancellationToken cancellationToken = default)
         {
