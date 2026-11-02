@@ -212,16 +212,17 @@ namespace EasyReasy.Auth.Client
         /// <exception cref="HttpRequestException">
         /// Thrown when the server fails rather than refuses — the sign-in endpoint, or the refresh endpoint of a
         /// client constructed pre-authorized, answering with an unsuccessful status that is not a refusal as
-        /// <see cref="SignInRefusedException"/> defines one — or when the request fails at the network level. Every unsuccessful status this client throws as an
-        /// <see cref="HttpRequestException"/> carries <see cref="HttpRequestException.StatusCode"/>, and a transport
-        /// failure leaves it <c>null</c>. After a refresh that failed either way, the refresh token is kept, so the
-        /// call can be retried.
+        /// <see cref="SignInRefusedException"/> defines one — or when the request fails at the network level.
+        /// Every unsuccessful status this client throws as an <see cref="HttpRequestException"/> carries
+        /// <see cref="HttpRequestException.StatusCode"/>, and a transport failure leaves it <c>null</c>. After a
+        /// refresh that failed either way, the refresh token is kept, so the call can be retried.
         /// </exception>
         /// <exception cref="SessionNotRenewableException">
-        /// Thrown when the client was constructed pre-authorized and its token has expired with no refresh token
-        /// left to redeem, or with one the server refused, so there are no credentials to re-authenticate with.
-        /// After a refusal, <see cref="Exception.InnerException"/> is the server's answer as an
-        /// <see cref="HttpRequestException"/> with its status set.
+        /// Thrown when the client was constructed pre-authorized and needs a new token with no refresh token left
+        /// to redeem — after expiry, <see cref="LogoutAsync"/> or <see cref="ForceReauthorizeAsync"/> — or with one
+        /// the server refused, so there are no credentials to re-authenticate with. After a refusal,
+        /// <see cref="Exception.InnerException"/> is the server's answer as an <see cref="HttpRequestException"/>
+        /// with its status set.
         /// </exception>
         /// <exception cref="InvalidAuthResponseException">
         /// Thrown when the auth or refresh endpoint answers successfully with a body that is not an
@@ -235,32 +236,27 @@ namespace EasyReasy.Auth.Client
                 return;
             }
 
-            await AuthorizeUnderLockAsync(
-                () => AuthorizeAsync(cancellationToken),
-                FinishedAttemptUse.ShareFailure,
-                isAttemptNeeded: () => !_isAuthorized || IsTokenExpired(),
-                cancellationToken);
+            await AuthorizeUnderLockAsync(AuthorizationRequest.EnsureValidToken, cancellationToken);
         }
 
         /// <summary>
-        /// Forces a fresh authorization regardless of current authorization state.
-        /// This is useful when the server rejects a token that the client thinks is still valid.
+        /// Authorizes again even though the client's token looks valid, unless another call's authorization
+        /// finished while this one waited. This is useful when the server rejects a token that the client thinks
+        /// is still valid.
         /// </summary>
         /// <remarks>
         /// A call that waited while another authorization attempt finished does not make its own: it returns when
         /// that attempt succeeded, since the token it got is newer than the one the server rejected, and throws
-        /// that attempt's exception when it failed. See <see cref="EnsureAuthorizedAsync"/> for the sharing rule.
+        /// that attempt's exception when it failed. An attempt its own caller cancelled does not count as finished.
+        /// On a client constructed pre-authorized, the refresh token is redeemed first. See
+        /// <see cref="EnsureAuthorizedAsync"/> for the sharing rule.
         /// </remarks>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <exception cref="AuthClientException">Thrown as on <see cref="EnsureAuthorizedAsync"/>, which lists everything authorizing can throw.</exception>
         /// <exception cref="HttpRequestException">Thrown as on <see cref="EnsureAuthorizedAsync"/>.</exception>
         public async Task ForceAuthorizeAsync(CancellationToken cancellationToken = default)
         {
-            await AuthorizeUnderLockAsync(
-                () => AuthorizeAsync(cancellationToken),
-                FinishedAttemptUse.ShareOutcome,
-                isAttemptNeeded: null,
-                cancellationToken);
+            await AuthorizeUnderLockAsync(AuthorizationRequest.Force, cancellationToken);
         }
 
         /// <summary>
@@ -276,100 +272,104 @@ namespace EasyReasy.Auth.Client
         /// <exception cref="HttpRequestException">Thrown as on <see cref="EnsureAuthorizedAsync"/>.</exception>
         public async Task ForceReauthorizeAsync(CancellationToken cancellationToken = default)
         {
-            await AuthorizeUnderLockAsync(
-                async () =>
-                {
-                    ClearLocalAuthState();
-                    await AuthorizeAsync(cancellationToken);
-                },
-                FinishedAttemptUse.None,
-                isAttemptNeeded: null,
-                cancellationToken);
+            await AuthorizeUnderLockAsync(AuthorizationRequest.Reauthorize, cancellationToken);
         }
 
         /// <summary>
-        /// What a call does with an authorization attempt that finished while it waited for <see cref="_authLock"/>.
+        /// Which public method is authorizing, each with its own rule for an attempt that finished while it
+        /// waited for <see cref="_authLock"/>.
         /// </summary>
-        private enum FinishedAttemptUse
+        private enum AuthorizationRequest
         {
             /// <summary>
-            /// Makes its own attempt regardless.
+            /// <see cref="EnsureAuthorizedAsync"/>: returns when a valid token is already there; otherwise throws a
+            /// failure it waited behind, or makes its own attempt.
             /// </summary>
-            None,
+            EnsureValidToken,
 
             /// <summary>
-            /// Throws that attempt's failure; makes its own attempt after a success.
+            /// <see cref="ForceAuthorizeAsync"/>: takes the outcome of an attempt it waited behind — returns after a
+            /// success, throws after a failure — or makes its own attempt when none finished.
             /// </summary>
-            ShareFailure,
+            Force,
 
             /// <summary>
-            /// Throws that attempt's failure; returns without an attempt after a success.
+            /// <see cref="ForceReauthorizeAsync"/>: always clears local state and makes its own attempt.
             /// </summary>
-            ShareOutcome,
+            Reauthorize,
         }
 
         /// <summary>
-        /// Takes <see cref="_authLock"/> and makes <paramref name="attempt"/>, recording how it ended for the calls
-        /// waiting behind it, unless <paramref name="isAttemptNeeded"/> or <paramref name="finishedAttemptUse"/>
-        /// settles the call first. The public rule is on <see cref="EnsureAuthorizedAsync"/>.
+        /// Takes <see cref="_authLock"/> and, unless <paramref name="request"/>'s rule settles the call first, makes
+        /// one authorization attempt and records how it ended for the calls waiting behind it. The public rule is
+        /// on <see cref="EnsureAuthorizedAsync"/>.
         /// </summary>
         /// <remarks>
         /// <see cref="_completedAttempts"/> is read before waiting, so a changed count under the lock means an
         /// attempt finished while this call waited, and <see cref="_lastAttemptFailure"/> says how it ended. A call
         /// that starts after an attempt has finished reads a count that already includes it, so it is never handed
-        /// that attempt's failure. A failure is recorded unless it is the attempt's own caller cancelling, which
-        /// says nothing about whether another caller's attempt would succeed; an <see cref="HttpClient"/> timeout,
-        /// which also surfaces as a cancellation, is recorded.
+        /// that attempt's failure. An attempt its own caller cancelled is neither counted nor recorded: it says
+        /// nothing about whether another caller's attempt would succeed, and counting it would read as a success to
+        /// a waiting <see cref="ForceAuthorizeAsync"/>, which would then return without a token. An
+        /// <see cref="HttpClient"/> timeout, which also surfaces as a cancellation, is a failure like any other.
         /// </remarks>
-        /// <param name="attempt">The authorization attempt to make.</param>
-        /// <param name="finishedAttemptUse">What to do with an attempt that finished while this call waited.</param>
-        /// <param name="isAttemptNeeded">Evaluated first under the lock; whether an attempt is still needed, or <c>null</c> when it always is.</param>
+        /// <param name="request">Which public method is authorizing.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
-        private async Task AuthorizeUnderLockAsync(
-            Func<Task> attempt,
-            FinishedAttemptUse finishedAttemptUse,
-            Func<bool>? isAttemptNeeded,
-            CancellationToken cancellationToken)
+        private async Task AuthorizeUnderLockAsync(AuthorizationRequest request, CancellationToken cancellationToken)
         {
             long attemptsBeforeWaiting = Interlocked.Read(ref _completedAttempts);
 
             await _authLock.WaitAsync(cancellationToken);
             try
             {
-                if (isAttemptNeeded != null && !isAttemptNeeded())
-                {
-                    return;
-                }
+                bool attemptFinishedWhileWaiting = _completedAttempts != attemptsBeforeWaiting;
 
-                if (finishedAttemptUse != FinishedAttemptUse.None && _completedAttempts != attemptsBeforeWaiting)
+                switch (request)
                 {
-                    _lastAttemptFailure?.Throw();
+                    case AuthorizationRequest.EnsureValidToken:
+                        if (_isAuthorized && !IsTokenExpired())
+                        {
+                            return;
+                        }
 
-                    if (finishedAttemptUse == FinishedAttemptUse.ShareOutcome)
-                    {
-                        return;
-                    }
+                        if (attemptFinishedWhileWaiting)
+                        {
+                            _lastAttemptFailure?.Throw();
+                        }
+
+                        break;
+
+                    case AuthorizationRequest.Force:
+                        if (attemptFinishedWhileWaiting)
+                        {
+                            _lastAttemptFailure?.Throw();
+                            return;
+                        }
+
+                        break;
+
+                    case AuthorizationRequest.Reauthorize:
+                        ClearLocalAuthState();
+                        break;
                 }
 
                 try
                 {
-                    await attempt();
+                    await AuthorizeAsync(cancellationToken);
                     _lastAttemptFailure = null;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    _lastAttemptFailure = null;
                     throw;
                 }
                 catch (Exception exception)
                 {
                     _lastAttemptFailure = ExceptionDispatchInfo.Capture(exception);
+                    Interlocked.Increment(ref _completedAttempts);
                     throw;
                 }
-                finally
-                {
-                    Interlocked.Increment(ref _completedAttempts);
-                }
+
+                Interlocked.Increment(ref _completedAttempts);
             }
             finally
             {
@@ -512,8 +512,8 @@ namespace EasyReasy.Auth.Client
                 }
 
                 throw new SessionNotRenewableException(
-                    "The session cannot be renewed: the token has expired and the client holds no refresh token. " +
-                    "Sign in again with credentials.");
+                    "The session cannot be renewed: the client needs a new token and holds neither credentials nor a " +
+                    "refresh token. Sign in again with credentials.");
             }
 
             string json = _credentials.CreateAuthRequestJson(ClientId);
@@ -671,12 +671,10 @@ namespace EasyReasy.Auth.Client
         /// refresh it decides whether the refresh token is cleared.
         /// </para>
         /// <para>
-        /// A <c>3xx</c> the handler did not follow is deliberately not a refusal, so a refresh answered that way keeps
-        /// the token. The alternative — every unsuccessful status but <c>408</c>, <c>429</c> and <c>5xx</c> is a
-        /// refusal — was weighed and declined: the release defines a refusal as a <c>4xx</c>, and one rule for both
-        /// endpoints outweighs ending a session on an answer that judged nothing about its token. The cost is that a
+        /// A <c>3xx</c> the handler did not follow judged nothing about the credentials or the refresh token, so it
+        /// is a failure, not a refusal, and a refresh answered that way keeps the token. The consequence is that a
         /// refresh endpoint that only ever redirects reports a server failure on every call instead of ending the
-        /// session; the status on the <see cref="HttpRequestException"/> names it.
+        /// session; the status on the <see cref="HttpRequestException"/> names the redirect.
         /// </para>
         /// </remarks>
         /// <param name="statusCode">The unsuccessful status the server answered with.</param>

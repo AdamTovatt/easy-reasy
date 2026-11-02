@@ -94,11 +94,26 @@ namespace EasyReasy.Auth.Client.Tests
         /// <param name="statusCode">The HTTP status code. Defaults to 200 OK.</param>
         public void EnqueueJsonResponse(string json, HttpStatusCode statusCode = HttpStatusCode.OK)
         {
-            HttpResponseMessage response = new HttpResponseMessage(statusCode)
+            EnqueueResponse(CreateJsonResponse(json, statusCode));
+        }
+
+        /// <summary>
+        /// Enqueues a successful JSON response that the next request receives only once the returned gate is
+        /// released.
+        /// </summary>
+        /// <param name="json">The JSON content to return.</param>
+        /// <returns>The gate holding the request.</returns>
+        public HandlerGate EnqueueGatedJsonResponse(string json)
+        {
+            return EnqueueGatedResponse(CreateJsonResponse(json, HttpStatusCode.OK));
+        }
+
+        private static HttpResponseMessage CreateJsonResponse(string json, HttpStatusCode statusCode)
+        {
+            return new HttpResponseMessage(statusCode)
             {
-                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
             };
-            EnqueueResponse(response);
         }
 
         protected override async Task<HttpResponseMessage> SendAsync(

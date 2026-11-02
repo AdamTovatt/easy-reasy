@@ -107,7 +107,7 @@ namespace EasyReasy.Auth.Client
             string bodyPart = bodySnippet.Length == 0 ? "The body was empty." : $"Body: {bodySnippet}";
 
             string message =
-                $"{endpointPart} answered {(int)response.StatusCode} with {contentTypePart}, " +
+                $"{endpointPart} answered {HttpStatusText.Describe(response.StatusCode)} with {contentTypePart}, " +
                 $"and the body is not an {nameof(AuthResponse)}. " +
                 $"An address that is not an auth server answers exactly this way — the URI named above is the one " +
                 $"the request ended at, after any redirects, so it is the address that produced this body. " +

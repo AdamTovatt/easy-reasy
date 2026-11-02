@@ -2,8 +2,10 @@ namespace EasyReasy.Auth.Client
 {
     /// <summary>
     /// Thrown when a client constructed from an <see cref="AuthResponse"/> needs a new token and has no way to get
-    /// one: its token has expired, it holds no credentials, and it either has no refresh token left or the server
-    /// refused the one it had.
+    /// one: it holds no credentials, and it either has no refresh token left or the server refused the one it had.
+    /// It needs a new token once its token has expired, and also after <see cref="AuthorizedHttpClient.LogoutAsync"/>,
+    /// <see cref="AuthorizedHttpClient.ForceReauthorizeAsync"/>, or a <see cref="AuthorizedHttpClient.ForceAuthorizeAsync"/>
+    /// with no refresh token.
     /// </summary>
     /// <remarks>
     /// The type is the whole answer: the saved session is spent, and a new client has to be constructed from
