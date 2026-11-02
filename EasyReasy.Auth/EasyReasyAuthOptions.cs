@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+
 namespace EasyReasy.Auth
 {
     /// <summary>
@@ -49,12 +51,34 @@ namespace EasyReasy.Auth
         public IReadOnlyList<string> QueryStringTokenPaths { get; set; } = [];
 
         /// <summary>
+        /// The path prefixes on which a <c>GET</c> or <c>HEAD</c> request may carry its token in the
+        /// <c>__Secure-access_token</c> cookie instead of the <c>Authorization</c> header. Empty by default, so no
+        /// cookie is read anywhere.
+        /// <para>
+        /// This exists for plain navigations, such as a protected file opened in a new tab, which cannot send an
+        /// <c>Authorization</c> header. The built-in login, refresh and logout endpoints set and clear the cookie
+        /// when this list is non-empty; an endpoint of your own calls
+        /// <see cref="HttpContextExtensions.SetAccessTokenCookie"/> and <see cref="HttpContextExtensions.ClearAccessTokenCookie"/>.
+        /// One cookie is written per prefix, with <c>Path</c> set to <c>PathBase</c> plus the prefix.
+        /// </para>
+        /// <para>
+        /// Prefixes match as for <see cref="QueryStringTokenPaths"/>: by whole path segments, ignoring case, against
+        /// <c>HttpRequest.Path</c>. Each must start with <c>/</c>, must not end with one, and must not lie inside
+        /// another listed prefix, since the browser would then send two cookies of the same name there and a
+        /// repeated cookie is ignored. The cookie is read only when the request carries no <c>Authorization</c>
+        /// header and the query string supplied no token.
+        /// </para>
+        /// </summary>
+        public IReadOnlyList<string> CookieTokenPaths { get; set; } = [];
+
+        /// <summary>
         /// Validates the options and throws if any values are invalid.
         /// </summary>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when <see cref="ClockSkew"/> is negative.</exception>
         /// <exception cref="ArgumentException">
         /// Thrown when <see cref="Issuer"/> or <see cref="Audience"/> is empty or whitespace, or when a
-        /// <see cref="QueryStringTokenPaths"/> entry would never match a request path.
+        /// <see cref="QueryStringTokenPaths"/> or <see cref="CookieTokenPaths"/> entry would never match a request
+        /// path, or when a <see cref="CookieTokenPaths"/> entry lies inside another.
         /// </exception>
         internal void Validate()
         {
@@ -73,7 +97,34 @@ namespace EasyReasy.Auth
                 throw new ArgumentException("Audience must be null or a non-empty, non-whitespace string.", nameof(Audience));
             }
 
-            foreach (string path in QueryStringTokenPaths)
+            ValidatePathPrefixes(QueryStringTokenPaths, nameof(QueryStringTokenPaths), "query-string token path", "/ws");
+            ValidatePathPrefixes(CookieTokenPaths, nameof(CookieTokenPaths), "cookie token path", "/files");
+            RejectNestedCookieTokenPaths();
+        }
+
+        /// <summary>
+        /// Rejects a <see cref="CookieTokenPaths"/> entry that lies inside another, since a request under both
+        /// carries both cookies and the reader ignores a repeated cookie, so the inner prefix could never authenticate.
+        /// Applies to the cookie only: a query-string path writes no cookie.
+        /// </summary>
+        private void RejectNestedCookieTokenPaths()
+        {
+            if (new PathPrefixList(CookieTokenPaths).TryFindNestedPair(out PathString inner, out PathString outer))
+            {
+                throw new ArgumentException(
+                    $"Cookie token path \"{inner.Value}\" lies inside \"{outer.Value}\". " +
+                    "A request under both would carry two cookies of the same name, and a repeated cookie is ignored, so list only the outer prefix.",
+                    nameof(CookieTokenPaths));
+            }
+        }
+
+        /// <summary>
+        /// Rejects a prefix that <see cref="PathString.StartsWithSegments(PathString)"/> would never match against a
+        /// longer request path.
+        /// </summary>
+        private static void ValidatePathPrefixes(IReadOnlyList<string> paths, string optionName, string description, string example)
+        {
+            foreach (string path in paths)
             {
                 // PathString.StartsWithSegments never matches a prefix ending in '/' against a longer path
                 // ("/ws/" against "/ws/city"), and "/" only matches the root, so each of these would
@@ -81,8 +132,8 @@ namespace EasyReasy.Auth
                 if (!path.StartsWith('/') || path.EndsWith('/'))
                 {
                     throw new ArgumentException(
-                        $"Each query-string token path must start with '/' and must not end with '/', such as \"/ws\". Got: \"{path}\".",
-                        nameof(QueryStringTokenPaths));
+                        $"Each {description} must start with '/' and must not end with '/', such as \"{example}\". Got: \"{path}\".",
+                        optionName);
                 }
             }
         }

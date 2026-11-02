@@ -139,6 +139,10 @@ namespace EasyReasy.Auth
         /// keyed by the wire field name, not a <c>401 Unauthorized</c>. The audit hook still fires exactly once,
         /// with <see cref="ApiKeyAuthFailureReason.MissingKey"/>.
         /// </para>
+        /// <para>
+        /// This endpoint serves programs, not browsers, so it never sets the access-token cookie, even when
+        /// <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> is non-empty.
+        /// </para>
         /// </remarks>
         /// <param name="app">The web application.</param>
         /// <returns>The web application for chaining.</returns>
@@ -198,6 +202,10 @@ namespace EasyReasy.Auth
         /// A whitespace-only value is a value the caller supplied, so it goes on to the validation service and takes
         /// the ordinary 401.
         /// </para>
+        /// <para>
+        /// When <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> is non-empty, a successful login also sets the
+        /// access-token cookie through <see cref="HttpContextExtensions.SetAccessTokenCookie"/>. The JSON response is unchanged.
+        /// </para>
         /// </remarks>
         /// <param name="app">The web application.</param>
         /// <returns>The web application for chaining.</returns>
@@ -226,6 +234,9 @@ namespace EasyReasy.Auth
 
                 if (result.Success && result.AuthResponse != null)
                 {
+                    // The validation service has already issued the session, so a token too large for the cookie
+                    // is logged and the sign-in still succeeds.
+                    httpContext.TrySetAccessTokenCookieIfEnabled(result.AuthResponse.Token);
                     httpContext.MarkAuthenticationSucceeded();
                     return Results.Ok(result.AuthResponse);
                 }
@@ -248,6 +259,10 @@ namespace EasyReasy.Auth
         /// (for both success and failure) before the response is written.
         /// An exception thrown by the audit logger will propagate out of the endpoint as a 500.
         /// </summary>
+        /// <remarks>
+        /// When <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> is non-empty, a successful refresh replaces the
+        /// access-token cookie and a failed one clears it. The JSON response is unchanged.
+        /// </remarks>
         /// <param name="app">The web application.</param>
         /// <returns>The web application for chaining.</returns>
         public static WebApplication AddRefreshEndpoint(this WebApplication app)
@@ -259,9 +274,20 @@ namespace EasyReasy.Auth
 
                 if (result.Success)
                 {
+                    // The old refresh token is already used up, so failing here would lose the new one: a token
+                    // too large for the cookie is logged and the refresh still succeeds.
+                    if (result.AuthResponse != null)
+                    {
+                        httpContext.TrySetAccessTokenCookieIfEnabled(result.AuthResponse.Token);
+                    }
+
                     httpContext.MarkAuthenticationSucceeded();
                     return Results.Ok(result.AuthResponse);
                 }
+
+                // A refused refresh ends this browser's session, so its cookie goes with it rather than outliving
+                // the session until the access token's exp.
+                httpContext.ClearAccessTokenCookieIfEnabled();
 
                 return Results.Unauthorized();
             }).AllowAnonymous();
@@ -281,6 +307,10 @@ namespace EasyReasy.Auth
         /// hook is invoked by <see cref="IRefreshTokenService.LogoutAsync"/> before the response is written,
         /// so consumers can record which family was invalidated even though the wire response carries no body.
         /// An exception thrown by the audit logger will propagate out of the endpoint as a 500.
+        /// <para>
+        /// When <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> is non-empty, every 204 clears the access-token
+        /// cookie, whether or not the token was known.
+        /// </para>
         /// </remarks>
         /// <param name="app">The web application.</param>
         /// <returns>The web application for chaining.</returns>
@@ -290,6 +320,10 @@ namespace EasyReasy.Auth
             {
                 httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
                 await refreshTokenService.LogoutAsync(request.RefreshToken, httpContext, httpContext.RequestAborted);
+
+                // On every 204, known token or not, so the response still does not reveal which it was.
+                httpContext.ClearAccessTokenCookieIfEnabled();
+
                 return Results.NoContent();
             }).AllowAnonymous();
 

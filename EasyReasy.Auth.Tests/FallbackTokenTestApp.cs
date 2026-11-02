@@ -17,9 +17,10 @@ namespace EasyReasy.Auth.Tests
     /// <summary>
     /// A real <see cref="WebApplication"/> on a <see cref="TestServer"/> with an authorized <c>whoami</c> endpoint
     /// under several paths and an authorized WebSocket endpoint at <c>/ws/city</c>, each answering with the
-    /// caller's user id, so a test can see which token, if any, authenticated a request.
+    /// caller's user id, so a test can see which token, if any, authenticated a request through the query-string
+    /// or cookie fallback.
     /// </summary>
-    internal sealed class QueryStringTokenTestApp : IAsyncDisposable
+    internal sealed class FallbackTokenTestApp : IAsyncDisposable
     {
         public const string Secret = "super_secret_key_12345_12345_12345";
 
@@ -27,22 +28,28 @@ namespace EasyReasy.Auth.Tests
         public TestServer Server { get; }
         public HttpClient Client { get; }
 
-        private QueryStringTokenTestApp(WebApplication app, TestServer server)
+        private FallbackTokenTestApp(WebApplication app, TestServer server)
         {
             App = app;
             Server = server;
             Client = server.CreateClient();
         }
 
-        public static async Task<QueryStringTokenTestApp> StartAsync(
+        public static async Task<FallbackTokenTestApp> StartAsync(
             IReadOnlyList<string> queryStringTokenPaths,
-            Action<JwtBearerOptions>? configureBearer = null)
+            Action<JwtBearerOptions>? configureBearer = null,
+            IReadOnlyList<string>? cookieTokenPaths = null,
+            string? pathBase = null)
         {
             WebApplicationBuilder builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
             builder.Logging.ClearProviders();
 
-            builder.Services.AddEasyReasyAuth(Secret, options => options.QueryStringTokenPaths = queryStringTokenPaths);
+            builder.Services.AddEasyReasyAuth(Secret, options =>
+            {
+                options.QueryStringTokenPaths = queryStringTokenPaths;
+                options.CookieTokenPaths = cookieTokenPaths ?? [];
+            });
 
             if (configureBearer != null)
             {
@@ -50,22 +57,36 @@ namespace EasyReasy.Auth.Tests
             }
 
             WebApplication app = builder.Build();
+
+            if (pathBase != null)
+            {
+                app.UsePathBase(pathBase);
+            }
+
             app.UseEasyReasyAuth(options => options.Enabled = false);
 
             // After authentication on purpose: the fallback matches on path, so it must not depend on the
             // WebSocket middleware having already marked the request as an upgrade.
             app.UseWebSockets();
 
-            foreach (string path in new[] { "/ws/whoami", "/wsx/whoami", "/api/whoami" })
+            foreach (string path in new[] { "/ws/whoami", "/wsx/whoami", "/api/whoami", "/files/whoami", "/filesx/whoami" })
             {
-                app.MapGet(path, (HttpContext context) => context.GetUserId()).RequireAuthorization();
+                app.MapMethods(path, ["GET", "HEAD", "POST", "PUT", "DELETE"], (HttpContext context) => context.GetUserId())
+                    .RequireAuthorization();
             }
 
             app.Map("/ws/city", (RequestDelegate)AnswerWithUserIdOverWebSocketAsync).RequireAuthorization();
 
+            // A stand-in sign-in endpoint, so a test can take the cookie exactly as the writer produced it.
+            app.MapPost("/issue-cookie/{subject}", (string subject, HttpContext context) =>
+            {
+                context.SetAccessTokenCookie(CreateToken(subject));
+                return Results.NoContent();
+            });
+
             await app.StartAsync();
             TestServer server = (TestServer)app.Services.GetRequiredService<IServer>();
-            return new QueryStringTokenTestApp(app, server);
+            return new FallbackTokenTestApp(app, server);
         }
 
         public static string CreateToken(string subject)
@@ -85,13 +106,27 @@ namespace EasyReasy.Auth.Tests
             return WriteToken(subject, "another_secret_key_67890_67890_67890", notBefore: now, expires: now.AddMinutes(5));
         }
 
-        public async Task<HttpResponseMessage> GetAsync(string pathAndQuery, string? authorizationHeader = null)
+        public Task<HttpResponseMessage> GetAsync(string pathAndQuery, string? authorizationHeader = null)
         {
-            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, pathAndQuery);
+            return SendAsync(HttpMethod.Get, pathAndQuery, authorizationHeader);
+        }
+
+        public async Task<HttpResponseMessage> SendAsync(
+            HttpMethod method,
+            string pathAndQuery,
+            string? authorizationHeader = null,
+            string? cookieHeader = null)
+        {
+            using HttpRequestMessage request = new HttpRequestMessage(method, pathAndQuery);
 
             if (authorizationHeader != null)
             {
                 request.Headers.TryAddWithoutValidation("Authorization", authorizationHeader);
+            }
+
+            if (cookieHeader != null)
+            {
+                request.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
             }
 
             return await Client.SendAsync(request);

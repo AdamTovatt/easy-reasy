@@ -192,6 +192,100 @@ namespace EasyReasy.Auth.Google.Tests
                 () => host.Client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" }));
         }
 
+        [TestMethod]
+        public async Task GoogleEndpoint_CookieOptionOnAndSignInSucceeds_SetsCookieCarryingTheIssuedToken()
+        {
+            string token = new JwtTokenService(Secret).CreateToken("sub-cookie", "user", [], [], DateTime.UtcNow.AddMinutes(5));
+            await using HostedApp host = await HostedApp.StartAsync(
+                AcceptingValidator(), new FakeGoogleAuthHandler { ResponseToReturn = new AuthResponse(token, "unused") },
+                auditLogger: null, cookieTokenPaths: ["/files"]);
+
+            HttpResponseMessage response = await host.Client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" });
+
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+            string cookie = SetCookieHeaders(response).Single();
+            StringAssert.StartsWith(cookie, $"__Secure-access_token={token}; max-age=");
+            StringAssert.Contains(cookie, "; path=/files; secure; samesite=strict; httponly");
+        }
+
+        [TestMethod]
+        public async Task GoogleEndpoint_CookieOptionOnAndHandlerRejects_SetsNoCookie()
+        {
+            await using HostedApp host = await HostedApp.StartAsync(
+                AcceptingValidator(), new FakeGoogleAuthHandler { ResponseToReturn = null },
+                auditLogger: null, cookieTokenPaths: ["/files"]);
+
+            HttpResponseMessage response = await host.Client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" });
+
+            Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.AreEqual(0, SetCookieHeaders(response).Length);
+        }
+
+        [TestMethod]
+        public async Task GoogleEndpoint_CookieOptionOnAndIdTokenInvalid_SetsNoCookie()
+        {
+            FakeGoogleIdTokenValidator validator = new FakeGoogleIdTokenValidator
+            {
+                ExceptionToThrow = new GoogleTokenValidationException("Invalid token"),
+            };
+            await using HostedApp host = await HostedApp.StartAsync(
+                validator, new FakeGoogleAuthHandler(), auditLogger: null, cookieTokenPaths: ["/files"]);
+
+            HttpResponseMessage response = await host.Client.PostAsJsonAsync("/api/auth/google", new { idToken = "bad-token" });
+
+            Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.AreEqual(0, SetCookieHeaders(response).Length);
+        }
+
+        [TestMethod]
+        public async Task GoogleEndpoint_CookieOptionOffAndSignInSucceeds_SetsNoCookie()
+        {
+            // A token without exp would make the helper throw, so this also proves the helper is not called.
+            await using HostedApp host = await HostedApp.StartAsync(
+                AcceptingValidator(), new FakeGoogleAuthHandler { ResponseToReturn = new AuthResponse("jwt-token", "2099-01-01T00:00:00Z") },
+                auditLogger: null);
+
+            HttpResponseMessage response = await host.Client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" });
+
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+            Assert.AreEqual(0, SetCookieHeaders(response).Length);
+        }
+
+        [TestMethod]
+        public async Task GoogleEndpoint_TokenTooLargeForCookie_SucceedsClearsCookieAndLogsSizeAndLimit()
+        {
+            // The handler has already issued the session, so the sign-in survives a token that cannot fit; the
+            // clear-and-log path is EasyReasy.Auth's, the same one the built-in login endpoint takes.
+            string token = new JwtTokenService(Secret).CreateToken(
+                "sub-cookie", "user", [new System.Security.Claims.Claim("padding", new string('x', 5000))], [], DateTime.UtcNow.AddMinutes(5));
+            ErrorCountingLoggerProvider logs = new ErrorCountingLoggerProvider();
+            await using HostedApp host = await HostedApp.StartAsync(
+                AcceptingValidator(), new FakeGoogleAuthHandler { ResponseToReturn = new AuthResponse(token, "unused") },
+                auditLogger: null, cookieTokenPaths: ["/files"], loggerProvider: logs);
+
+            HttpResponseMessage response = await host.Client.PostAsJsonAsync("/api/auth/google", new { idToken = "valid-token" });
+
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+            Assert.AreEqual(
+                "__Secure-access_token=; max-age=0; path=/files; secure; samesite=strict; httponly",
+                SetCookieHeaders(response).Single());
+            string message = logs.ErrorMessages.Single(entry => entry.Category == "EasyReasy.Auth.AccessTokenCookie").Message;
+            StringAssert.Contains(message, "4096");
+        }
+
+        private static FakeGoogleIdTokenValidator AcceptingValidator()
+        {
+            return new FakeGoogleIdTokenValidator
+            {
+                UserInfoToReturn = new GoogleUserInfo { Subject = "sub-cookie", Email = "user@example.com", EmailVerified = true },
+            };
+        }
+
+        private static string[] SetCookieHeaders(HttpResponseMessage response)
+        {
+            return response.Headers.TryGetValues("Set-Cookie", out IEnumerable<string>? values) ? values.ToArray() : [];
+        }
+
         /// <summary>
         /// Builds a real <see cref="WebApplication"/> with <see cref="GoogleAuthApplicationBuilderExtensions.AddGoogleAuthEndpoint"/>
         /// wired to test fakes, and exposes a <see cref="TestServer"/>-backed <see cref="HttpClient"/>.
@@ -211,13 +305,20 @@ namespace EasyReasy.Auth.Google.Tests
                 IGoogleIdTokenValidator validator,
                 IGoogleAuthHandler handler,
                 IAuthAuditLogger? auditLogger,
-                IRefreshTokenService? refreshTokenService = null)
+                IRefreshTokenService? refreshTokenService = null,
+                IReadOnlyList<string>? cookieTokenPaths = null,
+                ILoggerProvider? loggerProvider = null)
             {
                 WebApplicationBuilder builder = WebApplication.CreateBuilder();
                 builder.WebHost.UseTestServer();
                 builder.Logging.ClearProviders();
 
-                builder.Services.AddEasyReasyAuth(Secret);
+                if (loggerProvider != null)
+                {
+                    builder.Logging.AddProvider(loggerProvider);
+                }
+
+                builder.Services.AddEasyReasyAuth(Secret, options => options.CookieTokenPaths = cookieTokenPaths ?? []);
                 builder.Services.AddSingleton<IGoogleIdTokenValidator>(validator);
                 builder.Services.AddSingleton<IGoogleAuthHandler>(handler);
                 builder.Services.AddScoped<GoogleAuthService>();
@@ -278,6 +379,47 @@ namespace EasyReasy.Auth.Google.Tests
             public Task OnExternalAuthAsync(HttpContext httpContext, ExternalAuthResult result)
             {
                 throw new InvalidOperationException("audit logger failure");
+            }
+        }
+
+        /// <summary>
+        /// <see cref="ILoggerProvider"/> that keeps the category and message of every error logged through it.
+        /// </summary>
+        private sealed class ErrorCountingLoggerProvider : ILoggerProvider
+        {
+            private readonly System.Collections.Concurrent.ConcurrentQueue<(string Category, string Message)> _errors =
+                new System.Collections.Concurrent.ConcurrentQueue<(string Category, string Message)>();
+
+            public IReadOnlyList<(string Category, string Message)> ErrorMessages => _errors.ToArray();
+
+            public ILogger CreateLogger(string categoryName) => new ErrorLogger(categoryName, _errors);
+
+            public void Dispose()
+            {
+            }
+
+            private sealed class ErrorLogger : ILogger
+            {
+                private readonly string _category;
+                private readonly System.Collections.Concurrent.ConcurrentQueue<(string Category, string Message)> _errors;
+
+                public ErrorLogger(string category, System.Collections.Concurrent.ConcurrentQueue<(string Category, string Message)> errors)
+                {
+                    _category = category;
+                    _errors = errors;
+                }
+
+                public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+                public bool IsEnabled(LogLevel logLevel) => true;
+
+                public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+                {
+                    if (logLevel == LogLevel.Error)
+                    {
+                        _errors.Enqueue((_category, formatter(state, exception)));
+                    }
+                }
             }
         }
 

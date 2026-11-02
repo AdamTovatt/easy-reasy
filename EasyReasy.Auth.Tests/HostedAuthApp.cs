@@ -29,13 +29,21 @@ namespace EasyReasy.Auth.Tests
         public static async Task<HostedAuthApp> StartAsync(
             IAuthAuditLogger? auditLogger,
             IAuthRequestValidationService validationService,
-            IRefreshTokenStore? store = null)
+            IRefreshTokenStore? store = null,
+            Action<EasyReasyAuthOptions>? configureAuth = null,
+            IRefreshClaimsResolver? claimsResolver = null,
+            ILoggerProvider? loggerProvider = null)
         {
             WebApplicationBuilder builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
             builder.Logging.ClearProviders();
 
-            builder.Services.AddEasyReasyAuth(Secret);
+            if (loggerProvider != null)
+            {
+                builder.Logging.AddProvider(loggerProvider);
+            }
+
+            builder.Services.AddEasyReasyAuth(Secret, configureAuth);
             builder.Services.AddSingleton<IAuthRequestValidationService>(validationService);
 
             IRefreshTokenStore sharedStore = store ?? new FakeRefreshTokenStore();
@@ -43,7 +51,8 @@ namespace EasyReasy.Auth.Tests
             builder.Services.AddSingleton<IRefreshTokenService>(provider =>
                 new RefreshTokenService(
                     provider.GetRequiredService<IRefreshTokenStore>(),
-                    auditLogger: provider.GetService<IAuthAuditLogger>()));
+                    auditLogger: provider.GetService<IAuthAuditLogger>(),
+                    claimsResolver: claimsResolver));
 
             if (auditLogger != null)
             {

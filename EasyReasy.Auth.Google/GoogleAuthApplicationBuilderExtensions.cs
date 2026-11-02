@@ -21,6 +21,11 @@ namespace EasyReasy.Auth.Google
         /// built-in EasyReasy.Auth endpoints. If an <see cref="IAuthAuditLogger"/> is registered, its
         /// <see cref="IAuthAuditLogger.OnExternalAuthAsync"/> hook is invoked after the attempt (success or
         /// failure) before the response is written; an exception thrown by the logger propagates as a 500.
+        /// <para>
+        /// When <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> is non-empty, a successful sign-in also sets the
+        /// access-token cookie through <see cref="HttpContextExtensions.SetAccessTokenCookie"/>, as the built-in
+        /// login endpoint does. A rejected sign-in sets none, and the JSON response is unchanged.
+        /// </para>
         /// </remarks>
         /// <param name="app">The web application.</param>
         /// <returns>The web application for chaining.</returns>
@@ -54,6 +59,15 @@ namespace EasyReasy.Auth.Google
 
                 if (result.Success && result.AuthResponse != null)
                 {
+                    // Every sign-in that hands a browser a token sets the cookie, so none leaves the user unable
+                    // to open a tab until the first refresh. The same call the built-in login endpoint makes: the
+                    // handler has already issued the session, so a token too large for the cookie is logged by
+                    // EasyReasy.Auth and the sign-in still succeeds.
+                    if (httpContext.IsAccessTokenCookieEnabled())
+                    {
+                        httpContext.TrySetAccessTokenCookie(result.AuthResponse.Token);
+                    }
+
                     // Reports the sign-in to ProgressiveDelayMiddleware, which clears an IP's accumulated
                     // failure count only for a request that authenticated someone.
                     httpContext.MarkAuthenticationSucceeded();

@@ -75,12 +75,31 @@ namespace EasyReasy.Auth
                     };
                 });
 
+            // Registered even when the option is off, so the cookie helpers can tell "off" from "AddEasyReasyAuth
+            // not called" and the reader and the writers share one prefix list.
+            CookieTokenFallback cookieFallback = new CookieTokenFallback(options.CookieTokenPaths);
+            services.AddSingleton(cookieFallback);
+
+            // In precedence order: an explicit token on the request beats the ambient cookie.
+            List<IBearerTokenSource> tokenSources = new List<IBearerTokenSource>();
+
             if (options.QueryStringTokenPaths.Count > 0)
             {
+                tokenSources.Add(new QueryStringTokenFallback(options.QueryStringTokenPaths));
+            }
+
+            if (cookieFallback.IsEnabled)
+            {
+                tokenSources.Add(cookieFallback);
+            }
+
+            if (tokenSources.Count > 0)
+            {
                 // Post-configure runs after every Configure, so it wraps a consumer's own events rather than
-                // being replaced by them.
-                QueryStringTokenFallback fallback = new QueryStringTokenFallback(options.QueryStringTokenPaths);
-                services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, fallback.Install);
+                // being replaced by them. One wrapper for every source, so the consumer's events are wrapped once.
+                services.PostConfigure<JwtBearerOptions>(
+                    JwtBearerDefaults.AuthenticationScheme,
+                    bearerOptions => FallbackTokenBearerEvents.Install(bearerOptions, tokenSources));
             }
 
             services.AddAuthorization(authzOptions =>

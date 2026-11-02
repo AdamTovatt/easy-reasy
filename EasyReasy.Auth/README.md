@@ -21,6 +21,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher with key rotation — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **WebAuthn second factor**: Server-side verification of both FIDO2 ceremonies — security keys, Touch ID, Face ID and Windows Hello — for a user who has already passed a first factor
 - **WebSocket authentication**: Opt-in, per-path acceptance of the token in the `access_token` query string, for the browser `WebSocket` that cannot send an `Authorization` header
+- **Files in a new tab**: Opt-in, per-path acceptance of the token in a host-only, `HttpOnly`, `SameSite=Strict` cookie on `GET` and `HEAD`, set and cleared by the built-in endpoints, so opening a protected file needs the user's own browser session rather than a public link
 - **Testable clock**: One `TimeProvider` registered in DI drives token issuing, refreshing and validation, so tests can mint expired or not-yet-valid tokens
 - **Flexible configuration**: Options pattern for JWT settings (issuer, audience, clock skew) and progressive delay tuning
 - **Clear error messages**: Enforces minimum secret length for security
@@ -1184,7 +1185,80 @@ const socket = new WebSocket(`wss://example.com/ws/city?access_token=${encodeURI
 - **Redact `access_token` from your own logs.** The library records no URL — bearer validation calls no `IAuthAuditLogger` hook — but your reverse proxy's access log, `Microsoft.AspNetCore.HttpLogging` with `HttpLoggingFields.RequestQuery`, and request-logging middleware all may. A token in a URL can also end up in browser history, so keep these tokens short-lived.
 - **Close a connection whose token has expired.** The token is validated once, at the handshake; a WebSocket connection outlives it. If a session must end when its access token expires or is revoked, read the `exp` claim when the connection opens and close the socket yourself.
 
-### 15. Controlling the Clock (`TimeProvider`)
+### 15. Opening Files in a New Tab (token in a cookie)
+
+A new tab is a plain navigation, so it cannot send an `Authorization` header. The usual workaround, a short-lived public download link, lets anyone who gets hold of the URL open the file. List the path prefixes where the token may instead arrive in a cookie, and opening a file there needs the user's own browser session; a copied URL is useless to anyone else:
+
+```csharp
+builder.Services.AddEasyReasyAuth(jwtSecret, options =>
+{
+    options.CookieTokenPaths = ["/files"];
+});
+
+app.UseEasyReasyAuth();
+app.AddAuthEndpoints(allowRefresh: true); // login, refresh and logout now also set and clear the cookie
+
+app.MapGet("/files/{id}", async (string id, HttpContext context) =>
+{
+    context.Response.Headers.CacheControl = "private";
+    // ... stream the file for context.GetUserId()
+}).RequireAuthorization();
+```
+
+```js
+// Same-site, top-level navigation: the browser sends the cookie.
+window.open(`/files/${fileId}`, "_blank");
+```
+
+**The cookie:**
+- **Named `__Secure-access_token`**, fixed like the `access_token` query parameter.
+- **Fixed attributes:** `HttpOnly`, `Secure` (browsers accept it on `http://localhost`), `SameSite=Strict`, no `Domain` (host-only), one cookie per listed prefix with `Path` set to `PathBase` plus the prefix, and `Max-Age` set to the token's own `exp` minus now on the registered `TimeProvider`. `Max-Age` rather than `Expires`, so a client clock that is off cannot move the expiry.
+- **Written as a raw `Set-Cookie` header**, so a cookie policy middleware cannot drop it for consent or strip `Secure`.
+
+**The rules:**
+- **Off by default.** With `CookieTokenPaths` empty, no cookie is read or written anywhere.
+- **Prefixes match as in section 14:** by whole path segments, ignoring case, against `HttpRequest.Path`. A prefix must start with `/` and must not end with one. **A prefix inside another listed one is rejected at startup**, since the browser would send two cookies of the same name there and a repeated cookie is ignored, so it could never authenticate.
+- **Only `GET` and `HEAD`.** On any other method the cookie is ignored; a header token still works on every method.
+- **Precedence: `Authorization` header, then the query string, then the cookie.** The cookie is read only when the request carries no `Authorization` header at all and the query-string fallback supplied no token. An explicit token on the request beats the ambient one.
+- **A repeated cookie is ignored.** The reader counts the name in the raw `Cookie` header(s), since `Request.Cookies` keeps only one of several.
+- **Validation is unchanged,** and your own `JwtBearerEvents` keep working exactly as in section 14. Both fallbacks share one events wrapper, and `JwtBearerOptions.EventsType` cannot be combined with either.
+
+**The built-in endpoints, when `CookieTokenPaths` is non-empty:**
+- **Login** (`/api/auth/login`) and **Google sign-in** (`/api/auth/google`, from EasyReasy.Auth.Google) set the cookie on success.
+- **Refresh** sets it on success and clears it on failure.
+- **Logout** clears it on every 204, so the response still does not reveal whether the token was known.
+- **The API-key endpoint never sets it**: it serves programs, not browsers.
+- **The JSON responses are unchanged**, so your app's API calls keep sending the header.
+- **A token too large for the cookie does not fail the sign-in.** When the cookie's name and value together would exceed 4096 bytes, login, Google sign-in and refresh still answer 200 with the token, expire the cookie instead of writing it, and log an error naming the size and the limit under the category `EasyReasy.Auth.AccessTokenCookie`. By then the session is already committed (a refresh has used up the old refresh token), so a 500 would lose it. That browser cannot open cookie-path tabs until a token fits, so watch for that error. A token without `exp` is a bug in the issuer and still fails the request.
+
+**Endpoints of your own** get none of this automatically. Call `HttpContext.SetAccessTokenCookie(accessToken)` wherever you hand a browser an access token, and `HttpContext.ClearAccessTokenCookie()` wherever you end or refuse a session: every failed or refused refresh (an idle-timeout refusal included) and your own logout. Where the session is already committed when you write the cookie, as after a refresh, call `HttpContext.TrySetAccessTokenCookie(accessToken)` instead: it behaves as the built-in endpoints do for an oversized token and returns `false`. All three throw `InvalidOperationException` when `CookieTokenPaths` is empty rather than silently doing nothing, so code that runs either way asks `HttpContext.IsAccessTokenCookieEnabled()` first:
+
+```csharp
+if (context.IsAccessTokenCookieEnabled())
+{
+    context.SetAccessTokenCookie(authResponse.Token);
+}
+```
+
+`SetAccessTokenCookie` reads `exp` from the token without validating it, rather than trusting `AuthResponse.ExpiresAt`, whose format the library does not control. It throws `ArgumentException` for a token without `exp`, and `InvalidOperationException`, naming the size and the limit, when the cookie's name and value together would exceed 4096 bytes: browsers drop an oversized cookie silently, so a token carrying many claims would otherwise sign in fine and then fail to open any tab, with no error anywhere.
+
+**Lifetime and revocation:**
+- **The cookie lives exactly as long as the access token it carries**, and every successful refresh replaces it. Between the token's expiry and the app's next refresh, a newly opened tab gets 401.
+- **Logout clears this browser's cookie.** As with a header token, the access token itself stays valid until `exp`, so a value already copied out of the browser keeps working until then. `ConcurrentSessionPolicy.SingleSession`, `InvalidateAllSessionsAsync` and theft detection revoke other browsers' refresh families, but the server cannot clear those browsers' cookies; each lasts no longer than its access token, the same bound header tokens have, and the failed refresh that follows clears it at the built-in endpoint. There is no access-token revocation list (see section 9).
+
+**Why it is safe, and where the edges are:**
+- **`SameSite=Strict`** keeps a cross-site page from making the browser send the cookie: links, forms, images and fetches started from another site all arrive without it. A link to a file followed from another site (an email, a chat) therefore gets a 401. That is the intended trade.
+- **"Same-site" still includes sibling subdomains** of the same registrable domain. Honouring the cookie only on `GET` and `HEAD` bounds what such a request can do to a read.
+- **Cookie tossing:** a sibling subdomain can plant its own cookie with the same name and path. When both arrive, the duplicate rule ignores the request. A tossed cookie alone, in a browser that has none, authenticates a read as the attacker's own account. That exposes none of the user's data, unless the app renders that account's uploads inline: then the attacker's own HTML or SVG runs in the app's origin (see below). A `__Host-` prefix would block tossing but requires `Path=/`, which would send the token on every request to the host.
+
+**What stays with your application:**
+- **Keep every `GET` endpoint on a cookie path free of side effects.** A same-site page can make the browser send the cookie on a `GET`.
+- **Refresh before opening a tab when the token is near expiry.** The library cannot do this from the server.
+- **Mark responses from cookie paths `Cache-Control: private`.** They are per-user, and a shared cache must not serve one user's file to another.
+- **Serve uploaded files as attachments, or under a sandboxing `Content-Security-Policy`.** Uploaded HTML or SVG rendered inline on a cookie path runs as script in your origin, and a tossed cookie can choose whose upload is rendered. `Content-Disposition: attachment`, or `Content-Security-Policy: sandbox` with `X-Content-Type-Options: nosniff`, keeps it inert.
+- **Keep the token out of your own logs.** Every request on a cookie path carries it in `Cookie`, and login and refresh responses carry it in `Set-Cookie`. ASP.NET Core's built-in HTTP logging redacts both headers by default, but a header-logging middleware of your own, a reverse proxy configured to log headers, or OpenTelemetry header capture may not.
+
+### 16. Controlling the Clock (`TimeProvider`)
 
 The services the library registers read one clock when they issue, refresh and validate tokens: the `TimeProvider` registered in DI, which defaults to `TimeProvider.System`. Register a fake one in a test and you can mint an expired or not-yet-valid token, then watch the server reject it:
 
@@ -1237,6 +1311,7 @@ builder.Services.AddEasyReasyAuth(jwtSecret, options =>
     options.ClockSkew = TimeSpan.FromSeconds(30);        // default; Microsoft default is 5 minutes
     options.RegisterJwtTokenService = true;              // default; set false to register your own
     options.QueryStringTokenPaths = ["/ws"];             // empty = query-string tokens ignored (default); see section 14
+    options.CookieTokenPaths = ["/files"];               // empty = no cookie read or written (default); see section 15
 });
 
 app.UseEasyReasyAuth(options =>
@@ -1265,7 +1340,7 @@ builder.Services.AddEasyReasyAuth(jwtSecret, options =>
 builder.Services.AddSingleton<IJwtTokenService>(new MyCustomJwtTokenService(jwtSecret, issuer));
 ```
 
-An implementation of your own stamps `nbf` from whatever clock it reads. To keep it on the clock bearer validation uses (see [section 15](#15-controlling-the-clock-timeprovider)), resolve `TimeProvider` from DI, or register `new JwtTokenService(jwtSecret, issuer, audience, provider.GetRequiredService<TimeProvider>())`.
+An implementation of your own stamps `nbf` from whatever clock it reads. To keep it on the clock bearer validation uses (see [section 16](#16-controlling-the-clock-timeprovider)), resolve `TimeProvider` from DI, or register `new JwtTokenService(jwtSecret, issuer, audience, provider.GetRequiredService<TimeProvider>())`.
 
 This is useful for:
 - **Testing scenarios**: Mock the service in unit tests
@@ -1334,6 +1409,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher with key rotation — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **WebAuthn/FIDO2 second factor**: Registration and authentication ceremonies verified server-side (attestation `none`, ES256/RS256), with result objects naming the individual check that declined a ceremony and the signature-counter rule platform authenticators need
 - **WebSocket authentication**: `QueryStringTokenPaths` lets listed paths read the token from the `access_token` query string, validated exactly as a header token, with the header taking precedence
+- **Cookie tokens for files in a new tab**: `CookieTokenPaths` lets listed paths read the token from the `__Secure-access_token` cookie on `GET` and `HEAD`, after the header and the query string; the built-in login, Google sign-in, refresh and logout endpoints set and clear it
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
 - **Claim access**: Retrieve any claim value by key or enum via `GetClaimValue()`
@@ -1347,6 +1423,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 
 - If the JWT secret is too short, `JwtTokenService` throws an `ArgumentException` with a clear message.
 - Invalid options (negative clock skew, negative delay values, etc.) throw `ArgumentOutOfRangeException` at startup.
+- An empty or whitespace `Issuer` or `Audience`, a `QueryStringTokenPaths` or `CookieTokenPaths` prefix that would never match, and a `CookieTokenPaths` prefix nested inside another throw `ArgumentException` from `AddEasyReasyAuth`, with the option's name as the parameter name.
 - `FromJson` methods on request/response models throw sanitized exceptions that never include the raw JSON input.
 - Progressive delay is enabled by default; disable it via the options pattern if needed.
 
@@ -1362,6 +1439,21 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.12.0
+
+Version 5.13.0 is additive: one option, off by default. With `CookieTokenPaths` empty, no cookie is read or written, the built-in endpoints answer exactly as before, and no existing signature or default changed.
+
+### New: `EasyReasyAuthOptions.CookieTokenPaths`
+- **Path prefixes on which a `GET` or `HEAD` request may carry its token in the `__Secure-access_token` cookie**, so a browser can open a protected file in a new tab without a public download link. See [section 15](#15-opening-files-in-a-new-tab-token-in-a-cookie) for the rules and for what stays with your application.
+- **The built-in login, refresh and logout endpoints set and clear the cookie** when the option is on, and so does `/api/auth/google` from **EasyReasy.Auth.Google 1.2.0**, which depends on this version. The JSON responses are unchanged.
+- **A malformed or nested prefix fails at startup.** Validation only applies to entries you add, so an existing configuration cannot start failing.
+
+### New: `HttpContext.SetAccessTokenCookie`, `TrySetAccessTokenCookie`, `ClearAccessTokenCookie` and `IsAccessTokenCookieEnabled`
+- **If you serve your own sign-in, refresh or logout endpoints,** call `SetAccessTokenCookie` wherever you issue an access token to a browser and `ClearAccessTokenCookie` wherever you end or refuse a session. Where the session is already committed, as after a refresh, use `TrySetAccessTokenCookie`, which logs and expires the cookie instead of throwing when the token is too large for it. All three throw when the option is off; ask `IsAccessTokenCookieEnabled()` first in code that runs either way.
+
+### Changed: the query-string fallback shares one events wrapper with the cookie
+- **No behaviour change for a query-string token.** The `JwtBearerOptions.EventsType` error now names whichever of `QueryStringTokenPaths` and `CookieTokenPaths` is set.
 
 ## Migration from 5.11.0
 
@@ -1402,7 +1494,7 @@ Version 5.10.0 is additive: the WebAuthn options generator can hand a credential
 Version 5.9.0 lets one registered `TimeProvider` drive token issuing, refreshing and validation. With no `TimeProvider` of your own registered, the clock is the system clock as before, and no existing constructor or signature changed.
 
 ### New: the registered `TimeProvider` is the library's clock
-- **`AddEasyReasyAuth` and `AddRefreshTokenService` register `TimeProvider.System` if nothing else is registered**, and every token clock reads the registered one. See [section 15](#15-controlling-the-clock-timeprovider).
+- **`AddEasyReasyAuth` and `AddRefreshTokenService` register `TimeProvider.System` if nothing else is registered**, and every token clock reads the registered one. See [section 16](#16-controlling-the-clock-timeprovider).
 - **New constructors**: `JwtTokenService(secret, issuer, audience, timeProvider)`, and a `RefreshTokenService` constructor that takes every parameter explicitly, with `timeProvider` last. The existing constructors read the system clock.
 
 ### Changed: token lifetime is validated by the library's lifetime validator

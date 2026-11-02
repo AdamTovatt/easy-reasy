@@ -1,4 +1,7 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Security.Claims;
 
 namespace EasyReasy.Auth
@@ -131,6 +134,140 @@ namespace EasyReasy.Auth
         public static void MarkAuthenticationSucceeded(this HttpContext context)
         {
             context.Items[AuthenticationSucceededKey] = true;
+        }
+
+        /// <summary>
+        /// Whether the access-token cookie is on: <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> lists at least
+        /// one prefix. Ask this before calling <see cref="SetAccessTokenCookie"/> or <see cref="ClearAccessTokenCookie"/>
+        /// from code that runs whether or not the option is on, since both throw when it is off.
+        /// </summary>
+        /// <param name="context">The HTTP context of the current request.</param>
+        /// <returns>
+        /// <c>true</c> when <c>AddEasyReasyAuth</c> was called with a non-empty <see cref="EasyReasyAuthOptions.CookieTokenPaths"/>.
+        /// </returns>
+        public static bool IsAccessTokenCookieEnabled(this HttpContext context)
+        {
+            return FindEnabledCookieFallback(context) != null;
+        }
+
+        /// <summary>
+        /// Writes the access-token cookie, one per prefix in <see cref="EasyReasyAuthOptions.CookieTokenPaths"/>, so a
+        /// plain navigation from this browser to one of those paths, such as a file opened in a new tab, is
+        /// authenticated by <paramref name="accessToken"/>.
+        /// </summary>
+        /// <remarks>
+        /// Call it from an endpoint of your own wherever it hands a browser an access token, before anything that
+        /// cannot be undone; where the session is already committed, such as after a refresh, call
+        /// <see cref="TrySetAccessTokenCookie"/> instead. The cookie is named
+        /// <c>__Secure-access_token</c> and is <c>HttpOnly</c>, <c>Secure</c>, <c>SameSite=Strict</c> and host-only,
+        /// with <c>Path</c> set to <c>PathBase</c> plus the prefix and <c>Max-Age</c> set to the token's own
+        /// <c>exp</c> minus now on the registered <see cref="TimeProvider"/>. The token is read, not validated.
+        /// </remarks>
+        /// <param name="context">The HTTP context of the response to set the cookie on.</param>
+        /// <param name="accessToken">The access token the response issues.</param>
+        /// <exception cref="ArgumentException">Thrown when the token is not a JWT or has no <c>exp</c> claim.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> is empty or <c>AddEasyReasyAuth</c> was not
+        /// called, or when the cookie's name and value together would exceed 4096 bytes, which browsers drop silently.
+        /// </exception>
+        public static void SetAccessTokenCookie(this HttpContext context, string accessToken)
+        {
+            CookieTokenFallback cookieFallback = GetEnabledCookieFallback(context, nameof(SetAccessTokenCookie));
+            TimeProvider timeProvider = context.RequestServices.GetRequiredService<TimeProvider>();
+            cookieFallback.WriteCookies(context, accessToken, timeProvider);
+        }
+
+        /// <summary>
+        /// Writes the access-token cookie as <see cref="SetAccessTokenCookie"/> does, except that a token too large
+        /// for a cookie (name and value over 4096 bytes) expires the cookie instead, logs an error naming the size and
+        /// the limit, and returns <c>false</c>, so the response and the session it carries survive.
+        /// </summary>
+        /// <remarks>
+        /// For an endpoint that has already committed the session when it writes the cookie. A refresh has used up
+        /// the old refresh token by then, so failing the response would lose the new one, and claims re-evaluated on
+        /// refresh can grow a token past the limit after a login that fit. The built-in login, Google sign-in and
+        /// refresh endpoints call this when the option is on. The error is logged through the
+        /// <see cref="Microsoft.Extensions.Logging.ILoggerFactory"/> in <see cref="HttpContext.RequestServices"/>, under
+        /// the category <c>EasyReasy.Auth.AccessTokenCookie</c>.
+        /// </remarks>
+        /// <param name="context">The HTTP context of the response to set the cookie on.</param>
+        /// <param name="accessToken">The access token the response issues.</param>
+        /// <returns><c>true</c> when the cookie was written; <c>false</c> when the token was too large and the cookie was expired instead.</returns>
+        /// <exception cref="ArgumentException">Thrown when the token is not a JWT or has no <c>exp</c> claim.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> is empty or <c>AddEasyReasyAuth</c> was not called.
+        /// </exception>
+        public static bool TrySetAccessTokenCookie(this HttpContext context, string accessToken)
+        {
+            CookieTokenFallback cookieFallback = GetEnabledCookieFallback(context, nameof(TrySetAccessTokenCookie));
+            TimeProvider timeProvider = context.RequestServices.GetRequiredService<TimeProvider>();
+            ILogger logger = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger(CookieTokenFallback.LoggerCategory)
+                ?? NullLogger.Instance;
+            return cookieFallback.TryWriteCookies(context, accessToken, timeProvider, logger);
+        }
+
+        /// <summary>
+        /// The built-in endpoints' sign-in step: <see cref="TrySetAccessTokenCookie"/> when the option is on, nothing
+        /// when it is off.
+        /// </summary>
+        internal static void TrySetAccessTokenCookieIfEnabled(this HttpContext context, string accessToken)
+        {
+            if (context.IsAccessTokenCookieEnabled())
+            {
+                context.TrySetAccessTokenCookie(accessToken);
+            }
+        }
+
+        /// <summary>
+        /// The built-in endpoints' sign-out step: <see cref="ClearAccessTokenCookie"/> when the option is on, nothing
+        /// when it is off.
+        /// </summary>
+        internal static void ClearAccessTokenCookieIfEnabled(this HttpContext context)
+        {
+            if (context.IsAccessTokenCookieEnabled())
+            {
+                context.ClearAccessTokenCookie();
+            }
+        }
+
+        /// <summary>
+        /// Expires the access-token cookie on every prefix in <see cref="EasyReasyAuthOptions.CookieTokenPaths"/>.
+        /// </summary>
+        /// <remarks>
+        /// The built-in refresh endpoint calls this when a refresh fails, and the built-in logout endpoint on every
+        /// response, when the option is on. Call it from an endpoint of your own wherever it ends or refuses a
+        /// session: every failed or refused refresh, and your own logout. The token the cookie carried stays valid
+        /// until its <c>exp</c>, as a header token does.
+        /// </remarks>
+        /// <param name="context">The HTTP context of the response to clear the cookie on.</param>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when <see cref="EasyReasyAuthOptions.CookieTokenPaths"/> is empty or <c>AddEasyReasyAuth</c> was not called.
+        /// </exception>
+        public static void ClearAccessTokenCookie(this HttpContext context)
+        {
+            GetEnabledCookieFallback(context, nameof(ClearAccessTokenCookie)).ClearCookies(context);
+        }
+
+        /// <summary>
+        /// Returns the registered cookie fallback, throwing rather than letting a helper silently do nothing when
+        /// the option is off.
+        /// </summary>
+        private static CookieTokenFallback GetEnabledCookieFallback(HttpContext context, string helperName)
+        {
+            return FindEnabledCookieFallback(context)
+                ?? throw new InvalidOperationException(
+                    $"{helperName} needs {nameof(EasyReasyAuthOptions)}.{nameof(EasyReasyAuthOptions.CookieTokenPaths)} to list at least one prefix in AddEasyReasyAuth, " +
+                    $"since without one no cookie would be written or read. Check {nameof(IsAccessTokenCookieEnabled)} first in code that runs either way.");
+        }
+
+        /// <summary>
+        /// Returns the cookie fallback <c>AddEasyReasyAuth</c> registered when it lists at least one prefix, or
+        /// <c>null</c> when the option is off or <c>AddEasyReasyAuth</c> was not called.
+        /// </summary>
+        private static CookieTokenFallback? FindEnabledCookieFallback(HttpContext context)
+        {
+            CookieTokenFallback? cookieFallback = context.RequestServices?.GetService<CookieTokenFallback>();
+            return cookieFallback?.IsEnabled == true ? cookieFallback : null;
         }
 
         /// <summary>
