@@ -111,6 +111,10 @@ Either way, the verification state is exposed on `GoogleUserInfo.EmailVerified` 
 
 Beyond those two, read each endpoint's own contract rather than assuming parity: this endpoint passes the supplied `idToken` to the validator as it stands, and the EasyReasy.Auth credential endpoints document their own request handling in [that package's README](../EasyReasy.Auth/README.md).
 
+### Access-token cookie
+
+When `EasyReasyAuthOptions.CookieTokenPaths` is non-empty, a successful sign-in also sets the `__Secure-access_token` cookie through the same call the built-in login endpoint makes, so a user who signs in with Google can open a protected file in a new tab without waiting for the first refresh. A rejected sign-in sets no cookie, the JSON response is unchanged, and with the option empty nothing changes. A token too large for the cookie does not fail the sign-in: the cookie is expired instead and EasyReasy.Auth logs an error naming the size and the limit. Clearing the cookie on a failed refresh or on logout is the job of the EasyReasy.Auth refresh and logout endpoints. See "Opening Files in a New Tab" in the EasyReasy.Auth README for the rules and what stays with your application.
+
 ## Audit Logging
 
 Google sign-in flows into the same audit pipeline as every other EasyReasy.Auth event. If you register an `IAuthAuditLogger` (see the EasyReasy.Auth README, "Security Audit Logging"), the endpoint invokes `OnExternalAuthAsync` after every attempt — success or failure — before the response is written:

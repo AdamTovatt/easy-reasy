@@ -1,10 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.WebSockets;
-using System.Reflection;
 using System.Text;
 
 namespace EasyReasy.Auth.Tests
@@ -17,8 +14,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task WebSocketConnect_ValidQueryTokenOnListedPath_ClaimsReachEndpoint()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(WebSocketPaths);
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(WebSocketPaths);
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             WebSocketClient client = app.Server.CreateWebSocketClient();
             using WebSocket socket = await client.ConnectAsync(
@@ -33,7 +30,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task WebSocketConnect_NoToken_HandshakeRejected()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(WebSocketPaths);
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(WebSocketPaths);
 
             WebSocketClient client = app.Server.CreateWebSocketClient();
 
@@ -45,8 +42,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_ValidQueryTokenOnListedPath_Authenticates()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(WebSocketPaths);
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(WebSocketPaths);
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/ws/whoami?access_token={token}");
 
@@ -57,8 +54,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_ValidQueryTokenOnUnlistedPath_Returns401()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(WebSocketPaths);
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(WebSocketPaths);
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/api/whoami?access_token={token}");
 
@@ -68,8 +65,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_PathSharingOnlyAStringPrefixWithListedPath_Returns401()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(WebSocketPaths);
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(WebSocketPaths);
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/wsx/whoami?access_token={token}");
 
@@ -79,8 +76,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_ExpiredQueryToken_Returns401()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(WebSocketPaths);
-            string token = QueryStringTokenTestApp.CreateExpiredToken("player-1");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(WebSocketPaths);
+            string token = FallbackTokenTestApp.CreateExpiredToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/ws/whoami?access_token={token}");
 
@@ -91,8 +88,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_QueryTokenSignedWithOtherSecret_Returns401()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(WebSocketPaths);
-            string token = QueryStringTokenTestApp.CreateTokenSignedWithOtherSecret("player-1");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(WebSocketPaths);
+            string token = FallbackTokenTestApp.CreateTokenSignedWithOtherSecret("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/ws/whoami?access_token={token}");
 
@@ -103,8 +100,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_ValidQueryTokenOnEachOfSeveralListedPaths_Authenticates()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(["/api", "/ws"]);
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(["/api", "/ws"]);
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage first = await app.GetAsync($"/api/whoami?access_token={token}");
             using HttpResponseMessage second = await app.GetAsync($"/ws/whoami?access_token={token}");
@@ -118,9 +115,9 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_BearerHeaderAndQueryToken_HeaderWins()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(WebSocketPaths);
-            string headerToken = QueryStringTokenTestApp.CreateToken("header-user");
-            string queryToken = QueryStringTokenTestApp.CreateToken("query-user");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(WebSocketPaths);
+            string headerToken = FallbackTokenTestApp.CreateToken("header-user");
+            string queryToken = FallbackTokenTestApp.CreateToken("query-user");
 
             using HttpResponseMessage response = await app.GetAsync(
                 $"/ws/whoami?access_token={queryToken}", authorizationHeader: $"Bearer {headerToken}");
@@ -132,8 +129,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_NonBearerHeaderAndValidQueryToken_Returns401()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(WebSocketPaths);
-            string queryToken = QueryStringTokenTestApp.CreateToken("query-user");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(WebSocketPaths);
+            string queryToken = FallbackTokenTestApp.CreateToken("query-user");
 
             using HttpResponseMessage response = await app.GetAsync(
                 $"/ws/whoami?access_token={queryToken}", authorizationHeader: "Basic dXNlcjpwYXNz");
@@ -144,8 +141,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_RepeatedQueryParameter_Returns401()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(WebSocketPaths);
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(WebSocketPaths);
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/ws/whoami?access_token={token}&access_token={token}");
 
@@ -155,8 +152,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_OptionUnset_QueryTokenIgnored()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync([]);
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([]);
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/ws/whoami?access_token={token}");
 
@@ -166,8 +163,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_OptionUnset_HeaderTokenStillAuthenticates()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync([]);
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync([]);
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync("/ws/whoami", authorizationHeader: $"Bearer {token}");
 
@@ -179,7 +176,7 @@ namespace EasyReasy.Auth.Tests
         public async Task Get_ConsumerAssignsOwnEvents_FallbackAndConsumerHandlerBothRun()
         {
             int consumerHandlerCalls = 0;
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(
                 WebSocketPaths,
                 bearerOptions => bearerOptions.Events = new JwtBearerEvents
                 {
@@ -189,7 +186,7 @@ namespace EasyReasy.Auth.Tests
                         return Task.CompletedTask;
                     },
                 });
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/ws/whoami?access_token={token}");
 
@@ -201,8 +198,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_ConsumerHandlerSetsToken_ConsumerTokenWins()
         {
-            string consumerToken = QueryStringTokenTestApp.CreateToken("consumer-user");
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(
+            string consumerToken = FallbackTokenTestApp.CreateToken("consumer-user");
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(
                 WebSocketPaths,
                 bearerOptions => bearerOptions.Events = new JwtBearerEvents
                 {
@@ -212,7 +209,7 @@ namespace EasyReasy.Auth.Tests
                         return Task.CompletedTask;
                     },
                 });
-            string queryToken = QueryStringTokenTestApp.CreateToken("query-user");
+            string queryToken = FallbackTokenTestApp.CreateToken("query-user");
 
             using HttpResponseMessage response = await app.GetAsync($"/ws/whoami?access_token={queryToken}");
 
@@ -223,7 +220,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task Get_ConsumerHandlerFailsRequest_QueryTokenNotUsed()
         {
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(
                 WebSocketPaths,
                 bearerOptions => bearerOptions.Events = new JwtBearerEvents
                 {
@@ -233,7 +230,7 @@ namespace EasyReasy.Auth.Tests
                         return Task.CompletedTask;
                     },
                 });
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/ws/whoami?access_token={token}");
 
@@ -244,10 +241,10 @@ namespace EasyReasy.Auth.Tests
         public async Task Get_ConsumerEventsSubclassOverridesMethods_FallbackAndOverridesBothRun()
         {
             RecordingBearerEvents consumerEvents = new RecordingBearerEvents();
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(
                 WebSocketPaths,
                 bearerOptions => bearerOptions.Events = consumerEvents);
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/ws/whoami?access_token={token}");
 
@@ -262,70 +259,15 @@ namespace EasyReasy.Auth.Tests
         {
             Func<MessageReceivedContext, Task> consumerHandler = context => Task.CompletedTask;
             JwtBearerEvents sharedEvents = new JwtBearerEvents { OnMessageReceived = consumerHandler };
-            await using QueryStringTokenTestApp app = await QueryStringTokenTestApp.StartAsync(
+            await using FallbackTokenTestApp app = await FallbackTokenTestApp.StartAsync(
                 WebSocketPaths,
                 bearerOptions => bearerOptions.Events = sharedEvents);
-            string token = QueryStringTokenTestApp.CreateToken("player-1");
+            string token = FallbackTokenTestApp.CreateToken("player-1");
 
             using HttpResponseMessage response = await app.GetAsync($"/ws/whoami?access_token={token}");
 
             Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
             Assert.AreSame(consumerHandler, sharedEvents.OnMessageReceived);
-        }
-
-        [TestMethod]
-        public void QueryStringTokenBearerEvents_EveryVirtualEvent_IsOverridden()
-        {
-            // An event the wrapper does not override would run the wrapper's own no-op delegate instead of the
-            // consumer's handler, silently. This fails the day JwtBearerEvents gains an event.
-            MethodInfo[] virtualEvents = typeof(JwtBearerEvents)
-                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .Where(method => method.IsVirtual && !method.IsFinal && method.DeclaringType != typeof(object))
-                .ToArray();
-
-            Assert.IsTrue(virtualEvents.Length > 0);
-
-            foreach (MethodInfo virtualEvent in virtualEvents)
-            {
-                MethodInfo? implementation = typeof(QueryStringTokenBearerEvents).GetMethod(
-                    virtualEvent.Name, virtualEvent.GetParameters().Select(parameter => parameter.ParameterType).ToArray());
-
-                Assert.IsNotNull(implementation, virtualEvent.Name);
-                Assert.AreEqual(typeof(QueryStringTokenBearerEvents), implementation.DeclaringType, virtualEvent.Name);
-            }
-        }
-
-        [TestMethod]
-        public void ResolveBearerOptions_EventsTypeSet_Throws()
-        {
-            ServiceCollection services = new ServiceCollection();
-            services.AddEasyReasyAuth(QueryStringTokenTestApp.Secret, options => options.QueryStringTokenPaths = WebSocketPaths);
-            services.Configure<JwtBearerOptions>(
-                JwtBearerDefaults.AuthenticationScheme,
-                bearerOptions => bearerOptions.EventsType = typeof(JwtBearerEvents));
-            using ServiceProvider provider = services.BuildServiceProvider();
-
-            IOptionsMonitor<JwtBearerOptions> monitor = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>();
-
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() =>
-                monitor.Get(JwtBearerDefaults.AuthenticationScheme));
-            StringAssert.Contains(exception.Message, nameof(EasyReasyAuthOptions.QueryStringTokenPaths));
-        }
-
-        [TestMethod]
-        public void ResolveBearerOptions_EventsTypeSetAndOptionUnset_DoesNotThrow()
-        {
-            ServiceCollection services = new ServiceCollection();
-            services.AddEasyReasyAuth(QueryStringTokenTestApp.Secret);
-            services.Configure<JwtBearerOptions>(
-                JwtBearerDefaults.AuthenticationScheme,
-                bearerOptions => bearerOptions.EventsType = typeof(JwtBearerEvents));
-            using ServiceProvider provider = services.BuildServiceProvider();
-
-            JwtBearerOptions bearerOptions = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
-                .Get(JwtBearerDefaults.AuthenticationScheme);
-
-            Assert.AreEqual(typeof(JwtBearerEvents), bearerOptions.EventsType);
         }
 
         private static void AssertTokenWasReadAndRejected(HttpResponseMessage response)
