@@ -17,7 +17,7 @@ dotnet test --filter "FullyQualifiedName~ClassName.MethodName" EasyReasy.Auth.Te
 
 ## Solution Structure
 
-Seven library projects, each with a corresponding test project:
+Each library project has a corresponding test project:
 
 | Library | Purpose | Dependencies |
 |---------|---------|-------------|
@@ -27,9 +27,10 @@ Seven library projects, each with a corresponding test project:
 | `EasyReasy.Auth` | JWT auth, claims middleware, password hashing, TOTP/base32/secret-cipher MFA primitives, WebAuthn/FIDO2 second factor, query-string tokens for WebSockets, path-scoped cookie tokens for files opened in a new tab (ASP.NET Core) | — |
 | `EasyReasy.Auth.Client` | Lightweight HTTP client for Auth servers | — |
 | `EasyReasy.Auth.Google` | Google Sign-In integration for EasyReasy.Auth | `EasyReasy.Auth` |
+| `EasyReasy.Auth.Microsoft` | Microsoft (Entra ID) sign-in through the server-side code flow with PKCE, for EasyReasy.Auth | `EasyReasy.Auth` |
 | `EasyReasy.VectorStorage` | In-memory cosine similarity vector search | — |
 
-`EasyReasy.ByteShelfProvider` depends on `EasyReasy` and `EasyReasy.Auth.Google` depends on `EasyReasy.Auth`. All other libraries are fully independent of each other.
+`EasyReasy.ByteShelfProvider` depends on `EasyReasy`, and each sign-in provider package (`EasyReasy.Auth.Google`, `EasyReasy.Auth.Microsoft`) depends on `EasyReasy.Auth`. All other libraries are fully independent of each other.
 
 ## Architecture
 

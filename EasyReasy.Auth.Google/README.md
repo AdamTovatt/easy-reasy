@@ -65,8 +65,9 @@ WebApplication app = builder.Build();
 
 app.UseEasyReasyAuth();
 app.AddGoogleAuthEndpoint();   // POST /api/auth/google
-app.AddAuthEndpoints();        // the built-in EasyReasy.Auth endpoints (login, refresh, logout)
 ```
+
+The built-in EasyReasy.Auth endpoints are added separately with `app.AddAuthEndpoints(...)`, which needs an `IAuthRequestValidationService` for API key and username/password sign-in and an `IRefreshTokenService` for refresh and logout; see the EasyReasy.Auth README.
 
 ## Flow
 
