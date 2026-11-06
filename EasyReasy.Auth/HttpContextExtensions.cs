@@ -122,6 +122,16 @@ namespace EasyReasy.Auth
         private const string AuthenticationSucceededKey = "EasyReasy.Auth.AuthenticationSucceeded";
 
         /// <summary>
+        /// Sets <c>Cache-Control: no-store</c> on the response, so neither a browser nor a proxy keeps a copy of it.
+        /// Every endpoint that answers with a token, a session or a sign-in URL sets it, the built-in ones included.
+        /// </summary>
+        /// <param name="context">The HTTP context of the current request.</param>
+        public static void SetNoStoreCacheControl(this HttpContext context)
+        {
+            context.Response.Headers.CacheControl = "no-store";
+        }
+
+        /// <summary>
         /// Records that this request authenticated the caller and issued a token.
         /// </summary>
         /// <remarks>

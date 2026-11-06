@@ -168,7 +168,7 @@ The package calls Microsoft through a named `HttpClient`, `MicrosoftAuthServiceC
 
 `MicrosoftSignInSettings` (and `MicrosoftAuthBeginRequest` for your own flows) carry two optional checks:
 
-- **`MaxAuthenticationAge`**: Begin sends `max_age` in whole seconds, and Complete refuses a token without `auth_time` (`MissingAuthTime`) or with one older than the age (`StaleAuthTime`). This proves the user entered their credentials within that time. It does not prove a second factor ran: Microsoft can satisfy an MFA requirement from an earlier MFA in the session, and `prompt=login` only forces the credentials to be entered again.
+- **`MaxAuthenticationAge`**: Begin sends `max_age` in whole seconds, and Complete refuses a token without `auth_time` (`MissingAuthTime`) or with one older than the age (`StaleAuthTime`). The age is measured on the server's clock with no skew allowance, so keep it synchronized (or allow for its drift in the age you choose); an `auth_time` ahead of the server clock counts as no age. This proves the user entered their credentials within that time. It does not prove a second factor ran: Microsoft can satisfy an MFA requirement from an earlier MFA in the session, and `prompt=login` only forces the credentials to be entered again.
 - **`RequiredAuthenticationContextId`**: Begin asks for a Conditional Access authentication context (for example `c1`) through the `claims` parameter, and Complete refuses a token whose `acrs` does not contain it (`MissingAuthenticationContext`). Conditional Access puts the id in `acrs` only when every policy assigned to it is satisfied. This is how a sign-in proves a second factor ran, and it rests on tenant setup the package cannot see from the token.
 
 The tenant setup a required authentication context relies on:
@@ -203,7 +203,7 @@ app.MapPost("/api/sign/{recordId}/microsoft/begin", (string recordId, IMicrosoft
     return Results.Ok(new { begun.AuthorizationUrl });
 }).RequireAuthorization();
 
-app.MapPost("/api/sign/{recordId}/microsoft", async (string recordId, SignRequest request, IMicrosoftAuthService microsoft, HttpContext httpContext) =>
+app.MapPost("/api/sign/{recordId}/microsoft", async (string recordId, MicrosoftSignInRequest request, IMicrosoftAuthService microsoft, HttpContext httpContext) =>
 {
     string userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
     MicrosoftAuthCompletionResult result = await microsoft.CompleteAsync(request.Code, request.State, httpContext, httpContext.RequestAborted);
@@ -220,7 +220,7 @@ app.MapPost("/api/sign/{recordId}/microsoft", async (string recordId, SignReques
 
 **Your Complete must check the caller binding.** The binding cookie proves the flow is completed in the browser that began it, but every flow of your application shares one state key, so a `state` from one flow opens in any other: a state from your sign-in page could be posted to your signing endpoint, or one begun for record A to the endpoint for record B. Comparing `CallerBinding` with what the completing endpoint expects is what ties the result to that flow. The built-in sign-in endpoint does this for you: it refuses any state it did not begin itself, as `CallerBindingMismatch`, so a state from your own flows can never sign anyone in.
 
-`MicrosoftAuthBeginRequest.Nonce` lets a flow tie the sign-in to something of yours (for example a hash of the record being signed); it comes back as `MicrosoftUserInfo.Nonce`. `CompleteAsync` returns a `MicrosoftAuthFailureReason` on refusal and throws only when Microsoft cannot be reached (`HttpRequestException`) or its signing keys cannot be retrieved (`InvalidOperationException`).
+`MicrosoftAuthBeginRequest.Nonce` lets a flow tie the sign-in to something of yours (for example a hash of the record being signed); it comes back as `MicrosoftUserInfo.Nonce`. `CompleteAsync` returns a `MicrosoftAuthFailureReason` on refusal and throws only when Microsoft's token endpoint cannot be reached or answers with a status other than 400 or 401, such as a server error or a 429 (`HttpRequestException`), or its signing keys cannot be retrieved (`InvalidOperationException`).
 
 ## Endpoint Behavior
 
@@ -231,7 +231,7 @@ app.MapPost("/api/sign/{recordId}/microsoft", async (string recordId, SignReques
 
 `POST /api/auth/microsoft/begin` takes an optional body `{ "loginHint": "..." }` and nothing else (a blank hint, or one over 256 characters, is not sent): any other field is ignored, so the browser cannot choose the tenant, prompt, authentication context, max age or redirect URI. It returns `{ "authorizationUrl": "..." }`. Settings that `Begin` refuses (a redirect URI outside `RedirectUris`, the personal accounts tenant, an undefined `Prompt` value, a blank `RequiredAuthenticationContextId`, a max age under one second) are a configuration error, and the request fails with the `ArgumentException`.
 
-`POST /api/auth/microsoft` takes `{ "code": "...", "state": "..." }` and returns 200 with the `AuthResponse` or 401. A code and state can be completed once: the binding cookie is cleared on the first attempt, and Microsoft refuses a code redeemed before. If Microsoft's token endpoint or signing keys cannot be reached, the request fails with a 500; that is not a refusal and is not audited.
+`POST /api/auth/microsoft` takes `{ "code": "...", "state": "..." }` and returns 200 with the `AuthResponse` or 401. A code and state can be completed once: the binding cookie is cleared on the first attempt, and Microsoft refuses a code redeemed before. If Microsoft's token endpoint cannot be reached or answers with a status other than 400 or 401 (a server error, a 429), or its signing keys cannot be retrieved, the request fails with a 500; that is not a refusal and is not audited.
 
 ### Access-token cookie
 
@@ -299,6 +299,38 @@ As with the other result types, log the metadata, never the whole result: on suc
 | `Prompt` | `MicrosoftAuthPrompt?` | `Login`, `None`, `Consent` or `SelectAccount`, or null to send none. |
 | `RequiredAuthenticationContextId` | `string?` | The authentication context the sign-in must satisfy, or null. |
 | `MaxAuthenticationAge` | `TimeSpan?` | The longest accepted time since the user entered credentials, or null. |
+
+### `MicrosoftAuthBeginRequest`
+
+The input to `IMicrosoftAuthService.Begin` for your own flows. `Begin` throws one `ArgumentException` listing every rule broken, and sets no cookie when it does.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `RedirectUri` | `string` (required) | One of `RedirectUris`, compared exactly. The code is redeemed with this same URI. |
+| `CallerBinding` | `string` (required) | Your value tying the result to the flow, returned by `CompleteAsync` untouched. Must not be null; it travels in the encrypted state, so keep it short. |
+| `TenantId` | `Guid?` | The tenant the account must belong to, or null for any work or school tenant. Must not be the personal accounts tenant. |
+| `Prompt` | `MicrosoftAuthPrompt?` | `Login`, `None`, `Consent` or `SelectAccount`, or null to send none. Must be a defined member. |
+| `Nonce` | `string?` | Your nonce, or null for a random one. Must be null or non-blank. |
+| `LoginHint` | `string?` | Fills in the account picker; proves nothing. |
+| `RequiredAuthenticationContextId` | `string?` | The authentication context the sign-in must satisfy, or null. Must be null or non-blank. |
+| `MaxAuthenticationAge` | `TimeSpan?` | The longest accepted time since the user entered credentials, or null. At least one second; sent in whole seconds. |
+
+### `MicrosoftAuthBeginResult`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `AuthorizationUrl` | `string` | Microsoft's authorize URL. Send the browser there with a top-level navigation. |
+| `State` | `string` | The encrypted `state` in that URL, the same value Microsoft's redirect brings back. Opaque. |
+
+### `MicrosoftAuthCompletionResult`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Success` | `bool` | Whether every check passed. |
+| `UserInfo` | `MicrosoftUserInfo?` | The verified identity. Set only on success. |
+| `CallerBinding` | `string?` | The binding the flow was begun with. Set only on success; compare it before acting on the identity. |
+| `FailureReason` | `MicrosoftAuthFailureReason?` | Why the flow was refused. Set only on failure. |
+| `AttemptedSubject` | `string?` | The account as `tid:oid`: set on success and when a genuine token was refused (tenant, authentication context or max age), null when the state, the cookie, the code or the token failed. |
 
 ### `MicrosoftSignInBeginRequest`, `MicrosoftSignInBeginResponse`, `MicrosoftSignInRequest`
 

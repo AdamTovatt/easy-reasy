@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Http;
-using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -36,7 +35,7 @@ namespace EasyReasy.Auth.Microsoft
         {
             string value = MicrosoftRandomValue.Create(ValueSize);
             httpContext.Response.Cookies.Append(GetName(flowId), value, CreateOptions(lifetime));
-            return Hash(value);
+            return MicrosoftHash.Sha256(value);
         }
 
         /// <summary>
@@ -54,7 +53,7 @@ namespace EasyReasy.Auth.Microsoft
             }
 
             bool matches = CryptographicOperations.FixedTimeEquals(
-                Encoding.ASCII.GetBytes(Hash(value)),
+                Encoding.ASCII.GetBytes(MicrosoftHash.Sha256(value)),
                 Encoding.ASCII.GetBytes(expectedHash));
 
             return matches ? null : MicrosoftAuthFailureReason.BindingCookieMismatch;
@@ -71,11 +70,6 @@ namespace EasyReasy.Auth.Microsoft
         }
 
         private static string GetName(string flowId) => NamePrefix + flowId;
-
-        private static string Hash(string value)
-        {
-            return Base64Url.EncodeToString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
-        }
 
         private static CookieOptions CreateOptions(TimeSpan? lifetime)
         {

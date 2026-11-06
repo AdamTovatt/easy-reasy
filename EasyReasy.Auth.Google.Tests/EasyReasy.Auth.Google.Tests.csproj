@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <Compile Include="..\EasyReasy.Auth.Tests\IdentityModelVersionAlignmentTests.cs" Link="IdentityModelVersionAlignmentTests.cs" />
+    <Compile Include="..\EasyReasy.Auth.Tests\ThrowingExternalAuthLogger.cs" Link="ThrowingExternalAuthLogger.cs" />
+    <Compile Include="..\EasyReasy.Auth.Tests\InertRefreshTokenService.cs" Link="InertRefreshTokenService.cs" />
   </ItemGroup>
 
   <ItemGroup>

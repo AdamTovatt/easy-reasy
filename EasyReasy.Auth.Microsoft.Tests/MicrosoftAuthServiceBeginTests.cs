@@ -155,7 +155,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             Assert.IsTrue(cookie.Secure);
             Assert.AreEqual(HeaderSameSiteMode.Lax, cookie.SameSite);
             Assert.AreEqual("/", cookie.Path.ToString());
-            Assert.IsTrue(cookie.Domain.Value == null);
+            Assert.IsNull(cookie.Domain.Value);
             Assert.AreEqual(TimeSpan.FromMinutes(7), cookie.MaxAge);
         }
 
@@ -195,6 +195,34 @@ namespace EasyReasy.Auth.Microsoft.Tests
                 MicrosoftAuthHarness.CreateRequest(redirectUri: "https://evil.example/callback"), context));
 
             StringAssert.Contains(exception.Message, "https://evil.example/callback");
+            Assert.AreEqual(0, context.Response.Headers.SetCookie.Count);
+        }
+
+        [TestMethod]
+        public void Begin_NullRedirectUri_ThrowsAndSetsNoCookie()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+            DefaultHttpContext context = new DefaultHttpContext();
+            string? missing = null;
+            MicrosoftAuthBeginRequest request = new MicrosoftAuthBeginRequest { RedirectUri = missing!, CallerBinding = MicrosoftAuthHarness.CallerBinding };
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => harness.Service.Begin(request, context));
+
+            StringAssert.Contains(exception.Message, nameof(MicrosoftAuthBeginRequest.RedirectUri));
+            Assert.AreEqual(0, context.Response.Headers.SetCookie.Count);
+        }
+
+        [TestMethod]
+        public void Begin_NullCallerBinding_ThrowsAndSetsNoCookie()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+            DefaultHttpContext context = new DefaultHttpContext();
+            string? missing = null;
+            MicrosoftAuthBeginRequest request = new MicrosoftAuthBeginRequest { RedirectUri = MicrosoftAuthHarness.SigningRedirectUri, CallerBinding = missing! };
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => harness.Service.Begin(request, context));
+
+            StringAssert.Contains(exception.Message, nameof(MicrosoftAuthBeginRequest.CallerBinding));
             Assert.AreEqual(0, context.Response.Headers.SetCookie.Count);
         }
 
