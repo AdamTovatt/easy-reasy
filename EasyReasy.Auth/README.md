@@ -1456,6 +1456,10 @@ Version 5.14.0 is additive: no existing signature, option or default changed, an
 
 ### New: `ExternalSignInEndpoint.HandleAsync`
 - **The part every identity-provider sign-in endpoint shares**, for a provider package to build its endpoint on: `Cache-Control: no-store`, the `OnExternalAuthAsync` audit record, the access-token cookie and `MarkAuthenticationSucceeded` on success, and 200 with the `AuthResponse` or 401. The provider passes only how it authenticates the caller, so a change to that sequence reaches every provider at once. **EasyReasy.Auth.Google 1.3.0** and **EasyReasy.Auth.Microsoft 1.0.0** use it. See [section 10](#10-security-audit-logging-iso-27001-a9--a12).
+- **`ExternalSignInEndpoint.FindMissingServices(services, mapMethodName)`** returns a message for each service `HandleAsync` needs that is not registered, for a provider's startup check to report with its own in one exception.
+
+### New: `HttpContext.SetNoStoreCacheControl()`
+- **Sets `Cache-Control: no-store`**, as the built-in endpoints and every provider sign-in endpoint do, for an endpoint of your own that answers with a token or a sign-in URL.
 
 ## Migration from 5.13.0
 

@@ -1,10 +1,11 @@
 using Microsoft.AspNetCore.Http;
 
-namespace EasyReasy.Auth.Microsoft.Tests
+namespace EasyReasy.Auth.Tests
 {
     /// <summary>
-    /// An <see cref="IRefreshTokenService"/> used only to check that the sign-in endpoint passes a registered one to
-    /// the handler. Nothing on that path calls it, so every member throws rather than fabricate a result.
+    /// An <see cref="IRefreshTokenService"/> used only to check that a sign-in endpoint passes a registered one on.
+    /// Nothing on that path calls it, so every member throws rather than fabricate a result. Linked into each provider
+    /// package's test project.
     /// </summary>
     internal sealed class InertRefreshTokenService : IRefreshTokenService
     {

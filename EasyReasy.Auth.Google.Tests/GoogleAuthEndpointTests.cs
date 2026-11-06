@@ -1,5 +1,6 @@
 using EasyReasy.Auth;
 using EasyReasy.Auth.Google;
+using EasyReasy.Auth.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Http;
@@ -124,7 +125,7 @@ namespace EasyReasy.Auth.Google.Tests
             {
                 ResponseToReturn = new AuthResponse("jwt-token", "2099-01-01T00:00:00Z"),
             };
-            FakeRefreshTokenService refreshTokenService = new FakeRefreshTokenService();
+            InertRefreshTokenService refreshTokenService = new InertRefreshTokenService();
             await using HostedApp host = await HostedApp.StartAsync(validator, handler, auditLogger: null, refreshTokenService);
 
             HttpResponseMessage response = await host.Client.PostAsJsonAsync(
@@ -146,6 +147,20 @@ namespace EasyReasy.Auth.Google.Tests
             await using WebApplication app = builder.Build();
 
             Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoint());
+        }
+
+        [TestMethod]
+        public async Task GoogleEndpoint_NothingRegistered_NamesEveryMissingServiceInOneException()
+        {
+            WebApplicationBuilder builder = WebApplication.CreateBuilder();
+            builder.Logging.ClearProviders();
+
+            await using WebApplication app = builder.Build();
+
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoint());
+            StringAssert.Contains(exception.Message, nameof(IGoogleIdTokenValidator));
+            StringAssert.Contains(exception.Message, nameof(IGoogleAuthHandler));
+            StringAssert.Contains(exception.Message, nameof(IJwtTokenService));
         }
 
         [TestMethod]
@@ -373,18 +388,6 @@ namespace EasyReasy.Auth.Google.Tests
         }
 
         /// <summary>
-        /// <see cref="IAuthAuditLogger"/> whose <see cref="OnExternalAuthAsync"/> always throws, used to verify
-        /// that an audit-logger failure propagates out of the endpoint rather than being swallowed.
-        /// </summary>
-        private sealed class ThrowingExternalAuthLogger : IAuthAuditLogger
-        {
-            public Task OnExternalAuthAsync(HttpContext httpContext, ExternalAuthResult result)
-            {
-                throw new InvalidOperationException("audit logger failure");
-            }
-        }
-
-        /// <summary>
         /// <see cref="ILoggerProvider"/> that keeps the category and message of every error logged through it.
         /// </summary>
         /// <remarks>
@@ -428,32 +431,6 @@ namespace EasyReasy.Auth.Google.Tests
                     }
                 }
             }
-        }
-
-        /// <summary>
-        /// Inert <see cref="IRefreshTokenService"/> used only to assert that the endpoint resolves a
-        /// registered refresh-token service and passes the same instance through to the handler. None of
-        /// its members are exercised by that path, so they throw rather than return fabricated results.
-        /// </summary>
-        private sealed class FakeRefreshTokenService : IRefreshTokenService
-        {
-            public Task<string> CreateRefreshTokenAsync(string subject, string authType, string? serializedClaims, string? serializedRoles, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
-
-            public Task<RefreshTokenCreationResult> CreateRefreshTokenWithFamilyAsync(string subject, string authType, string? serializedClaims, string? serializedRoles, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
-
-            public Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
-
-            public Task<LogoutResult> LogoutAsync(string? refreshToken, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
-
-            public Task<SessionRevocationResult> InvalidateAllSessionsAsync(string subject, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
-
-            public Task RetireFamilyAsync(string? familyId, string? subject = null, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
         }
     }
 }

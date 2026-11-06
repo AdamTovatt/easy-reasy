@@ -1,5 +1,7 @@
 using Microsoft.IdentityModel.Tokens;
+using System.Buffers.Text;
 using System.Net;
+using System.Text;
 
 namespace EasyReasy.Auth.Microsoft.Tests
 {
@@ -179,6 +181,22 @@ namespace EasyReasy.Auth.Microsoft.Tests
             MicrosoftAuthCompletionResult result = await harness.CompleteAsync("any-code", state, harness.CreateBrowser());
 
             Assert.AreEqual(MicrosoftAuthFailureReason.InvalidState, result.FailureReason);
+        }
+
+        [TestMethod]
+        [DataRow("{\"unrelated\":true}")]
+        [DataRow("[1,2]")]
+        [DataRow("null")]
+        [DataRow("not json")]
+        public async Task Complete_StateSealedUnderTheKeyButNotAState_IsRefusedAsInvalidState(string plaintext)
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+            string state = Base64Url.EncodeToString(new AesGcmSecretCipher(MicrosoftAuthHarness.StateKey).Encrypt(Encoding.UTF8.GetBytes(plaintext)));
+
+            MicrosoftAuthCompletionResult result = await harness.CompleteAsync("any-code", state, harness.CreateBrowser());
+
+            Assert.AreEqual(MicrosoftAuthFailureReason.InvalidState, result.FailureReason);
+            Assert.AreEqual(0, harness.IdentityProvider.TokenRequests.Count);
         }
 
         [TestMethod]
@@ -734,7 +752,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
-        public async Task Complete_KeyInNeitherTheCachedNorTheFreshSet_IsRefusedAsInvalidSignatureAfterOneFetch()
+        public async Task Complete_KeyInNeitherTheCachedNorTheFreshSet_IsRefusedAsInvalidSignatureWithoutARetryLoop()
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             await harness.SignInAsync(MicrosoftAuthHarness.CreateRequest());

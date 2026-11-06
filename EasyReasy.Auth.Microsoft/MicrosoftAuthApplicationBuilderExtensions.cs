@@ -11,8 +11,6 @@ namespace EasyReasy.Auth.Microsoft
     /// </summary>
     public static class MicrosoftAuthApplicationBuilderExtensions
     {
-        private const string NoCacheHeaderValue = "no-store";
-
         /// <summary>
         /// Adds the two Microsoft sign-in endpoints. <c>POST /api/auth/microsoft/begin</c> takes an optional JSON body
         /// with a <c>loginHint</c>, sets the flow's binding cookie and returns the <c>authorizationUrl</c> to send the
@@ -32,7 +30,8 @@ namespace EasyReasy.Auth.Microsoft
         /// <see cref="ExternalSignInEndpoint.HandleAsync"/>, shared with every provider package: the audit record
         /// (here with the <see cref="MicrosoftAuthFailureReason"/> name as <see cref="ExternalAuthResult.FailureDetail"/>),
         /// the access-token cookie on success, the progressive-delay reset, and 200 or 401. Microsoft's token endpoint
-        /// or signing keys being unreachable is not a refusal: it propagates as a 500 and is not audited.
+        /// being unreachable or answering with a status other than 400 or 401 (a server error, a 429), or its signing
+        /// keys being unavailable, is not a refusal: it propagates as a 500 and is not audited.
         /// </para>
         /// </remarks>
         /// <param name="app">The web application.</param>
@@ -53,7 +52,7 @@ namespace EasyReasy.Auth.Microsoft
                 IMicrosoftAuthHandler handler,
                 HttpContext httpContext) =>
             {
-                httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
+                httpContext.SetNoStoreCacheControl();
 
                 MicrosoftSignInService signInService = new MicrosoftSignInService(authService, handler);
                 MicrosoftSignInBeginResponse response = await signInService.BeginAsync(request?.LoginHint, httpContext);
@@ -98,12 +97,7 @@ namespace EasyReasy.Auth.Microsoft
                     $"builder.Services.AddScoped<{nameof(IMicrosoftAuthHandler)}, MyMicrosoftAuthHandler>();");
             }
 
-            if (!serviceCheck.IsService(typeof(IJwtTokenService)))
-            {
-                errors.Add(
-                    $"{nameof(IJwtTokenService)} is not registered in the DI container. " +
-                    $"Call builder.Services.AddEasyReasyAuth(...) before {nameof(AddMicrosoftAuthEndpoints)}.");
-            }
+            errors.AddRange(ExternalSignInEndpoint.FindMissingServices(app.Services, nameof(AddMicrosoftAuthEndpoints)));
 
             if (errors.Count > 0)
             {

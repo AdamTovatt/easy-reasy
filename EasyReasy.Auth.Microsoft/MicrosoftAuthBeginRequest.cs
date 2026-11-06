@@ -61,6 +61,12 @@ namespace EasyReasy.Auth.Microsoft
         /// Begin sends it as <c>max_age</c> in whole seconds (at least one), and Complete refuses a token without
         /// <c>auth_time</c> or with one older than this.
         /// </summary>
+        /// <remarks>
+        /// The age is the registered <see cref="TimeProvider"/>'s now minus <c>auth_time</c>, with no clock skew
+        /// allowance (the token's lifetime check allows five minutes; this does not): a server clock ahead of
+        /// Microsoft's makes every sign-in look that much older, so keep the server clock synchronized, or allow for its
+        /// drift in the age chosen. An <c>auth_time</c> ahead of the server clock counts as no age.
+        /// </remarks>
         public TimeSpan? MaxAuthenticationAge { get; init; }
     }
 }

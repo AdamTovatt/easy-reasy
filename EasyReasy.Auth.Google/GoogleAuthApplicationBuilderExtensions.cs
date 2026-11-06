@@ -32,7 +32,7 @@ namespace EasyReasy.Auth.Google
         /// Thrown at startup if <see cref="IGoogleIdTokenValidator"/> (registered by <c>AddEasyReasyGoogleAuth</c>),
         /// the consumer-supplied <see cref="IGoogleAuthHandler"/>, or <see cref="IJwtTokenService"/> (registered by
         /// <c>AddEasyReasyAuth</c>) is missing from the DI container, so a misconfiguration fails fast instead of
-        /// as a per-request 500.
+        /// as a per-request 500. Every missing service is named in the one exception.
         /// </exception>
         public static WebApplication AddGoogleAuthEndpoint(this WebApplication app)
         {
@@ -54,27 +54,28 @@ namespace EasyReasy.Auth.Google
         private static void EnsureRequiredServicesRegistered(WebApplication app)
         {
             IServiceProviderIsService serviceCheck = app.Services.GetRequiredService<IServiceProviderIsService>();
+            List<string> errors = new List<string>();
 
             if (!serviceCheck.IsService(typeof(IGoogleIdTokenValidator)))
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"{nameof(IGoogleIdTokenValidator)} is not registered in the DI container. " +
                     $"Call builder.Services.AddEasyReasyGoogleAuth(...) before {nameof(AddGoogleAuthEndpoint)}.");
             }
 
             if (!serviceCheck.IsService(typeof(IGoogleAuthHandler)))
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"{nameof(IGoogleAuthHandler)} is not registered in the DI container. " +
                     $"Register your handler before {nameof(AddGoogleAuthEndpoint)}, e.g.: " +
                     $"builder.Services.AddScoped<{nameof(IGoogleAuthHandler)}, MyGoogleAuthHandler>();");
             }
 
-            if (!serviceCheck.IsService(typeof(IJwtTokenService)))
+            errors.AddRange(ExternalSignInEndpoint.FindMissingServices(app.Services, nameof(AddGoogleAuthEndpoint)));
+
+            if (errors.Count > 0)
             {
-                throw new InvalidOperationException(
-                    $"{nameof(IJwtTokenService)} is not registered in the DI container. " +
-                    $"Call builder.Services.AddEasyReasyAuth(...) before {nameof(AddGoogleAuthEndpoint)}.");
+                throw new InvalidOperationException(string.Join("\n", errors));
             }
         }
     }

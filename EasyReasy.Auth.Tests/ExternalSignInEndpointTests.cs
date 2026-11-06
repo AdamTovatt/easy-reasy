@@ -128,6 +128,51 @@ namespace EasyReasy.Auth.Tests
             await Assert.ThrowsExceptionAsync<ArgumentNullException>(() => ExternalSignInEndpoint.HandleAsync(new DefaultHttpContext(), missingAuthenticate!));
         }
 
+        [TestMethod]
+        public async Task HandleAsync_JwtTokenServiceNotRegistered_ThrowsInvalidOperationException()
+        {
+            DefaultHttpContext httpContext = new DefaultHttpContext { RequestServices = new ServiceCollection().BuildServiceProvider() };
+            bool authenticated = false;
+
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => ExternalSignInEndpoint.HandleAsync(httpContext, (jwt, refresh) =>
+            {
+                authenticated = true;
+                return Task.FromResult(ExternalAuthResult.Failed("provider", ExternalAuthFailureReason.InvalidToken));
+            }));
+            Assert.IsFalse(authenticated);
+        }
+
+        [TestMethod]
+        public void FindMissingServices_JwtTokenServiceNotRegistered_NamesItAndTheMapMethod()
+        {
+            using ServiceProvider services = new ServiceCollection().BuildServiceProvider();
+
+            string message = ExternalSignInEndpoint.FindMissingServices(services, "AddProviderEndpoint").Single();
+
+            StringAssert.Contains(message, nameof(IJwtTokenService));
+            StringAssert.Contains(message, "AddProviderEndpoint");
+        }
+
+        [TestMethod]
+        public void FindMissingServices_EasyReasyAuthRegistered_FindsNothing()
+        {
+            ServiceCollection collection = new ServiceCollection();
+            collection.AddEasyReasyAuth(Secret);
+            using ServiceProvider services = collection.BuildServiceProvider();
+
+            Assert.AreEqual(0, ExternalSignInEndpoint.FindMissingServices(services, "AddProviderEndpoint").Count);
+        }
+
+        [TestMethod]
+        public void SetNoStoreCacheControl_SetsTheHeader()
+        {
+            DefaultHttpContext httpContext = new DefaultHttpContext();
+
+            httpContext.SetNoStoreCacheControl();
+
+            Assert.AreEqual("no-store", httpContext.Response.Headers.CacheControl.ToString());
+        }
+
         private static string CreateToken()
         {
             return new JwtTokenService(Secret).CreateToken("subject-1", "user", [], [], DateTime.UtcNow.AddMinutes(5));
@@ -219,38 +264,6 @@ namespace EasyReasy.Auth.Tests
                     await App.DisposeAsync();
                 }
             }
-        }
-
-        private sealed class ThrowingExternalAuthLogger : IAuthAuditLogger
-        {
-            public Task OnExternalAuthAsync(HttpContext httpContext, ExternalAuthResult result)
-            {
-                throw new InvalidOperationException("audit logger failure");
-            }
-        }
-
-        /// <summary>
-        /// An <see cref="IRefreshTokenService"/> only handed to the provider; nothing on this path calls it.
-        /// </summary>
-        private sealed class InertRefreshTokenService : IRefreshTokenService
-        {
-            public Task<string> CreateRefreshTokenAsync(string subject, string authType, string? serializedClaims, string? serializedRoles, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
-
-            public Task<RefreshTokenCreationResult> CreateRefreshTokenWithFamilyAsync(string subject, string authType, string? serializedClaims, string? serializedRoles, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
-
-            public Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
-
-            public Task<LogoutResult> LogoutAsync(string? refreshToken, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
-
-            public Task<SessionRevocationResult> InvalidateAllSessionsAsync(string subject, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
-
-            public Task RetireFamilyAsync(string? familyId, string? subject = null, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
-                => throw new NotImplementedException();
         }
     }
 }

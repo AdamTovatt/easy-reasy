@@ -11,7 +11,33 @@ namespace EasyReasy.Auth
     /// </summary>
     public static class ExternalSignInEndpoint
     {
-        private const string NoCacheHeaderValue = "no-store";
+        /// <summary>
+        /// Finds, without instantiating anything, the services <see cref="HandleAsync"/> needs that are not
+        /// registered, for a provider package's startup check to report along with its own.
+        /// </summary>
+        /// <param name="services">The application's root service provider.</param>
+        /// <param name="mapMethodName">The provider's endpoint-mapping method, named in each message (for example
+        /// <c>AddGoogleAuthEndpoint</c>).</param>
+        /// <returns>One message per missing service; empty when all are registered.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="services"/> is null.</exception>
+        /// <exception cref="ArgumentException"><paramref name="mapMethodName"/> is blank.</exception>
+        public static IReadOnlyList<string> FindMissingServices(IServiceProvider services, string mapMethodName)
+        {
+            ArgumentNullException.ThrowIfNull(services);
+            ArgumentException.ThrowIfNullOrWhiteSpace(mapMethodName);
+
+            IServiceProviderIsService serviceCheck = services.GetRequiredService<IServiceProviderIsService>();
+            List<string> errors = new List<string>();
+
+            if (!serviceCheck.IsService(typeof(IJwtTokenService)))
+            {
+                errors.Add(
+                    $"{nameof(IJwtTokenService)} is not registered in the DI container. " +
+                    $"Call builder.Services.AddEasyReasyAuth(...) before {mapMethodName}.");
+            }
+
+            return errors;
+        }
 
         /// <summary>
         /// Runs a sign-in endpoint's request: sets <c>Cache-Control: no-store</c>, calls
@@ -45,7 +71,7 @@ namespace EasyReasy.Auth
             ArgumentNullException.ThrowIfNull(httpContext);
             ArgumentNullException.ThrowIfNull(authenticate);
 
-            httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
+            httpContext.SetNoStoreCacheControl();
 
             IJwtTokenService jwtTokenService = httpContext.RequestServices.GetRequiredService<IJwtTokenService>();
             IRefreshTokenService? refreshTokenService = httpContext.RequestServices.GetService<IRefreshTokenService>();

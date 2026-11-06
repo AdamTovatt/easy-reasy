@@ -9,7 +9,6 @@ namespace EasyReasy.Auth
     /// </summary>
     public static class AuthApplicationBuilderExtensions
     {
-        private const string NoCacheHeaderValue = "no-store";
 
         /// <summary>
         /// Builds the <c>errors</c> messages for one field that a credential-less request left unset.
@@ -150,7 +149,7 @@ namespace EasyReasy.Auth
         {
             app.MapPost("/api/auth/apikey", async (ApiKeyAuthRequest request, IAuthRequestValidationService validationService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
-                httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
+                httpContext.SetNoStoreCacheControl();
 
                 Dictionary<string, string[]> missingFields = CollectMissingApiKeyFields(request);
 
@@ -214,7 +213,7 @@ namespace EasyReasy.Auth
         {
             app.MapPost("/api/auth/login", async (LoginAuthRequest request, IAuthRequestValidationService validationService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
-                httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
+                httpContext.SetNoStoreCacheControl();
 
                 Dictionary<string, string[]> missingFields = CollectMissingLoginFields(request);
 
@@ -274,7 +273,7 @@ namespace EasyReasy.Auth
         {
             app.MapPost("/api/auth/refresh", async (RefreshRequest request, IRefreshTokenService refreshTokenService, IJwtTokenService jwtTokenService, HttpContext httpContext) =>
             {
-                httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
+                httpContext.SetNoStoreCacheControl();
                 RefreshResult result = await refreshTokenService.RefreshAsync(request.RefreshToken, jwtTokenService, httpContext, httpContext.RequestAborted);
 
                 if (result.Success)
@@ -326,7 +325,7 @@ namespace EasyReasy.Auth
         {
             app.MapPost("/api/auth/logout", async (LogoutRequest request, IRefreshTokenService refreshTokenService, HttpContext httpContext) =>
             {
-                httpContext.Response.Headers["Cache-Control"] = NoCacheHeaderValue;
+                httpContext.SetNoStoreCacheControl();
                 await refreshTokenService.LogoutAsync(request.RefreshToken, httpContext, httpContext.RequestAborted);
 
                 // On every 204, known token or not, so the response still does not reveal which it was.

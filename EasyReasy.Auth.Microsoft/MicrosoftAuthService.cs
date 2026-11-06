@@ -1,10 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
-using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Nodes;
 
 namespace EasyReasy.Auth.Microsoft
@@ -86,7 +83,7 @@ namespace EasyReasy.Auth.Microsoft
                 ["scope"] = MicrosoftAuthority.Scope,
                 ["state"] = protectedState,
                 ["nonce"] = nonce,
-                ["code_challenge"] = CreateCodeChallenge(codeVerifier),
+                ["code_challenge"] = MicrosoftHash.Sha256(codeVerifier),
                 ["code_challenge_method"] = "S256",
             };
 
@@ -288,11 +285,6 @@ namespace EasyReasy.Auth.Microsoft
                 // ValidateBeginRequest refuses an undefined member before anything is issued.
                 _ => throw new UnreachableException($"Unhandled {nameof(MicrosoftAuthPrompt)} {prompt}."),
             };
-        }
-
-        private static string CreateCodeChallenge(string codeVerifier)
-        {
-            return Base64Url.EncodeToString(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));
         }
     }
 }
