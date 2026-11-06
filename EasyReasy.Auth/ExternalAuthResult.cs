@@ -3,7 +3,7 @@ namespace EasyReasy.Auth
     /// <summary>
     /// Represents the result of an external identity-provider authentication attempt
     /// (for example a Google, Apple, or Microsoft sign-in). Use the static factory methods
-    /// <see cref="Succeeded"/> and <see cref="Failed"/> to create instances.
+    /// <see cref="Succeeded"/> and the two <c>Failed</c> overloads to create instances.
     /// </summary>
     /// <remarks>
     /// Deliberately does not carry the raw provider token, so that consumer code logging the whole result
@@ -42,18 +42,29 @@ namespace EasyReasy.Auth
         /// </summary>
         public ExternalAuthFailureReason? FailureReason { get; }
 
+        /// <summary>
+        /// The provider package's own name for why the attempt failed (for example <c>"TenantNotAllowed"</c>),
+        /// when the provider reports one. <see cref="FailureReason"/> sorts every provider's refusals into the
+        /// same few categories; this tells refusals within a category apart in an audit record, without the core
+        /// enum having to learn each provider's reasons. Null on success, and on a failure the provider gave no
+        /// detail for.
+        /// </summary>
+        public string? FailureDetail { get; }
+
         private ExternalAuthResult(
             string provider,
             bool success,
             AuthResponse? authResponse,
             string? attemptedSubject,
-            ExternalAuthFailureReason? failureReason)
+            ExternalAuthFailureReason? failureReason,
+            string? failureDetail)
         {
             Provider = provider;
             Success = success;
             AuthResponse = authResponse;
             AttemptedSubject = attemptedSubject;
             FailureReason = failureReason;
+            FailureDetail = failureDetail;
         }
 
         /// <summary>
@@ -65,7 +76,7 @@ namespace EasyReasy.Auth
         /// <returns>A successful <see cref="ExternalAuthResult"/>.</returns>
         public static ExternalAuthResult Succeeded(string provider, AuthResponse authResponse, string subject)
         {
-            return new ExternalAuthResult(provider, true, authResponse, subject, null);
+            return new ExternalAuthResult(provider, true, authResponse, subject, null, null);
         }
 
         /// <summary>
@@ -81,7 +92,29 @@ namespace EasyReasy.Auth
         /// <returns>A failed <see cref="ExternalAuthResult"/>.</returns>
         public static ExternalAuthResult Failed(string provider, ExternalAuthFailureReason reason, string? attemptedSubject = null)
         {
-            return new ExternalAuthResult(provider, false, null, attemptedSubject, reason);
+            return new ExternalAuthResult(provider, false, null, attemptedSubject, reason, null);
+        }
+
+        /// <summary>
+        /// Creates a failed external authentication result that also names the provider's own reason.
+        /// </summary>
+        /// <remarks>
+        /// A separate overload rather than a new optional parameter on the other one, so a provider package
+        /// compiled against the three-parameter signature keeps binding to it at run time.
+        /// </remarks>
+        /// <param name="provider">The identity provider that handled the attempt (for example <c>"microsoft"</c>).</param>
+        /// <param name="reason">The category the failure falls into.</param>
+        /// <param name="attemptedSubject">
+        /// The subject identifier that was attempted, when available, on the same terms as the other overload.
+        /// </param>
+        /// <param name="failureDetail">The provider's name for the failure, recorded as <see cref="FailureDetail"/>.</param>
+        /// <returns>A failed <see cref="ExternalAuthResult"/>.</returns>
+        /// <exception cref="ArgumentException"><paramref name="failureDetail"/> is null, empty or whitespace.</exception>
+        public static ExternalAuthResult Failed(string provider, ExternalAuthFailureReason reason, string? attemptedSubject, string failureDetail)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(failureDetail);
+
+            return new ExternalAuthResult(provider, false, null, attemptedSubject, reason, failureDetail);
         }
     }
 }

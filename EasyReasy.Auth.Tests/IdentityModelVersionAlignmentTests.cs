@@ -8,8 +8,8 @@ namespace EasyReasy.Auth.Tests
     /// Guards the IdentityModel package family against resolving at mixed versions. JwtBearer brings some of the
     /// family transitively while EasyReasy.Auth references others directly, and a mixed set rejects every token the
     /// library issues (IDX14102). The check reads the running test assembly's own <c>.deps.json</c>, which is the set
-    /// a consumer of the packages under test resolves, so this file is also linked into
-    /// <c>EasyReasy.Auth.Google.Tests</c>.
+    /// a consumer of the packages under test resolves, so this file is also linked into each provider package's test
+    /// project.
     /// </summary>
     [TestClass]
     public class IdentityModelVersionAlignmentTests
