@@ -161,7 +161,7 @@ namespace EasyReasy.Auth.Microsoft
                 return MicrosoftAuthCompletionResult.Refused(refusalReason, validation.UserInfo);
             }
 
-            return MicrosoftAuthCompletionResult.Succeeded(validation.UserInfo, flow.CallerBinding);
+            return MicrosoftAuthCompletionResult.Succeeded(validation.UserInfo, flow.CallerBinding, idToken);
         }
 
         /// <summary>

@@ -35,6 +35,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         private readonly FakeTimeProvider _clock;
         private readonly ConcurrentDictionary<string, PendingCode> _codes = new ConcurrentDictionary<string, PendingCode>();
         private readonly ConcurrentQueue<Dictionary<string, string>> _tokenRequests = new ConcurrentQueue<Dictionary<string, string>>();
+        private readonly ConcurrentQueue<string> _redeemedIdTokens = new ConcurrentQueue<string>();
         private int _metadataRequestCount;
         private int _keysRequestCount;
 
@@ -80,6 +81,11 @@ namespace EasyReasy.Auth.Microsoft.Tests
         public int KeysRequestCount => _keysRequestCount;
 
         public IReadOnlyList<Dictionary<string, string>> TokenRequests => _tokenRequests.ToArray();
+
+        /// <summary>
+        /// Every ID token the token endpoint handed out for a redeemed code, in order.
+        /// </summary>
+        public IReadOnlyList<string> RedeemedIdTokens => _redeemedIdTokens.ToArray();
 
         public static RsaSecurityKey CreateKey(string keyId)
         {
@@ -204,6 +210,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
                 return Json(HttpStatusCode.BadRequest, new Dictionary<string, object> { ["error"] = "invalid_grant" });
             }
 
+            _redeemedIdTokens.Enqueue(pending.IdToken);
             return Json(HttpStatusCode.OK, new Dictionary<string, object>
             {
                 ["token_type"] = "Bearer",
