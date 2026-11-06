@@ -21,6 +21,7 @@
   <ItemGroup>
     <Compile Include="..\EasyReasy.Auth.Tests\IdentityModelVersionAlignmentTests.cs" Link="IdentityModelVersionAlignmentTests.cs" />
     <Compile Include="..\EasyReasy.Auth.Tests\FakeTimeProvider.cs" Link="FakeTimeProvider.cs" />
+    <Compile Include="..\EasyReasy.Auth.Tests\RecordingAuditLogger.cs" Link="RecordingAuditLogger.cs" />
   </ItemGroup>
 
   <ItemGroup>

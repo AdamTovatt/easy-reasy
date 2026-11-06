@@ -19,7 +19,7 @@
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <VersionPrefix>1.0.0</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>First release: Microsoft sign-in for work and school accounts through the server-side authorization code flow with PKCE, a browser-bound encrypted state, ID token validation against Microsoft's signing keys, tenant rules, and per-request max authentication age and Conditional Access authentication context checks. Requires EasyReasy.Auth 5.14.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-microsoft-v$(VersionPrefix)/EasyReasy.Auth.Microsoft/README.md</PackageReleaseNotes>
+    <PackageReleaseNotes>First release: Microsoft sign-in for work and school accounts through the server-side authorization code flow with PKCE, a browser-bound encrypted state, ID token validation against Microsoft's signing keys, tenant rules, and per-request max authentication age and Conditional Access authentication context checks, with the sign-in endpoints POST /api/auth/microsoft/begin and POST /api/auth/microsoft reporting every attempt to the audit logger. Requires EasyReasy.Auth 5.14.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-microsoft-v$(VersionPrefix)/EasyReasy.Auth.Microsoft/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

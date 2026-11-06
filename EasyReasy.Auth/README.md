@@ -615,7 +615,7 @@ await _refreshTokenService.RetireFamilyAsync(priorFamilyId, HttpContext.GetUserI
 
 ### 10. Security Audit Logging (ISO 27001 A.9 / A.12)
 
-Every authentication event the library surfaces — success or failure — is reported through a single optional DI service: `IAuthAuditLogger`. Register an implementation and the built-in endpoints (plus the programmatic triggers `RefreshTokenService.InvalidateAllSessionsAsync` and single-session enforcement on login) will invoke it with a structured result object. Provider integration packages route through the same service: each provider package's sign-in endpoint (such as `EasyReasy.Auth.Google`'s) invokes `OnExternalAuthAsync`, so external sign-ins land in the same audit sink as everything else. `ExternalAuthResult.FailureReason` sorts every provider's refusals into the same few categories; `FailureDetail` carries the provider package's own name for the refusal (for example `TenantNotAllowed` from EasyReasy.Auth.Microsoft) when it reports one, so the record can tell refusals within a category apart.
+Every authentication event the library surfaces — success or failure — is reported through a single optional DI service: `IAuthAuditLogger`. Register an implementation and the built-in endpoints (plus the programmatic triggers `RefreshTokenService.InvalidateAllSessionsAsync` and single-session enforcement on login) will invoke it with a structured result object. Provider integration packages route through the same service: each provider package's sign-in endpoint (such as `EasyReasy.Auth.Google`'s) invokes `OnExternalAuthAsync`, so external sign-ins land in the same audit sink as everything else. A provider package builds that endpoint on `ExternalSignInEndpoint.HandleAsync`, which writes the audit record, then on success sets the access-token cookie and calls `MarkAuthenticationSucceeded`, and answers 200 or 401, the same way for every provider. `ExternalAuthResult.FailureReason` sorts every provider's refusals into the same few categories; `FailureDetail` carries the provider package's own name for the refusal (for example `TenantNotAllowed` from EasyReasy.Auth.Microsoft) when it reports one, so the record can tell refusals within a category apart.
 
 | Event | Hook | Control | Typical data to log |
 |---|---|---|---|
@@ -1225,12 +1225,12 @@ window.open(`/files/${fileId}`, "_blank");
 - **Validation is unchanged,** and your own `JwtBearerEvents` keep working exactly as in section 14, set in `Configure` or `PostConfigure`. Both fallbacks share one events wrapper, so losing it fails at startup for either, as described in section 14.
 
 **The built-in endpoints, when `CookieTokenPaths` is non-empty:**
-- **Login** (`/api/auth/login`) and **Google sign-in** (`/api/auth/google`, from EasyReasy.Auth.Google) set the cookie on success.
+- **Login** (`/api/auth/login`) and each provider package's sign-in endpoint (such as `/api/auth/google` from EasyReasy.Auth.Google) set the cookie on success, the provider packages through `ExternalSignInEndpoint.HandleAsync`.
 - **Refresh** sets it on success and clears it on failure.
 - **Logout** clears it on every 204, so the response still does not reveal whether the token was known.
 - **The API-key endpoint never sets it**: it serves programs, not browsers.
 - **The JSON responses are unchanged**, so your app's API calls keep sending the header.
-- **A token too large for the cookie does not fail the sign-in.** When the cookie's name and value together would exceed 4096 bytes, login, Google sign-in and refresh still answer 200 with the token, expire the cookie instead of writing it, and log an error naming the size and the limit under the category `EasyReasy.Auth.AccessTokenCookie`. By then the session is already committed (a refresh has used up the old refresh token), so a 500 would lose it. That browser cannot open cookie-path tabs until a token fits, so watch for that error. A token without `exp` is a bug in the issuer and still fails the request.
+- **A token too large for the cookie does not fail the sign-in.** When the cookie's name and value together would exceed 4096 bytes, login, provider sign-ins and refresh still answer 200 with the token, expire the cookie instead of writing it, and log an error naming the size and the limit under the category `EasyReasy.Auth.AccessTokenCookie`. By then the session is already committed (a refresh has used up the old refresh token), so a 500 would lose it. That browser cannot open cookie-path tabs until a token fits, so watch for that error. A token without `exp` is a bug in the issuer and still fails the request.
 
 **Endpoints of your own** get none of this automatically. Call `HttpContext.SetAccessTokenCookie(accessToken)` wherever you hand a browser an access token, and `HttpContext.ClearAccessTokenCookie()` wherever you end or refuse a session: every failed or refused refresh (an idle-timeout refusal included) and your own logout. Where the session is already committed when you write the cookie, as after a refresh, call `HttpContext.TrySetAccessTokenCookie(accessToken)` instead: it behaves as the built-in endpoints do for an oversized token and returns `false`. All three throw `InvalidOperationException` when `CookieTokenPaths` is empty rather than silently doing nothing, so code that runs either way asks `HttpContext.IsAccessTokenCookieEnabled()` first:
 
@@ -1412,7 +1412,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher with key rotation — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
 - **WebAuthn/FIDO2 second factor**: Registration and authentication ceremonies verified server-side (attestation `none`, ES256/RS256), with result objects naming the individual check that declined a ceremony and the signature-counter rule platform authenticators need
 - **WebSocket authentication**: `QueryStringTokenPaths` lets listed paths read the token from the `access_token` query string, validated exactly as a header token, with the header taking precedence
-- **Cookie tokens for files in a new tab**: `CookieTokenPaths` lets listed paths read the token from the `__Secure-access_token` cookie on `GET` and `HEAD`, after the header and the query string; the built-in login, Google sign-in, refresh and logout endpoints set and clear it
+- **Cookie tokens for files in a new tab**: `CookieTokenPaths` lets listed paths read the token from the `__Secure-access_token` cookie on `GET` and `HEAD`, after the header and the query string; the built-in login, refresh and logout endpoints and each provider package's sign-in endpoint set and clear it
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
 - **Claim access**: Retrieve any claim value by key or enum via `GetClaimValue()`
@@ -1453,6 +1453,9 @@ Version 5.14.0 is additive: no existing signature, option or default changed, an
 
 ### New: `TimeProviderLifetimeValidator` is public
 - **`TimeProviderLifetimeValidator.Create(timeProvider)`** returns the lifetime validator the library installs for bearer tokens, for a `TokenValidationParameters` you build yourself. See [section 16](#16-controlling-the-clock-timeprovider).
+
+### New: `ExternalSignInEndpoint.HandleAsync`
+- **The part every identity-provider sign-in endpoint shares**, for a provider package to build its endpoint on: `Cache-Control: no-store`, the `OnExternalAuthAsync` audit record, the access-token cookie and `MarkAuthenticationSucceeded` on success, and 200 with the `AuthResponse` or 401. The provider passes only how it authenticates the caller, so a change to that sequence reaches every provider at once. **EasyReasy.Auth.Google 1.3.0** and **EasyReasy.Auth.Microsoft 1.0.0** use it. See [section 10](#10-security-audit-logging-iso-27001-a9--a12).
 
 ## Migration from 5.13.0
 

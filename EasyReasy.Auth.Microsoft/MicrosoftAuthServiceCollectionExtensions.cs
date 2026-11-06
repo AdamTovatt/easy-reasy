@@ -17,7 +17,8 @@ namespace EasyReasy.Auth.Microsoft
 
         /// <summary>
         /// Registers <see cref="IMicrosoftAuthService"/> and what it needs. To also serve the sign-in endpoints,
-        /// register an <c>IMicrosoftAuthHandler</c> and call <c>AddMicrosoftAuthEndpoints</c>.
+        /// register an <see cref="IMicrosoftAuthHandler"/> and call
+        /// <see cref="MicrosoftAuthApplicationBuilderExtensions.AddMicrosoftAuthEndpoints"/>.
         /// </summary>
         /// <remarks>
         /// Registers <see cref="TimeProvider.System"/> as the clock unless one is registered already; state expiry,
