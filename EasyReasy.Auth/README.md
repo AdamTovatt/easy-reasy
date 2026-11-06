@@ -615,13 +615,13 @@ await _refreshTokenService.RetireFamilyAsync(priorFamilyId, HttpContext.GetUserI
 
 ### 10. Security Audit Logging (ISO 27001 A.9 / A.12)
 
-Every authentication event the library surfaces — success or failure — is reported through a single optional DI service: `IAuthAuditLogger`. Register an implementation and the built-in endpoints (plus the programmatic triggers `RefreshTokenService.InvalidateAllSessionsAsync` and single-session enforcement on login) will invoke it with a structured result object. Provider integration packages route through the same service: the `EasyReasy.Auth.Google` sign-in endpoint invokes `OnExternalAuthAsync`, so external sign-ins land in the same audit sink as everything else.
+Every authentication event the library surfaces — success or failure — is reported through a single optional DI service: `IAuthAuditLogger`. Register an implementation and the built-in endpoints (plus the programmatic triggers `RefreshTokenService.InvalidateAllSessionsAsync` and single-session enforcement on login) will invoke it with a structured result object. Provider integration packages route through the same service: each provider package's sign-in endpoint (such as `EasyReasy.Auth.Google`'s) invokes `OnExternalAuthAsync`, so external sign-ins land in the same audit sink as everything else. `ExternalAuthResult.FailureReason` sorts every provider's refusals into the same few categories; `FailureDetail` carries the provider package's own name for the refusal (for example `TenantNotAllowed` from EasyReasy.Auth.Microsoft) when it reports one, so the record can tell refusals within a category apart.
 
 | Event | Hook | Control | Typical data to log |
 |---|---|---|---|
 | Successful / failed username+password login, and a request that carried no credentials (`MissingCredentials`) | `OnLoginAsync(httpContext, LoginResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedSubject`, `FailureReason`, IP, User-Agent, time |
 | Successful / failed API key auth, and a request that carried no key (`MissingKey`) | `OnApiKeyAuthAsync(httpContext, ApiKeyAuthResult)` | ISO 27001 A.12.4.1 | outcome, `AttemptedClientId`, `FailureReason`, IP, User-Agent, time |
-| Successful / failed external identity-provider sign-in (e.g. Google) | `OnExternalAuthAsync(httpContext, ExternalAuthResult)` | ISO 27001 A.12.4.1 | outcome, `Provider`, `AttemptedSubject`, `FailureReason`, IP, User-Agent, time |
+| Successful / failed external identity-provider sign-in (e.g. Google, Microsoft) | `OnExternalAuthAsync(httpContext, ExternalAuthResult)` | ISO 27001 A.12.4.1 | outcome, `Provider`, `AttemptedSubject`, `FailureReason`, `FailureDetail`, IP, User-Agent, time |
 | Refresh (incl. `TheftDetected`, `DeniedByResolver`, `ResolverError`) | `OnRefreshAsync(httpContext, RefreshResult)` | ISO 27001 A.12.4.1 | outcome, `Subject`, `FamilyId`, `FailureReason`, IP, time |
 | Logout | `OnLogoutAsync(httpContext, LogoutResult)` | ISO 27001 A.9.2.6 | `WasKnown`, `Subject`, `FamilyId`, IP, time |
 | Bulk session revocation | `OnSessionsInvalidatedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
@@ -638,7 +638,7 @@ All methods have default no-op implementations — implement only the events you
 
 ⚠️ **That path is not rate limited.** A `400` neither increments nor clears the progressive-delay failure count, so an anonymous caller can drive audit writes through your `IAuthAuditLogger` as fast as it can post. This is deliberate — a request that never became an attempt should not count as a failed one — but if your audit sink is a database, budget for it or rate limit ahead of the endpoint.
 
-⚠️ **Do not serialise the whole result object on the success path.** `LoginResult`, `ApiKeyAuthResult`, and `ExternalAuthResult` embed an `AuthResponse` that carries the issued JWT access token and (when refresh tokens are enabled) the raw refresh token — both are bearer credentials. Log **metadata** from the result (`Success`, `AttemptedSubject` / `AttemptedClientId`, `FailureReason`) — never log `result.AuthResponse` with a structured logger's destructuring syntax (e.g. Serilog `{@result}`) or `JsonSerializer.Serialize(result)`. The example below follows the right pattern.
+⚠️ **Do not serialise the whole result object on the success path.** `LoginResult`, `ApiKeyAuthResult`, and `ExternalAuthResult` embed an `AuthResponse` that carries the issued JWT access token and (when refresh tokens are enabled) the raw refresh token — both are bearer credentials. Log **metadata** from the result (`Success`, `AttemptedSubject` / `AttemptedClientId`, `FailureReason`, `FailureDetail`) — never log `result.AuthResponse` with a structured logger's destructuring syntax (e.g. Serilog `{@result}`) or `JsonSerializer.Serialize(result)`. The example below follows the right pattern.
 
 ```csharp
 public class MyAuditLogger : IAuthAuditLogger
@@ -1287,6 +1287,7 @@ clock.Advance(TimeSpan.FromHours(2));
 **What stays with your application:**
 - **Compute `expiresAt` from the same clock in code that runs under a fake one.** The examples above use `DateTime.UtcNow`, which is right on the system clock. `CreateToken` takes the expiry you pass, and computed from `DateTime.UtcNow` under a fake clock, it lands at a different instant from the `nbf` the library stamps, and a fake clock far enough ahead makes `CreateToken` throw because the token would expire before it is valid. Inject `TimeProvider` where you mint tokens and use `timeProvider.GetUtcNow()`.
 - **Register the clock in DI, not on `JwtBearerOptions.TimeProvider`.** Issuing and refreshing read DI, so a clock set only on the bearer options would split them from validation.
+- **Validating another issuer's tokens on the same clock.** `TimeProviderLifetimeValidator.Create(timeProvider)` returns that validator, so a `TokenValidationParameters` you build yourself, for example to check an identity provider's ID token, can apply the same rule: `LifetimeValidator = TimeProviderLifetimeValidator.Create(timeProvider)`. EasyReasy.Auth.Microsoft uses it for Microsoft's ID tokens.
 - **A lifetime validator of your own opts out.** The library sets its validator in a plain `Configure`, so if you assign `TokenValidationParameters.LifetimeValidator`, or replace `TokenValidationParameters`, in your own `Configure<JwtBearerOptions>` registered after `AddEasyReasyAuth`, yours wins, and lifetime is then checked however yours checks it. One registered before it is overwritten, since the library assigns `TokenValidationParameters` whole.
 - **`ProgressiveDelayMiddleware` keeps the system clock.** It measures failed-attempt delays, not token lifetime.
 
@@ -1441,6 +1442,17 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.13.1
+
+Version 5.14.0 is additive: no existing signature, option or default changed, and a provider package built against 5.13.1 runs unchanged.
+
+### New: `ExternalAuthResult.FailureDetail`
+- **The provider package's own name for a refusal**, set through a new overload `ExternalAuthResult.Failed(provider, reason, attemptedSubject, failureDetail)`. `FailureReason` and its three values are unchanged; the detail tells refusals within one of them apart. **EasyReasy.Auth.Microsoft 1.0.0** sets it on every refusal it makes itself (a refusal by your handler carries none); EasyReasy.Auth.Google sets none, so it stays null there. See [section 10](#10-security-audit-logging-iso-27001-a9--a12).
+- **The existing three-parameter `Failed` is kept as its own overload** rather than gaining an optional parameter, so a provider package compiled against it keeps binding to it.
+
+### New: `TimeProviderLifetimeValidator` is public
+- **`TimeProviderLifetimeValidator.Create(timeProvider)`** returns the lifetime validator the library installs for bearer tokens, for a `TokenValidationParameters` you build yourself. See [section 16](#16-controlling-the-clock-timeprovider).
 
 ## Migration from 5.13.0
 

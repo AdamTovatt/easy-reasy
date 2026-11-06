@@ -17,9 +17,9 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>5.13.1</VersionPrefix>
+    <VersionPrefix>5.14.0</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>With QueryStringTokenPaths or CookieTokenPaths set, a JwtBearerEvents handler set in a PostConfigure registered after AddEasyReasyAuth now runs, after the handlers set in Configure, unless those already decided the outcome. A later PostConfigure that replaces JwtBearerOptions.Events or sets EventsType, and so drops the token fallback, now fails at startup with an OptionsValidationException instead of silently. See https://github.com/AdamTovatt/easy-reasy/blob/auth-v$(VersionPrefix)/EasyReasy.Auth/README.md#migration-from-5130</PackageReleaseNotes>
+    <PackageReleaseNotes>ExternalAuthResult gains FailureDetail, the provider package's own name for a refusal, set through a new four-parameter Failed overload; the existing Failed overload and ExternalAuthFailureReason are unchanged, so provider packages built against 5.13.1 run as before. TimeProviderLifetimeValidator is now public, so a TokenValidationParameters built for another issuer's tokens can check lifetime on the registered clock. Both are used by EasyReasy.Auth.Microsoft 1.0.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-v$(VersionPrefix)/EasyReasy.Auth/README.md#migration-from-5131</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

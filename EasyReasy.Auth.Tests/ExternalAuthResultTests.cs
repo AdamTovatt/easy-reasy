@@ -52,5 +52,48 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual(ExternalAuthFailureReason.Rejected, ExternalAuthResult.Failed("google", ExternalAuthFailureReason.Rejected).FailureReason);
             Assert.AreEqual(ExternalAuthFailureReason.Other, ExternalAuthResult.Failed("google", ExternalAuthFailureReason.Other).FailureReason);
         }
+
+        [TestMethod]
+        public void Failed_WithoutFailureDetail_ShouldLeaveItNull()
+        {
+            ExternalAuthResult result = ExternalAuthResult.Failed("google", ExternalAuthFailureReason.Rejected, "sub-99");
+
+            Assert.IsNull(result.FailureDetail);
+        }
+
+        [TestMethod]
+        public void Failed_WithFailureDetail_ShouldPopulateItAlongsideTheReasonAndSubject()
+        {
+            ExternalAuthResult result = ExternalAuthResult.Failed("microsoft", ExternalAuthFailureReason.Rejected, "tid:oid", "TenantNotAllowed");
+
+            Assert.IsFalse(result.Success);
+            Assert.AreEqual("microsoft", result.Provider);
+            Assert.AreEqual(ExternalAuthFailureReason.Rejected, result.FailureReason);
+            Assert.AreEqual("tid:oid", result.AttemptedSubject);
+            Assert.AreEqual("TenantNotAllowed", result.FailureDetail);
+        }
+
+        [TestMethod]
+        public void Failed_WithFailureDetailAndNoSubject_ShouldLeaveTheSubjectNull()
+        {
+            ExternalAuthResult result = ExternalAuthResult.Failed("microsoft", ExternalAuthFailureReason.InvalidToken, null, "InvalidSignature");
+
+            Assert.IsNull(result.AttemptedSubject);
+            Assert.AreEqual("InvalidSignature", result.FailureDetail);
+        }
+
+        [TestMethod]
+        public void Failed_WithBlankFailureDetail_ShouldThrow()
+        {
+            Assert.ThrowsException<ArgumentException>(() => ExternalAuthResult.Failed("microsoft", ExternalAuthFailureReason.Rejected, null, " "));
+        }
+
+        [TestMethod]
+        public void Succeeded_ShouldLeaveFailureDetailNull()
+        {
+            ExternalAuthResult result = ExternalAuthResult.Succeeded("microsoft", new AuthResponse("jwt-token", "2025-01-01T00:00:00Z"), "tid:oid");
+
+            Assert.IsNull(result.FailureDetail);
+        }
     }
 }

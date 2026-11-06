@@ -13,11 +13,30 @@ namespace EasyReasy.Auth
     /// is the only public hook, and it replaces the built-in check entirely, so this mirrors IdentityModel's rules,
     /// exception types, properties and messages (including their IDX codes, which consumers match on). A differential
     /// test runs a grid of cases through both and requires identical outcomes.
+    /// <para>
+    /// Public so that a package validating another issuer's tokens, such as <c>EasyReasy.Auth.Microsoft</c>
+    /// validating ID tokens, reads the same clock by the same rule as this library's own bearer validation.
+    /// </para>
     /// </remarks>
-    internal static class TimeProviderLifetimeValidator
+    public static class TimeProviderLifetimeValidator
     {
-        internal static LifetimeValidator Create(TimeProvider timeProvider)
+        /// <summary>
+        /// Creates a lifetime validator that checks <c>nbf</c> and <c>exp</c> against <paramref name="timeProvider"/>,
+        /// honouring <see cref="TokenValidationParameters.ValidateLifetime"/>,
+        /// <see cref="TokenValidationParameters.RequireExpirationTime"/> and <see cref="TokenValidationParameters.ClockSkew"/>
+        /// exactly as IdentityModel's built-in check does.
+        /// </summary>
+        /// <param name="timeProvider">The clock to check the token's lifetime against.</param>
+        /// <returns>
+        /// A delegate to assign to <see cref="TokenValidationParameters.LifetimeValidator"/>. It returns <c>true</c> for a
+        /// valid lifetime and throws IdentityModel's own exception otherwise: <see cref="SecurityTokenNoExpirationException"/>,
+        /// <see cref="SecurityTokenInvalidLifetimeException"/>, <see cref="SecurityTokenNotYetValidException"/> or
+        /// <see cref="SecurityTokenExpiredException"/>.
+        /// </returns>
+        public static LifetimeValidator Create(TimeProvider timeProvider)
         {
+            ArgumentNullException.ThrowIfNull(timeProvider);
+
             return (notBefore, expires, securityToken, validationParameters) =>
             {
                 Validate(timeProvider.GetUtcNow().UtcDateTime, notBefore, expires, securityToken, validationParameters);

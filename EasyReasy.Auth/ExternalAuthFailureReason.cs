@@ -9,13 +9,15 @@ namespace EasyReasy.Auth
     {
         /// <summary>
         /// The identity-provider token did not validate — for example an invalid signature, an expired
-        /// token, an audience mismatch, or an identity whose hosted domain/tenant is not allowed.
+        /// token, an audience mismatch, or (in EasyReasy.Auth.Google) an identity whose hosted domain is not allowed.
         /// </summary>
         InvalidToken,
 
         /// <summary>
-        /// The token validated and the identity is genuine, but the application declined it — for example
-        /// the user is not provisioned, or is administratively disabled.
+        /// The token validated and the identity is genuine, but it was declined — by the application, for example
+        /// because the user is not provisioned or is administratively disabled, or by the provider package's own
+        /// rules, for example an account from a tenant that is not allowed or one that did not meet the
+        /// authentication context or sign-in freshness the attempt required.
         /// </summary>
         Rejected,
 
