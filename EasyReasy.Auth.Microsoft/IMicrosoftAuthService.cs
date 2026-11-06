@@ -35,7 +35,8 @@ namespace EasyReasy.Auth.Microsoft
         /// <param name="httpContext">The request from the browser completing the flow; its binding cookie is read
         /// from the request and cleared on the response.</param>
         /// <param name="cancellationToken">Cancels the calls to Microsoft.</param>
-        /// <returns>The validated identity and the caller binding, or the reason the flow was refused.</returns>
+        /// <returns>The validated identity, the caller binding and the ID token it was read from, or the reason the flow
+        /// was refused.</returns>
         /// <exception cref="HttpRequestException">
         /// Microsoft's token endpoint could not be reached, or answered with an unsuccessful status other than 400 or
         /// 401 (a server error, or a 429 throttle). An outage is not a refusal, so it is not reported as one.

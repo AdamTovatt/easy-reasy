@@ -2,6 +2,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Buffers.Text;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 
 namespace EasyReasy.Auth.Microsoft.Tests
 {
@@ -30,6 +31,70 @@ namespace EasyReasy.Auth.Microsoft.Tests
             Assert.AreEqual("Ada Lovelace", result.UserInfo.Name);
             CollectionAssert.AreEqual(new[] { "pwd", "mfa" }, result.UserInfo.AuthenticationMethods.ToArray());
             CollectionAssert.AreEqual(new[] { "c1" }, result.UserInfo.AuthenticationContextIds.ToArray());
+        }
+
+        [TestMethod]
+        public async Task Complete_ValidFlow_ReturnsTheIdTokenTheTokenEndpointIssued()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+
+            MicrosoftAuthCompletionResult result = await harness.SignInAsync(MicrosoftAuthHarness.CreateRequest());
+
+            Assert.IsTrue(result.Success, result.FailureReason?.ToString());
+            Assert.AreEqual(harness.IdentityProvider.RedeemedIdTokens.Single(), result.IdToken);
+        }
+
+        [TestMethod]
+        public async Task Complete_GenuineTokenRefusedByAFlowRule_ReturnsNoIdToken()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+
+            MicrosoftAuthCompletionResult result = await harness.SignInAsync(MicrosoftAuthHarness.CreateRequest(requiredAuthenticationContextId: "c9"));
+
+            Assert.AreEqual(MicrosoftAuthFailureReason.MissingAuthenticationContext, result.FailureReason);
+            Assert.AreEqual(1, harness.IdentityProvider.RedeemedIdTokens.Count);
+            Assert.IsNull(result.IdToken);
+        }
+
+        [TestMethod]
+        [DataRow("ToString")]
+        [DataRow("Json")]
+        public async Task Complete_ValidFlow_LeavesTheIdTokenCallerBindingAndIdentityOutOfItsLoggableForm(string form)
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+
+            MicrosoftAuthCompletionResult result = await harness.SignInAsync(MicrosoftAuthHarness.CreateRequest());
+            string text = form == "Json" ? JsonSerializer.Serialize(result) : result.ToString();
+
+            Assert.IsTrue(result.Success, result.FailureReason?.ToString());
+            Assert.IsFalse(text.Contains(result.IdToken, StringComparison.Ordinal), text);
+            Assert.IsFalse(text.Contains(result.CallerBinding, StringComparison.Ordinal), text);
+            Assert.IsFalse(text.Contains(result.UserInfo.PreferredUsername!, StringComparison.Ordinal), text);
+            Assert.IsFalse(text.Contains(result.UserInfo.Name!, StringComparison.Ordinal), text);
+            StringAssert.Contains(text, result.AttemptedSubject);
+        }
+
+        [TestMethod]
+        public void ToString_SuccessAndFailures_NamesWhatIsKnownAndRedactsTheIdToken()
+        {
+            MicrosoftUserInfo userInfo = new MicrosoftUserInfo
+            {
+                TenantId = FakeMicrosoftIdentityProvider.Tenant,
+                ObjectId = FakeMicrosoftIdentityProvider.ObjectId,
+                Nonce = "nonce",
+                AuthenticationMethods = [],
+                AuthenticationContextIds = [],
+            };
+
+            Assert.AreEqual(
+                $"MicrosoftAuthCompletionResult {{ Success = true, AttemptedSubject = {Subject}, IdToken = [REDACTED] }}",
+                MicrosoftAuthCompletionResult.Succeeded(userInfo, "binding", "header.payload.signature").ToString());
+            Assert.AreEqual(
+                $"MicrosoftAuthCompletionResult {{ Success = false, FailureReason = TenantNotAllowed, AttemptedSubject = {Subject} }}",
+                MicrosoftAuthCompletionResult.Refused(MicrosoftAuthFailureReason.TenantNotAllowed, userInfo).ToString());
+            Assert.AreEqual(
+                "MicrosoftAuthCompletionResult { Success = false, FailureReason = InvalidState }",
+                MicrosoftAuthCompletionResult.Failed(MicrosoftAuthFailureReason.InvalidState).ToString());
         }
 
         [TestMethod]

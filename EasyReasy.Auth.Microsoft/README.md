@@ -213,14 +213,19 @@ app.MapPost("/api/sign/{recordId}/microsoft", async (string recordId, MicrosoftS
         return Results.Unauthorized();
     }
 
-    // Check that result.UserInfo.TenantId and ObjectId are the account linked to this user, then sign.
+    // Check that result.UserInfo.TenantId and ObjectId are the account linked to this user, then sign,
+    // sealing result.IdToken with the record as Microsoft's evidence (see "Signing evidence" below).
     return Results.Ok();
 }).RequireAuthorization();
 ```
 
 **Your Complete must check the caller binding.** The binding cookie proves the flow is completed in the browser that began it, but every flow of your application shares one state key, so a `state` from one flow opens in any other: a state from your sign-in page could be posted to your signing endpoint, or one begun for record A to the endpoint for record B. Comparing `CallerBinding` with what the completing endpoint expects is what ties the result to that flow. The built-in sign-in endpoint does this for you: it refuses any state it did not begin itself, as `CallerBindingMismatch`, so a state from your own flows can never sign anyone in.
 
-`MicrosoftAuthBeginRequest.Nonce` lets a flow tie the sign-in to something of yours (for example a hash of the record being signed); it comes back as `MicrosoftUserInfo.Nonce`. `CompleteAsync` returns a `MicrosoftAuthFailureReason` on refusal and throws only when Microsoft's token endpoint cannot be reached or answers with a status other than 400 or 401, such as a server error or a 429 (`HttpRequestException`), or its signing keys cannot be retrieved (`InvalidOperationException`).
+`MicrosoftAuthBeginRequest.Nonce` lets a flow tie the sign-in to something of yours (for example a hash of the record being signed); it comes back as `MicrosoftUserInfo.Nonce`.
+
+**Signing evidence.** On success, `MicrosoftAuthCompletionResult.IdToken` is the raw ID token the identity was read from, after every check passed. It carries Microsoft's own signature over the account, the sign-in time, the authentication contexts and your nonce, so a record signed through a re-check can later be shown to rest on a token Microsoft signed, not only on your server's word. Seal it with the record (encrypted, access audited) and never log it or send it to a browser: until it expires it is a bearer credential for your client id. To verify it later, keep a copy of Microsoft's public key it names (its `kid`), since Microsoft rotates and retires keys: it is the key with that `kid` at the `jwks_uri` of the OpenID configuration described under "Signing keys and key rotation". The result's `ToString()` shows the token as `[REDACTED]` and its JSON leaves it out (both also leave out `CallerBinding` and `UserInfo`), and the sign-in endpoints never pass it on: your `IMicrosoftAuthHandler` and the audit record do not see it.
+
+`CompleteAsync` returns a `MicrosoftAuthFailureReason` on refusal and throws only when Microsoft's token endpoint cannot be reached or answers with a status other than 400 or 401, such as a server error or a 429 (`HttpRequestException`), or its signing keys cannot be retrieved (`InvalidOperationException`).
 
 ## Endpoint Behavior
 
@@ -327,8 +332,9 @@ The input to `IMicrosoftAuthService.Begin` for your own flows. `Begin` throws on
 | Property | Type | Description |
 |----------|------|-------------|
 | `Success` | `bool` | Whether every check passed. |
-| `UserInfo` | `MicrosoftUserInfo?` | The verified identity. Set only on success. |
-| `CallerBinding` | `string?` | The binding the flow was begun with. Set only on success; compare it before acting on the identity. |
+| `UserInfo` | `MicrosoftUserInfo?` | The verified identity. Set only on success. Personal data: left out of `ToString()` and JSON. |
+| `CallerBinding` | `string?` | The binding the flow was begun with. Set only on success; compare it before acting on the identity. Left out of `ToString()` and JSON. |
+| `IdToken` | `string?` | The validated raw ID token, as signing evidence to seal with the record. Set only on success. Never log it; `ToString()` shows it as `[REDACTED]` and JSON leaves it out. |
 | `FailureReason` | `MicrosoftAuthFailureReason?` | Why the flow was refused. Set only on failure. |
 | `AttemptedSubject` | `string?` | The account as `tid:oid`: set on success and when a genuine token was refused (tenant, authentication context or max age), null when the state, the cookie, the code or the token failed. |
 
