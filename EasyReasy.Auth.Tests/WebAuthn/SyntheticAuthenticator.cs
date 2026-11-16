@@ -29,6 +29,14 @@ namespace EasyReasy.Auth.Tests
         /// <summary>The model identifier this authenticator reports.</summary>
         public Guid Aaguid => SyntheticAaguid;
 
+        /// <summary>
+        /// The user handle this authenticator stored at registration and returns on every assertion, as a
+        /// discoverable credential does: the bytes of a GUID, the stable opaque id the library tells
+        /// applications to use. A property rather than a field so each caller gets its own array, for the
+        /// reason <see cref="WebAuthnTestData.RelyingPartyIdHash"/> gives.
+        /// </summary>
+        public byte[] UserHandle => new Guid("05e2a7d1-0b1e-4c7a-9d3e-5a5a5a5a5a5a").ToByteArray();
+
         protected SyntheticAuthenticator(byte[] credentialId)
         {
             CredentialId = credentialId;

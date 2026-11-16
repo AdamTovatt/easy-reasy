@@ -90,7 +90,11 @@ namespace EasyReasy.Auth
                 ? null
                 : ToDescriptors(excludeCredentialIds, nameof(excludeCredentialIds));
 
-            return BuildRegistrationOptions(user, userVerification, excludeCredentials, authenticatorAttachment, timeoutMilliseconds);
+            return BuildRegistrationOptions(
+                user,
+                excludeCredentials,
+                AuthenticatorSelectionCriteria.ForSecondFactor(userVerification, authenticatorAttachment),
+                timeoutMilliseconds);
         }
 
         /// <summary>
@@ -132,7 +136,11 @@ namespace EasyReasy.Auth
 
             List<PublicKeyCredentialDescriptor> descriptors = ToDescriptors(excludeCredentials, nameof(excludeCredentials));
 
-            return BuildRegistrationOptions(user, userVerification, descriptors, authenticatorAttachment, timeoutMilliseconds);
+            return BuildRegistrationOptions(
+                user,
+                descriptors,
+                AuthenticatorSelectionCriteria.ForSecondFactor(userVerification, authenticatorAttachment),
+                timeoutMilliseconds);
         }
 
         /// <summary>
@@ -141,7 +149,8 @@ namespace EasyReasy.Auth
         /// <param name="allowCredentialIds">
         /// The base64url credential ids this user may answer with — what the application looked up for the
         /// user who has just passed their first factor. At least one is required: an empty list asks for any
-        /// discoverable credential, which is passwordless login and out of scope for a second factor.
+        /// discoverable credential, which is usernameless passkey sign-in and never a second factor. That
+        /// mode is <see cref="CreateDiscoverableAuthenticationOptions"/>.
         /// </param>
         /// <param name="userVerification">How strongly the authenticator is asked to verify the user.</param>
         /// <param name="timeoutMilliseconds">How long the browser should wait for the user.</param>
@@ -175,7 +184,8 @@ namespace EasyReasy.Auth
         /// <param name="allowCredentials">
         /// The credentials this user may answer with — what the application looked up for the user who has
         /// just passed their first factor. At least one is required: an empty list asks for any discoverable
-        /// credential, which is passwordless login and out of scope for a second factor.
+        /// credential, which is usernameless passkey sign-in and never a second factor. That mode is
+        /// <see cref="CreateDiscoverableAuthenticationOptions"/>.
         /// </param>
         /// <param name="userVerification">How strongly the authenticator is asked to verify the user.</param>
         /// <param name="timeoutMilliseconds">How long the browser should wait for the user.</param>
@@ -199,6 +209,87 @@ namespace EasyReasy.Auth
             ThrowIfAllowListIsEmpty(descriptors, nameof(allowCredentials));
 
             return BuildAuthenticationOptions(descriptors, userVerification, timeoutMilliseconds);
+        }
+
+        /// <summary>
+        /// Creates the options for registering a passkey the user can later sign in with alone, nothing
+        /// typed: a discoverable credential, with a fresh challenge.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Writes <c>residentKey: "required"</c> and <c>requireResidentKey: true</c>, and always requires
+        /// user verification: with no first factor in front of it, the verified user is the whole of the
+        /// login, so there is no parameter to weaken it. Verify what the browser posts back with
+        /// <see cref="WebAuthnVerifier.VerifyDiscoverableRegistration"/>, which holds the ceremony to the
+        /// same requirement.
+        /// </para>
+        /// <para>
+        /// The bytes <paramref name="user"/> was constructed with are the user handle every later sign-in
+        /// returns and is checked against, so they must be the application's stable, opaque id for the
+        /// user (the bytes of a GUID, say). Never the email address or anything else a person could
+        /// recognise or that can change: the authenticator stores it, anyone holding the device can read it,
+        /// and a handle that changed would stop matching. At sign-in, derive the same bytes from the
+        /// credential's owner and hand them to
+        /// <see cref="WebAuthnVerifier.VerifyDiscoverableAuthentication"/>.
+        /// </para>
+        /// </remarks>
+        /// <param name="user">The user the passkey is being registered for, whose id is their stable, opaque user id.</param>
+        /// <param name="excludeCredentials">
+        /// The credentials this user has already registered, so the browser refuses to enroll the same
+        /// authenticator twice, each written with its transports where it has any. Empty on a first
+        /// enrollment.
+        /// </param>
+        /// <param name="authenticatorAttachment">
+        /// Which kind of authenticator to steer the user towards, or null to leave the choice between a
+        /// built-in authenticator and a security key to them.
+        /// </param>
+        /// <param name="timeoutMilliseconds">How long the browser should wait for the user.</param>
+        /// <returns>The options to send to the page, whose <c>Challenge</c> the caller must store.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="user"/> or <paramref name="excludeCredentials"/>, or an element of it, is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMilliseconds"/> is not positive, or <paramref name="authenticatorAttachment"/> is not a defined value.</exception>
+        /// <exception cref="ArgumentException">
+        /// A credential id is empty or is not canonical base64url, or a credential's transports are more, or
+        /// longer, than registration accepts, or contain a null.
+        /// </exception>
+        public PublicKeyCredentialCreationOptions CreateDiscoverableRegistrationOptions(
+            PublicKeyCredentialUserEntity user,
+            IEnumerable<WebAuthnCredentialReference> excludeCredentials,
+            WebAuthnAuthenticatorAttachment? authenticatorAttachment = null,
+            int timeoutMilliseconds = DefaultTimeoutMilliseconds)
+        {
+            ArgumentNullException.ThrowIfNull(excludeCredentials);
+            ThrowIfRegistrationArgumentIsInvalid(user, WebAuthnUserVerificationRequirement.Required, authenticatorAttachment, timeoutMilliseconds);
+
+            List<PublicKeyCredentialDescriptor> descriptors = ToDescriptors(excludeCredentials, nameof(excludeCredentials));
+
+            return BuildRegistrationOptions(
+                user,
+                descriptors,
+                AuthenticatorSelectionCriteria.ForDiscoverable(authenticatorAttachment),
+                timeoutMilliseconds);
+        }
+
+        /// <summary>
+        /// Creates the options for a usernameless passkey sign-in, with a fresh challenge: an empty
+        /// allow-list, which asks the browser for any discoverable credential it holds for this relying
+        /// party.
+        /// </summary>
+        /// <remarks>
+        /// Writes <c>allowCredentials: []</c> and always requires user verification, with no parameter to
+        /// weaken it: no user is known when these options are issued, so the assertion is the first factor,
+        /// and a touch alone would sign in whoever picked up the device. No session exists yet either, so the
+        /// caller stores <c>Challenge</c> under a ceremony id of its own, bound to no user, and spends it
+        /// once. Verify the assertion with <see cref="WebAuthnVerifier.VerifyDiscoverableAuthentication"/>.
+        /// The same options serve conditional mediation (passkey autofill), which only the page changes.
+        /// </remarks>
+        /// <param name="timeoutMilliseconds">How long the browser should wait for the user.</param>
+        /// <returns>The options to send to the page, whose <c>Challenge</c> the caller must store.</returns>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeoutMilliseconds"/> is not positive.</exception>
+        public PublicKeyCredentialRequestOptions CreateDiscoverableAuthenticationOptions(int timeoutMilliseconds = DefaultTimeoutMilliseconds)
+        {
+            ThrowIfTimeoutIsNotPositive(timeoutMilliseconds);
+
+            return BuildAuthenticationOptions(new List<PublicKeyCredentialDescriptor>(), WebAuthnUserVerificationRequirement.Required, timeoutMilliseconds);
         }
 
         /// <summary>
@@ -242,9 +333,8 @@ namespace EasyReasy.Auth
         /// </summary>
         private PublicKeyCredentialCreationOptions BuildRegistrationOptions(
             PublicKeyCredentialUserEntity user,
-            WebAuthnUserVerificationRequirement userVerification,
             List<PublicKeyCredentialDescriptor>? excludeCredentials,
-            WebAuthnAuthenticatorAttachment? authenticatorAttachment,
+            AuthenticatorSelectionCriteria authenticatorSelection,
             int timeoutMilliseconds)
         {
             return new PublicKeyCredentialCreationOptions(
@@ -256,18 +346,24 @@ namespace EasyReasy.Auth
                 // Left null rather than empty so the field is omitted: an empty excludeCredentials means
                 // the same thing as an absent one, and omitting it keeps the JSON to what it states.
                 excludeCredentials == null || excludeCredentials.Count == 0 ? null : excludeCredentials,
-                new AuthenticatorSelectionCriteria(userVerification, authenticatorAttachment));
+                authenticatorSelection);
         }
 
         /// <summary>
-        /// Refuses an empty allow-list, which asks the browser for any discoverable credential.
+        /// Refuses an empty allow-list on the second-factor path, which would ask the browser for any
+        /// discoverable credential.
         /// </summary>
+        /// <remarks>
+        /// The line between the two modes: a second-factor caller that ends up with an empty list (a user
+        /// with no keys, a lookup that failed) gets an exception, never a usernameless ceremony that any
+        /// passkey for this relying party could answer.
+        /// </remarks>
         private static void ThrowIfAllowListIsEmpty(List<PublicKeyCredentialDescriptor> allowCredentials, string parameterName)
         {
             if (allowCredentials.Count == 0)
             {
                 throw new ArgumentException(
-                    $"'{parameterName}' must name at least one registered credential; an empty list asks the browser for any discoverable credential, which this library does not verify.",
+                    $"'{parameterName}' must name at least one registered credential: an empty list asks the browser for any discoverable credential, which is usernameless passkey sign-in, not a second factor. For passkey sign-in, call {nameof(CreateDiscoverableAuthenticationOptions)} and verify with {nameof(WebAuthnVerifier)}.{nameof(WebAuthnVerifier.VerifyDiscoverableAuthentication)}.",
                     parameterName);
             }
         }

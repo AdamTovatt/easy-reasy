@@ -11,6 +11,14 @@ namespace EasyReasy.Auth
         public bool Success { get; }
 
         /// <summary>
+        /// Whether this was a second factor or a usernameless passkey sign-in. Set on every result,
+        /// accepted or declined, by the verifier method that produced it: a declined
+        /// <see cref="WebAuthnAuthenticationMode.Discoverable"/> result is a login attempt with no known
+        /// user, which an audit record must not read as a failed second factor.
+        /// </summary>
+        public WebAuthnAuthenticationMode Mode { get; }
+
+        /// <summary>
         /// The sign counter to store against the credential. Only meaningful when <see cref="Success"/> is
         /// true.
         /// </summary>
@@ -70,12 +78,14 @@ namespace EasyReasy.Auth
         /// has nothing to say about, two of them adjacent booleans a transposition would not show up in.
         /// </summary>
         private WebAuthnAuthenticationResult(
+            WebAuthnAuthenticationMode mode,
             uint signCount,
             WebAuthnSignCounterState signCounterState,
             bool userVerified,
             bool backedUp)
         {
             Success = true;
+            Mode = mode;
             SignCount = signCount;
             SignCounterState = signCounterState;
             UserVerified = userVerified;
@@ -85,9 +95,10 @@ namespace EasyReasy.Auth
         /// <summary>
         /// Initializes a declined assertion, leaving everything the ceremony never established unset.
         /// </summary>
-        private WebAuthnAuthenticationResult(WebAuthnAuthenticationFailureReason failureReason, string failureMessage)
+        private WebAuthnAuthenticationResult(WebAuthnAuthenticationMode mode, WebAuthnAuthenticationFailureReason failureReason, string failureMessage)
         {
             Success = false;
+            Mode = mode;
             FailureReason = failureReason;
             FailureMessage = failureMessage;
         }
@@ -95,29 +106,32 @@ namespace EasyReasy.Auth
         /// <summary>
         /// Creates the result of an accepted assertion.
         /// </summary>
+        /// <param name="mode">Which verifier method accepted it.</param>
         /// <param name="signCount">The counter to store against the credential.</param>
         /// <param name="signCounterState">Whether the counter advanced or the authenticator keeps none.</param>
         /// <param name="userVerified">Whether the authenticator verified the user.</param>
         /// <param name="backedUp">Whether the credential is currently backed up.</param>
         /// <returns>A successful result.</returns>
         internal static WebAuthnAuthenticationResult Succeeded(
+            WebAuthnAuthenticationMode mode,
             uint signCount,
             WebAuthnSignCounterState signCounterState,
             bool userVerified,
             bool backedUp)
         {
-            return new WebAuthnAuthenticationResult(signCount, signCounterState, userVerified, backedUp);
+            return new WebAuthnAuthenticationResult(mode, signCount, signCounterState, userVerified, backedUp);
         }
 
         /// <summary>
         /// Creates the result of a declined assertion.
         /// </summary>
+        /// <param name="mode">Which verifier method declined it.</param>
         /// <param name="failureReason">Which check failed.</param>
         /// <param name="failureMessage">A description of the specific problem, for logs.</param>
         /// <returns>A failed result.</returns>
-        internal static WebAuthnAuthenticationResult Failed(WebAuthnAuthenticationFailureReason failureReason, string failureMessage)
+        internal static WebAuthnAuthenticationResult Failed(WebAuthnAuthenticationMode mode, WebAuthnAuthenticationFailureReason failureReason, string failureMessage)
         {
-            return new WebAuthnAuthenticationResult(failureReason, failureMessage);
+            return new WebAuthnAuthenticationResult(mode, failureReason, failureMessage);
         }
     }
 }

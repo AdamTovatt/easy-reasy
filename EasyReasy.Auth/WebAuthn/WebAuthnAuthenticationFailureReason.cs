@@ -90,5 +90,31 @@ namespace EasyReasy.Auth
         /// proof, and a counter can also regress because an authenticator was restored from a backup.
         /// </remarks>
         SignCounterRegressed,
+
+        /// <summary>
+        /// A usernameless passkey sign-in carried no user handle. A discoverable credential always stores
+        /// one, so an assertion without it cannot be matched to its owner. Only
+        /// <see cref="WebAuthnVerifier.VerifyDiscoverableAuthentication"/> reports this; a second factor
+        /// does not read the user handle.
+        /// </summary>
+        /// <remarks>
+        /// Reported only for an assertion whose signature and counter verified: the user handle is not
+        /// signed, so it is checked after everything that is, and an assertion made without the private
+        /// key reports <see cref="SignatureInvalid"/> instead.
+        /// </remarks>
+        UserHandleMissing,
+
+        /// <summary>
+        /// A usernameless passkey sign-in carried a user handle other than the owner's. Only
+        /// <see cref="WebAuthnVerifier.VerifyDiscoverableAuthentication"/> reports this.
+        /// </summary>
+        /// <remarks>
+        /// Reported only for an assertion whose signature and counter verified, so the key holder did
+        /// answer: the authenticator registered this credential for a different user handle than the one
+        /// the application derived for the credential's owner. That points at the application's records
+        /// (a credential stored against the wrong user, or a handle derived differently than at
+        /// registration) rather than at someone without the key.
+        /// </remarks>
+        UserHandleMismatch,
     }
 }

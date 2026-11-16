@@ -12,6 +12,13 @@ namespace EasyReasy.Auth
     /// who passed the first factor, because it never sees the session. Looking the credential up among
     /// <i>that user's</i> credentials is what makes the two factors belong to one person, and it is the
     /// application's step.
+    /// <para>
+    /// Usernameless passkey sign-in turns the lookup around: no user is known yet, so the credential is
+    /// looked up by its id across all users (credential ids are globally unique, so store them under a
+    /// unique index), among the credentials registered as passkeys only, and the user signed in is its
+    /// owner. Hand <see cref="WebAuthnVerifier.VerifyDiscoverableAuthentication"/> the owner's user handle
+    /// with it.
+    /// </para>
     /// </remarks>
     public sealed class WebAuthnStoredCredential
     {

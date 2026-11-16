@@ -38,9 +38,14 @@ namespace EasyReasy.Auth
         /// Initializes the user entity.
         /// </summary>
         /// <param name="id">
-        /// An opaque, stable handle for the user, at most <see cref="MaximumIdLength"/> bytes. It is stored
-        /// on the authenticator and can be read back from it, so it must not carry personal data — use a
-        /// surrogate key, not an email address.
+        /// The application's stable, opaque id for the user (the bytes of a GUID, say), at most
+        /// <see cref="MaximumIdLength"/> bytes. Never the email address, or anything else a person could
+        /// recognise or that can change. The authenticator stores it and returns it on every assertion, and
+        /// anyone who holds the device can read it, so it must not carry personal data. For a passkey
+        /// (<see cref="WebAuthnOptionsGenerator.CreateDiscoverableRegistrationOptions"/>) it is also the
+        /// handle every sign-in is checked against
+        /// (<see cref="WebAuthnVerifier.VerifyDiscoverableAuthentication"/>), so a value that changed would
+        /// stop matching the one the authenticator stored. This library can check only its length.
         /// </param>
         /// <param name="name">
         /// The account identifier to show the user. Not length-limited here: WebAuthn lets a client or

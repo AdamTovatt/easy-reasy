@@ -24,7 +24,7 @@ Each library project has a corresponding test project:
 | `EasyReasy` | Core resource management (embedded/file resources) | — |
 | `EasyReasy.ByteShelfProvider` | Remote resource provider via ByteShelf | `EasyReasy` |
 | `EasyReasy.EnvironmentVariables` | Typed environment variable validation & retrieval | — |
-| `EasyReasy.Auth` | JWT auth, claims middleware, password hashing, TOTP/base32/secret-cipher MFA primitives, WebAuthn/FIDO2 second factor, query-string tokens for WebSockets, path-scoped cookie tokens for files opened in a new tab (ASP.NET Core) | — |
+| `EasyReasy.Auth` | JWT auth, claims middleware, password hashing, TOTP/base32/secret-cipher MFA primitives, WebAuthn/FIDO2 second factor and passkey sign-in, query-string tokens for WebSockets, path-scoped cookie tokens for files opened in a new tab (ASP.NET Core) | — |
 | `EasyReasy.Auth.Client` | Lightweight HTTP client for Auth servers | — |
 | `EasyReasy.Auth.Google` | Google Sign-In integration for EasyReasy.Auth | `EasyReasy.Auth` |
 | `EasyReasy.Auth.Microsoft` | Microsoft (Entra ID) sign-in through the server-side code flow with PKCE, for EasyReasy.Auth | `EasyReasy.Auth` |

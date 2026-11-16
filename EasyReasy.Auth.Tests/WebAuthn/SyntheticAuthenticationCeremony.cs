@@ -32,7 +32,11 @@ namespace EasyReasy.Auth.Tests
         /// <summary>The credential id the response reports, base64url-encoded.</summary>
         public string? ReportedCredentialId { get; set; }
 
-        /// <summary>The user handle the response reports, base64url-encoded, or null for none.</summary>
+        /// <summary>
+        /// The user handle the response reports, base64url-encoded, or null for none. Defaults to the
+        /// authenticator's own <see cref="SyntheticAuthenticator.UserHandle"/>, as a discoverable
+        /// credential returns it.
+        /// </summary>
         public string? UserHandle { get; set; }
 
         /// <summary>
@@ -62,12 +66,19 @@ namespace EasyReasy.Auth.Tests
         {
             _authenticator = authenticator;
             ClientData = new ClientDataBuilder(CollectedClientData.AuthenticationCeremonyType, challenge);
+            UserHandle = Base64UrlEncoding.Encode(authenticator.UserHandle);
 
             AuthenticatorData = new AuthenticatorDataBuilder
             {
                 RelyingPartyIdHash = WebAuthnTestData.RelyingPartyIdHash,
             };
         }
+
+        /// <summary>
+        /// The owner's user handle as the application derives it at sign-in: the bytes the credential was
+        /// registered with.
+        /// </summary>
+        public byte[] OwnerUserHandle => _authenticator.UserHandle;
 
         /// <summary>
         /// The credential this ceremony's authenticator registered, as the application would have stored it.

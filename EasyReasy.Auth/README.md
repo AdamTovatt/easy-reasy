@@ -19,7 +19,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **Progressive delay**: Built-in middleware to slow down brute-force attacks (enabled by default)
 - **Refresh token rotation**: Opt-in refresh tokens with automatic theft detection via token family tracking
 - **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher with key rotation — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
-- **WebAuthn second factor**: Server-side verification of both FIDO2 ceremonies — security keys, Touch ID, Face ID and Windows Hello — for a user who has already passed a first factor
+- **WebAuthn second factor and passkey sign-in**: Server-side verification of both FIDO2 ceremonies — security keys, Touch ID, Face ID and Windows Hello — for a user who has already passed a first factor, and usernameless passkey sign-in (discoverable credentials, user verification always required) as a separate, explicitly named mode
 - **WebSocket authentication**: Opt-in, per-path acceptance of the token in the `access_token` query string, for the browser `WebSocket` that cannot send an `Authorization` header
 - **Files in a new tab**: Opt-in, per-path acceptance of the token in a host-only, `HttpOnly`, `SameSite=Strict` cookie on `GET` and `HEAD`, set and cleared by the built-in endpoints, so opening a protected file needs the user's own browser session rather than a public link
 - **Testable clock**: One `TimeProvider` registered in DI drives token issuing, refreshing and validation, so tests can mint expired or not-yet-valid tokens
@@ -628,9 +628,9 @@ Every authentication event the library surfaces — success or failure — is re
 | Concurrent session revoked on login (`SingleSession` policy) | `OnConcurrentSessionsRevokedAsync(SessionRevocationResult)` | ISO 27001 A.9.2.6 | `Subject`, `InvalidatedFamilyCount`, time |
 | Targeted session supersession on re-issue (`RetireFamilyAsync`) | `OnSessionSupersededAsync(httpContext, FamilyRetirementResult)` | ISO 27001 A.9.2.6 | `FamilyId`, `Subject`, IP, time |
 | Verified / declined WebAuthn enrollment (**you invoke this**, see below) | `OnWebAuthnRegistrationAsync(httpContext, WebAuthnRegistrationResult)` | ISO 27001 A.12.4.1 | outcome, `FailureReason`, credential id, IP, time |
-| Verified / declined WebAuthn second factor (**you invoke this**, see below) | `OnWebAuthnAuthenticationAsync(httpContext, WebAuthnAuthenticationResult)` | ISO 27001 A.12.4.1 | outcome, `FailureReason`, `SignCounterState`, credential id, IP, time |
+| Verified / declined WebAuthn second factor or passkey sign-in (**you invoke this**, see below) | `OnWebAuthnAuthenticationAsync(httpContext, WebAuthnAuthenticationResult)` | ISO 27001 A.12.4.1 | outcome, `Mode`, `FailureReason`, `SignCounterState`, credential id, IP, time |
 
-⚠️ **The two WebAuthn hooks are the exception to the sentence above this table.** Half of each ceremony runs in the browser, so this library ships no endpoint for either one and `WebAuthnVerifier` is a pure function that takes neither an `HttpContext` nor a logger — nothing fires these for you. Resolve `IAuthAuditLogger` and call the hook yourself after verifying, as [section 13](#13-webauthn--fido2-second-factor-security-keys-touch-id-face-id) shows. A second factor that was presented and rejected is the record an intrusion is most likely to appear in, and `WebAuthnAuthenticationFailureReason.SignCounterRegressed` in particular is WebAuthn's one signal of a cloned credential — worth alerting on rather than counting.
+⚠️ **The two WebAuthn hooks are the exception to the sentence above this table.** Half of each ceremony runs in the browser, so this library ships no endpoint for either one and `WebAuthnVerifier` is a pure function that takes neither an `HttpContext` nor a logger — nothing fires these for you. Resolve `IAuthAuditLogger` and call the hook yourself after verifying, as [section 13](#13-webauthn--fido2-second-factor-and-passkey-sign-in) shows. A second factor that was presented and rejected is the record an intrusion is most likely to appear in, and `WebAuthnAuthenticationFailureReason.SignCounterRegressed` in particular is WebAuthn's one signal of a cloned credential — worth alerting on rather than counting. Record `Mode` with it: a declined `Discoverable` result is a first-factor login attempt with no known user, which belongs with failed password logins, not with failed second factors.
 
 All methods have default no-op implementations — implement only the events you care about. The result objects deliberately never carry a raw password or a raw API key, so failure records are safe to serialise to your log store.
 
@@ -936,11 +936,11 @@ The next rotation repeats steps 1 to 4 with a key 3.
 - Key rotation without downtime: each envelope records the id of the key that sealed it, the cipher opens envelopes sealed by any key it holds, and `ReEncrypt` moves old values to the current key so the old key can be retired
 - Stateless: the application owns the clock, the secret store, and the atomic replay high-water-mark
 
-### 13. WebAuthn / FIDO2 Second Factor (security keys, Touch ID, Face ID)
+### 13. WebAuthn / FIDO2: Second Factor and Passkey Sign-in
 
-Server-side verification of the two WebAuthn ceremonies, for adding a hardware second factor to a user who has **already** passed a first one. Like the TOTP primitives above, these types hold nothing: `WebAuthnVerifier` is a pure function of its arguments, so the credential store, the enrollment state machine and the policy for a declined ceremony all stay in your application.
+Server-side verification of the two WebAuthn ceremonies (security keys, Touch ID, Face ID, Windows Hello and synced passkeys), in two modes: a second factor for a user who has **already** passed a first one, and [usernameless passkey sign-in](#passkey-sign-in-usernameless), where the passkey is the whole login. Like the TOTP primitives above, these types hold nothing: `WebAuthnVerifier` is a pure function of its arguments, so the credential store, the enrollment state machine and the policy for a declined ceremony all stay in your application.
 
-Scope, deliberately: **second factor only** — no passwordless or discoverable-credential flow, so the generated options always ask for a `discouraged` resident key and expose no setting for it; **attestation `none` only** — the ceremony proves possession of a key, not which authenticator model holds it; **ES256 and RS256 only**, the two algorithms every authenticator in use implements.
+Scope, deliberately: **two modes, each reached only through its own methods** — the second factor, whose options always ask for a `discouraged` resident key and refuse an empty allow-list, and [usernameless passkey sign-in](#passkey-sign-in-usernameless), whose methods carry `Discoverable` in their names, ask for a `required` resident key and always require user verification; neither exposes a resident-key setting; **attestation `none` only** — the ceremony proves possession of a key, not which authenticator model holds it; **ES256 and RS256 only**, the two algorithms every authenticator in use implements.
 
 ```csharp
 public sealed class WebAuthnRelyingParty   // validated at construction; every error reported at once
@@ -970,7 +970,8 @@ public sealed class WebAuthnOptionsGenerator   // what the browser is handed
         IEnumerable<WebAuthnCredentialReference> excludeCredentials,
         WebAuthnAuthenticatorAttachment? authenticatorAttachment = null,
         int timeoutMilliseconds = DefaultTimeoutMilliseconds);
-    // allowCredentialIds must be non-empty: an empty allow-list is the passwordless mode this is not.
+    // allowCredentialIds must be non-empty: an empty allow-list is passkey sign-in, which is
+    // CreateDiscoverableAuthenticationOptions below.
     PublicKeyCredentialRequestOptions CreateAuthenticationOptions(
         IEnumerable<string> allowCredentialIds,
         WebAuthnUserVerificationRequirement userVerification,
@@ -980,6 +981,16 @@ public sealed class WebAuthnOptionsGenerator   // what the browser is handed
     PublicKeyCredentialRequestOptions CreateAuthenticationOptions(
         IEnumerable<WebAuthnCredentialReference> allowCredentials,
         WebAuthnUserVerificationRequirement userVerification,
+        int timeoutMilliseconds = DefaultTimeoutMilliseconds);
+
+    // Passkey sign-in (usernameless). residentKey "required", user verification always required.
+    PublicKeyCredentialCreationOptions CreateDiscoverableRegistrationOptions(
+        PublicKeyCredentialUserEntity user,                    // id: the stable, opaque user id
+        IEnumerable<WebAuthnCredentialReference> excludeCredentials,
+        WebAuthnAuthenticatorAttachment? authenticatorAttachment = null,
+        int timeoutMilliseconds = DefaultTimeoutMilliseconds);
+    // allowCredentials: [], user verification always required.
+    PublicKeyCredentialRequestOptions CreateDiscoverableAuthenticationOptions(
         int timeoutMilliseconds = DefaultTimeoutMilliseconds);
 }
 
@@ -998,10 +1009,18 @@ public sealed class WebAuthnVerifier   // pure; no HTTP context, no DI, no stora
     WebAuthnRegistrationResult VerifyRegistration(
         WebAuthnRegistrationResponse response, string expectedChallenge,
         WebAuthnUserVerificationRequirement userVerification);
-    WebAuthnAuthenticationResult VerifyAuthentication(
+    WebAuthnAuthenticationResult VerifyAuthentication(            // second factor; ignores the user handle
         WebAuthnAuthenticationResponse response, string expectedChallenge,
         WebAuthnStoredCredential storedCredential,
         WebAuthnUserVerificationRequirement userVerification);
+
+    // Passkey sign-in. User verification is fixed at Required; there is no parameter for it.
+    WebAuthnRegistrationResult VerifyDiscoverableRegistration(
+        WebAuthnRegistrationResponse response, string expectedChallenge);
+    WebAuthnAuthenticationResult VerifyDiscoverableAuthentication(
+        WebAuthnAuthenticationResponse response, string expectedChallenge,
+        WebAuthnStoredCredential storedCredential,
+        byte[] storedUserHandle);                                 // the owner's id bytes, as registered
 }
 
 // What registration reports, and what authentication takes back. Both binary values are base64url
@@ -1026,9 +1045,10 @@ public sealed class WebAuthnStoredCredential
 
 public sealed class PublicKeyCredentialUserEntity
 {
-    // id is stored on the authenticator and readable back from it, so it must be a surrogate key and
-    // never personal data. It is the only one of the three with a length limit (64 bytes); a name that
-    // does not fit is truncated by whoever cannot store it, not refused.
+    // id is stored on the authenticator and readable back from it by anyone holding the device, so it
+    // must be your stable, opaque user id (the bytes of a GUID) and never the email or anything else a
+    // person could recognise or that can change. It is the only one of the three with a length limit
+    // (64 bytes); a name that does not fit is truncated by whoever cannot store it, not refused.
     PublicKeyCredentialUserEntity(byte[] id, string name, string displayName);
 }
 
@@ -1045,6 +1065,7 @@ public sealed class WebAuthnRegistrationResult
 public sealed class WebAuthnAuthenticationResult
 {
     bool Success { get; }
+    WebAuthnAuthenticationMode Mode { get; }                  // set by the verifier, accepted or declined
     uint SignCount { get; }                                   // write this back on every success
     WebAuthnSignCounterState? SignCounterState { get; }       // null on a declined assertion
     bool UserVerified { get; }
@@ -1054,6 +1075,7 @@ public sealed class WebAuthnAuthenticationResult
 }
 
 public enum WebAuthnSignCounterState { NotSupported, Advanced }
+public enum WebAuthnAuthenticationMode { SecondFactor, Discoverable }
 ```
 
 Both ceremonies answer with a result carrying a reason, never an exception — a security key that failed a check is an outcome of authentication, not an error in it. An `ArgumentException` from these methods means the *request body* was not a WebAuthn credential, or that an argument your application supplied was wrong; it never means a ceremony was declined.
@@ -1122,7 +1144,7 @@ Feature-detect them rather than assuming them — as `window.PublicKeyCredential
 
 Padding is tolerated on every field the library decodes, so an encoder written in the page does not fail a ceremony over a spelling. `id` is the exception, and not because a check rejects it: it is kept exactly as sent, because it is the string your application looks the credential up by. A padded `id` therefore passes everything here and then matches nothing in your store, surfacing as a credential that does not exist. Send it canonical — the URL-safe alphabet, no padding — which is already what the browser's own `credential.id` is.
 
-**What this library cannot do for you.** Verification answers whether the authenticator holding a given public key signed a given challenge. It never sees your session, so five things are yours, and getting any of them wrong leaves the factor looking like it works:
+**What this library cannot do for you (second factor).** Verification answers whether the authenticator holding a given public key signed a given challenge. It never sees your session, so five things are yours, and getting any of them wrong leaves the factor looking like it works:
 
 - **Look the credential up among *that user's* credentials.** A successful assertion proves someone holds the private key for the credential you passed in — not that it belongs to the user who passed the first factor. Fetching by credential id alone, across all users, turns the second factor into a check that anyone with any enrolled key can pass. The lookup is what ties the two factors to one person.
 - **Store the challenge against the session and use it once.** `CreateRegistrationOptions` and `CreateAuthenticationOptions` return a fresh 32-byte challenge; a challenge that outlives its ceremony, or is shared between sessions, is what a replayed assertion needs. Hand back exactly the string you stored — it is checked strictly, so a value truncated by a narrow column is reported as your storage bug rather than as an attack.
@@ -1134,6 +1156,103 @@ Padding is tolerated on every field the library decodes, so an encoder written i
 
 **A development deployment gets its own relying party, with id `localhost`** — not a `http://localhost:5173` origin added to the production one. The relying-party id must be the registered domain of every origin it serves or a parent of it, so `localhost` and `example.com` cannot share one; browsers reject the pairing outright. A set of origins is for the case it exists for: several origins under one domain, such as `https://app.example.com` and `https://www.example.com` under the id `example.com`. Credentials are scoped to the relying-party id, so a credential enrolled against `localhost` is a development credential and never verifies in production, which is the correct outcome rather than a limitation.
 
+#### Passkey sign-in (usernameless)
+
+A "Sign in with passkey" button that needs no typing: the browser offers the passkeys it holds for your site, the user unlocks one with Face ID, Touch ID, a fingerprint or a PIN, and the assertion is the whole login. The security model is the one Apple, Google and GitHub use: usernameless, with user verification always required. It is a separate mode with its own four methods, and a second-factor flow cannot drift into it: `CreateAuthenticationOptions` refuses an empty allow-list, and `VerifyAuthentication` does not read the user handle.
+
+Endpoints, the credential store and the challenge store stay yours, as for the second factor. Issuing the session is written out by hand below, because this is a first-factor login: it does not go through `ExternalSignInEndpoint.HandleAsync`, which would record a passkey login with `OnExternalAuthAsync` as an external-provider sign-in next to the WebAuthn record.
+
+```csharp
+// 1. Register a passkey, for a user who is already signed in. The user handle is their stable,
+//    opaque id (here the bytes of their GUID), never their email.
+IEnumerable<WebAuthnCredentialReference> existingCredentials = (await store.GetCredentialsAsync(user.Id))
+    .Select(credential => new WebAuthnCredentialReference(credential.CredentialId, credential.Transports));
+
+PublicKeyCredentialCreationOptions options = generator.CreateDiscoverableRegistrationOptions(
+    new PublicKeyCredentialUserEntity(user.Id.ToByteArray(), user.Email, user.DisplayName),
+    existingCredentials);
+
+await sessions.StoreChallengeAsync(sessionId, options.Challenge);
+return Results.Content(options.ToJson(), "application/json");
+
+// ...and verify what the browser posts back.
+WebAuthnRegistrationResult registration = verifier.VerifyDiscoverableRegistration(
+    WebAuthnRegistrationResponse.FromJson(body), await sessions.TakeChallengeAsync(sessionId));
+
+await auditLogger.OnWebAuthnRegistrationAsync(httpContext, registration);
+if (!registration.Success) return Results.BadRequest();
+await store.AddCredentialAsync(user.Id, registration.Credential!,
+    kind: CredentialKind.Passkey);            // which mode registered it: your column
+
+// 2. Options, for anyone who asks: no user is known yet. The challenge goes under a random ceremony
+//    id, bound to no user, and expires with the timeout.
+PublicKeyCredentialRequestOptions requestOptions = generator.CreateDiscoverableAuthenticationOptions();
+string ceremonyId = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+TimeSpan lifetime = TimeSpan.FromMilliseconds(requestOptions.Timeout);
+
+await challenges.StoreAsync(ceremonyId, requestOptions.Challenge, lifetime);
+httpContext.Response.Cookies.Append("passkey_ceremony", ceremonyId, new CookieOptions
+{
+    HttpOnly = true, Secure = true, SameSite = SameSiteMode.Strict, MaxAge = lifetime,
+});
+return Results.Content(requestOptions.ToJson(), "application/json");   // parseRequestOptionsFromJSON()
+
+// 3. Look up. Spend the challenge first: read and delete it in one atomic step, before verifying.
+httpContext.SetNoStoreCacheControl();
+string? ceremonyIdFromCookie = httpContext.Request.Cookies["passkey_ceremony"];
+string? challenge = ceremonyIdFromCookie == null ? null : await challenges.TakeAsync(ceremonyIdFromCookie);
+if (challenge == null) return Results.Unauthorized();
+
+WebAuthnAuthenticationResponse response = WebAuthnAuthenticationResponse.FromJson(body);
+StoredCredentialRow? passkey = await store.FindByCredentialIdAsync(response.Id, CredentialKind.Passkey);
+if (passkey == null) return Results.Unauthorized();   // across all users, passkeys only
+
+// 4. Verify against the owner the lookup named, with their user handle derived as at registration,
+//    and write back.
+User owner = await users.GetAsync(passkey.UserId);
+WebAuthnAuthenticationResult assertion = verifier.VerifyDiscoverableAuthentication(
+    response,
+    challenge,
+    new WebAuthnStoredCredential(passkey.CredentialId, passkey.PublicKey, passkey.SignCount),
+    owner.Id.ToByteArray());
+
+await auditLogger.OnWebAuthnAuthenticationAsync(httpContext, assertion);   // Mode is Discoverable
+if (!assertion.Success) return Results.Unauthorized();
+await store.UpdateSignCountAsync(passkey.CredentialId, assertion.SignCount);   // unconditionally
+await store.UpdateBackedUpAsync(passkey.CredentialId, assertion.BackedUp);
+
+// 5. Issue the session to the credential's owner, never to anyone the request names.
+DateTime expiresAt = DateTime.UtcNow.AddHours(1);
+IJwtTokenService jwtTokenService = httpContext.RequestServices.GetRequiredService<IJwtTokenService>();
+string token = jwtTokenService.CreateToken(owner.Id.ToString(), "user", [], owner.Roles, expiresAt);
+
+IRefreshTokenService? refreshTokenService = httpContext.RequestServices.GetService<IRefreshTokenService>();
+string? refreshToken = refreshTokenService == null
+    ? null
+    : await refreshTokenService.CreateRefreshTokenAsync(owner.Id.ToString(), "user", null, null);
+
+if (httpContext.IsAccessTokenCookieEnabled())
+{
+    httpContext.TrySetAccessTokenCookie(token);
+}
+
+httpContext.MarkAuthenticationSucceeded();   // after a verified assertion, never before
+return Results.Ok(new AuthResponse(token, expiresAt.ToString("o"), refreshToken));
+```
+
+**What you must do, and each one, done wrong, leaves login looking like it works:**
+
+- **Look the credential up by its id across all users.** Credential ids are globally unique, so store them under a unique index. In this mode no user is known yet: the lookup is what names the user, so the user is the stored credential's owner, never anything the request claims.
+- **Check the user handle.** Pass the owner's handle to `VerifyDiscoverableAuthentication`, derived from the owner the lookup named exactly as at registration (`owner.Id.ToByteArray()` above). Never skip it by calling the second-factor `VerifyAuthentication` in this flow: that one does not read the user handle.
+- **Spend the challenge once, bound to no user.** No session or user exists when the options are issued. Store the challenge server-side under a random ceremony id (an `HttpOnly` cookie, as above, or an opaque value returned with the options), let it expire with the timeout, and delete it atomically when it is read, before verifying, whether the verify then passes or fails.
+- **Write the sign counter back on every success**, and `BackedUp` too, the same as the second-factor flow. Synced passkeys usually report 0.
+- **Rate-limit both unauthenticated endpoints.** The options endpoint writes a challenge for anyone who asks, so cap it per client and cap the number of live challenges. The verify endpoint is a login endpoint, so apply the same limits as password login: `ProgressiveDelayMiddleware` counts its 401s, or use your app's own limiter.
+- **Record which mode registered each credential, and in this flow look up only passkey ones.** Platform authenticators (iCloud Keychain, Google Password Manager) create a discoverable credential even when asked for `discouraged`. In an app with both modes, a key enrolled as a second factor would otherwise sign someone in on its own. The library is stateless and cannot know which path made a stored credential, so this is your column and your filter.
+- **Mark the login successful only on success.** Call `MarkAuthenticationSucceeded()` after a verified assertion, never before, so failed attempts keep counting toward the progressive delay.
+- **The user handle is your stable, opaque user id, never the email.** The authenticator stores it and returns it on every assertion, and anyone holding the device can read it. Because it is a stable id you already hold, it needs no column of its own: derive the same bytes at registration and at sign-in. If your handles are random rather than derived, store the bytes against the user and pass those.
+
+The page's side is the second factor's with two differences: `allowCredentials` is empty, so there are no ids to decode before `navigator.credentials.get()`, and the posted assertion must include `response.userHandle`, which `toJSON()` does. Conditional mediation (passkey autofill in the username field) uses these same options; only the page changes, by passing `mediation: "conditional"`.
+
 **Key Features:**
 - Both ceremonies verified in the order WebAuthn Level 3 §7.1 and §7.2 state their checks, with the checks common to both written once so neither path can be hardened without the other
 - Options generated in the JSON shape the browser's `parseCreationOptionsFromJSON()` and `parseRequestOptionsFromJSON()` consume, with a 32-byte CSPRNG challenge
@@ -1142,7 +1261,9 @@ Padding is tolerated on every field the library decodes, so an encoder written i
 - The signature-counter rule including the both-zero exemption platform authenticators need, and a counter regression reported distinctly from an authenticator that keeps no counter
 - Base64url owned on both sides of the JSON contract: lax about the spelling a browser sends, strict about the values your application stored and hands back
 - Relying-party id, name and a non-empty origin **set** validated at construction, every error reported at once — including the subdomain rule, which rejects the `notexample.com` and `example.com.evil.net` that a naive `EndsWith` would accept
-- `userVerification` is a required parameter with no default, and an empty allow-list is rejected rather than silently meaning "any discoverable credential"
+- On the second-factor methods, `userVerification` is a required parameter with no default, and an empty allow-list is rejected rather than silently meaning "any discoverable credential"; that meaning is reached only through `CreateDiscoverableAuthenticationOptions`
+- Usernameless passkey sign-in as its own four `Discoverable` methods: a `required` resident key, user verification fixed at required with no parameter to weaken it, and the assertion's user handle required and compared in fixed time against the credential owner's, after the signature so an unsigned value never decides the reported reason
+- `WebAuthnAuthenticationResult.Mode`, set by the verifier, so an audit record tells a passkey login attempt from a failed second factor
 - CBOR decoded with `System.Formats.Cbor`, which ships in the ASP.NET Core shared framework — no new package dependency
 - Audit hooks `OnWebAuthnRegistrationAsync` and `OnWebAuthnAuthenticationAsync` on `IAuthAuditLogger`, both defaulted
 - Stateless: your application owns the credential store, the challenge, the session, and the response to a cloned-credential signal or a synced credential
@@ -1410,7 +1531,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **Secure password hashing**: PBKDF2 with HMAC-SHA512, max password length enforcement, and constant-time comparison
 - **Password reset tokens**: Cryptographically secure token generation with SHA-256 hashing for storage
 - **MFA primitives**: RFC 6238 TOTP generator (secret generation, `otpauth://` provisioning URI, code validation), RFC 4648 base32 codec, and AES-256-GCM secret cipher with key rotation — storage-agnostic building blocks for time-based one-time-password and encrypt-at-rest flows
-- **WebAuthn/FIDO2 second factor**: Registration and authentication ceremonies verified server-side (attestation `none`, ES256/RS256), with result objects naming the individual check that declined a ceremony and the signature-counter rule platform authenticators need
+- **WebAuthn/FIDO2 second factor and passkey sign-in**: Registration and authentication ceremonies verified server-side (attestation `none`, ES256/RS256), with result objects naming the individual check that declined a ceremony and the signature-counter rule platform authenticators need, and usernameless passkey sign-in as a separate mode that verifies the user handle
 - **WebSocket authentication**: `QueryStringTokenPaths` lets listed paths read the token from the `access_token` query string, validated exactly as a header token, with the header taking precedence
 - **Cookie tokens for files in a new tab**: `CookieTokenPaths` lets listed paths read the token from the `__Secure-access_token` cookie on `GET` and `HEAD`, after the header and the query string; the built-in login, refresh and logout endpoints and each provider package's sign-in endpoint set and clear it
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
@@ -1442,6 +1563,19 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.14.0
+
+Version 5.15.0 is additive: a second-factor flow built against 5.14.0 compiles and behaves as before. The only change to existing behaviour is the wording of one exception message.
+
+### New: usernameless passkey sign-in
+- **`WebAuthnOptionsGenerator.CreateDiscoverableRegistrationOptions` and `CreateDiscoverableAuthenticationOptions`**, and **`WebAuthnVerifier.VerifyDiscoverableRegistration` and `VerifyDiscoverableAuthentication`**: sign-in with a passkey alone, nothing typed. User verification is always required, and the verifier requires the assertion's user handle and compares it with the credential owner's (`byte[]`, the id the passkey was registered with). See [Passkey sign-in (usernameless)](#passkey-sign-in-usernameless) for the flow and the obligations that stay with your application.
+- **`WebAuthnAuthenticationFailureReason.UserHandleMissing` and `UserHandleMismatch`**, added after the existing members, so stored numeric values keep their meaning. Only the passkey path reports them; a `switch` over the enum with a throwing default sees them only from that path.
+- **`WebAuthnAuthenticationResult.Mode`** (`WebAuthnAuthenticationMode.SecondFactor` or `Discoverable`), set by the verifier on every result. `IAuthAuditLogger.OnWebAuthnAuthenticationAsync` keeps its signature; record `Mode` so a passkey login attempt is not read as a failed second factor.
+
+### Unchanged: the second factor
+- **`CreateRegistrationOptions`, `CreateAuthenticationOptions`, `VerifyRegistration` and `VerifyAuthentication`** keep their signatures, their `discouraged` resident key, their refusal of an empty allow-list and their handling of the user handle (not read).
+- **The empty allow-list refusal's message** now names `CreateDiscoverableAuthenticationOptions` instead of calling discoverable credentials out of scope. The exception type and `ParamName` are the same.
 
 ## Migration from 5.13.1
 
@@ -1515,7 +1649,7 @@ Version 5.11.0 is additive: `AesGcmSecretCipher` can rotate its key. The single-
 Version 5.10.0 is additive: the WebAuthn options generator can hand a credential's stored transports back to the browser. Nothing was removed and no existing signature changed, and options built from credential ids are written exactly as before.
 
 ### New: `WebAuthnCredentialReference` and an overload of each options method
-- **`CreateAuthenticationOptions(IEnumerable<WebAuthnCredentialReference>, …)` and `CreateRegistrationOptions(user, userVerification, IEnumerable<WebAuthnCredentialReference>, …)`** write each credential's `transports` into its `allowCredentials` or `excludeCredentials` entry, so the browser can go straight to the authenticator the user enrolled. See [section 13](#13-webauthn--fido2-second-factor-security-keys-touch-id-face-id).
+- **`CreateAuthenticationOptions(IEnumerable<WebAuthnCredentialReference>, …)` and `CreateRegistrationOptions(user, userVerification, IEnumerable<WebAuthnCredentialReference>, …)`** write each credential's `transports` into its `allowCredentials` or `excludeCredentials` entry, so the browser can go straight to the authenticator the user enrolled. See [section 13](#13-webauthn--fido2-second-factor-and-passkey-sign-in).
 - **`PublicKeyCredentialDescriptor.Transports`**, omitted from the JSON when null, which is what a credential handed in by id alone, or with no transports stored, gets.
 - **If you built the authentication options by hand to include transports**, delete that and pass `WebAuthnCredentialReference`s instead.
 
@@ -1565,7 +1699,7 @@ Version 5.7.0 is additive: a WebAuthn/FIDO2 second factor, and two audit hooks f
 - **The fix is an alias in the affected files** — `using AuthenticatorSelectionCriteria = YourNamespace.AuthenticatorSelectionCriteria;` — or deleting yours if this package's now covers it.
 
 ### New: WebAuthn/FIDO2 ceremony verification
-- **`WebAuthnRelyingParty`, `WebAuthnOptionsGenerator` and `WebAuthnVerifier`**, covering both ceremonies end to end for a second factor: the options a browser is handed, and the verification of what it posts back. See [section 13](#13-webauthn--fido2-second-factor-security-keys-touch-id-face-id) for the whole flow and for the obligations that stay with your application.
+- **`WebAuthnRelyingParty`, `WebAuthnOptionsGenerator` and `WebAuthnVerifier`**, covering both ceremonies end to end for a second factor: the options a browser is handed, and the verification of what it posts back. See [section 13](#13-webauthn--fido2-second-factor-and-passkey-sign-in) for the whole flow and for the obligations that stay with your application.
 - **Scoped deliberately.** Second factor only, attestation `none` only, ES256 and RS256 only. Passwordless and discoverable-credential flows are not supported, and an empty allow-list — which is how that mode is spelled — is rejected rather than accepted as meaning something else.
 - **Nothing is stored or resolved by the library.** `WebAuthnVerifier` is a pure function of its arguments, so it takes no `HttpContext`, no DI and no credential store. Registering anything is unnecessary; construct it where you need it.
 

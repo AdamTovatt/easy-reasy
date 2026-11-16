@@ -78,6 +78,34 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
+        /// Verifies the registration of a passkey made from
+        /// <see cref="WebAuthnOptionsGenerator.CreateDiscoverableRegistrationOptions"/>, and returns the
+        /// credential to store.
+        /// </summary>
+        /// <remarks>
+        /// The same checks as <see cref="VerifyRegistration"/>, with user verification fixed at
+        /// <see cref="WebAuthnUserVerificationRequirement.Required"/>: the options always asked for it, and
+        /// taking it as an argument would let a caller pair those options with a weaker verify call. Store
+        /// the credential against its owner and record that it was registered as a passkey, so passkey
+        /// sign-in looks up only credentials this path made.
+        /// </remarks>
+        /// <param name="response">The credential the browser posted back.</param>
+        /// <param name="expectedChallenge">
+        /// The challenge that was issued for this ceremony — the <c>Challenge</c> of the
+        /// <see cref="PublicKeyCredentialCreationOptions"/> the application stored against the session.
+        /// </param>
+        /// <returns>
+        /// The outcome. Every way a real ceremony can fail is a reason on this result; nothing about a
+        /// declined registration is reported as an exception.
+        /// </returns>
+        /// <exception cref="ArgumentNullException"><paramref name="response"/> or <paramref name="expectedChallenge"/> is null.</exception>
+        /// <exception cref="ArgumentException"><paramref name="expectedChallenge"/> is not a challenge this library issued.</exception>
+        public WebAuthnRegistrationResult VerifyDiscoverableRegistration(WebAuthnRegistrationResponse response, string expectedChallenge)
+        {
+            return VerifyRegistration(response, expectedChallenge, WebAuthnUserVerificationRequirement.Required);
+        }
+
+        /// <summary>
         /// Runs the registration checks in the order WebAuthn Level 3 §7.1 states them, letting the
         /// parsers report a malformed structure by throwing so each check reads as the single condition it
         /// is. The checks shared with §7.2 are <see cref="WebAuthnCeremonyChecks"/>'; what is left here is
@@ -147,8 +175,16 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
-        /// Verifies an authentication ceremony against the credential the application looked up.
+        /// Verifies a second-factor authentication ceremony against the credential the application looked
+        /// up.
         /// </summary>
+        /// <remarks>
+        /// Does not read the user handle, so it is never the call for usernameless passkey sign-in, where
+        /// the user handle is part of what names the user: that is
+        /// <see cref="VerifyDiscoverableAuthentication"/>. The result's
+        /// <see cref="WebAuthnAuthenticationResult.Mode"/> is
+        /// <see cref="WebAuthnAuthenticationMode.SecondFactor"/>.
+        /// </remarks>
         /// <param name="response">The assertion the browser posted back.</param>
         /// <param name="expectedChallenge">
         /// The challenge that was issued for this ceremony — the <c>Challenge</c> of the
@@ -186,14 +222,129 @@ namespace EasyReasy.Auth
 
             byte[] expectedChallengeBytes = DecodeIssuedChallenge(expectedChallenge, nameof(expectedChallenge));
 
+            return RunAuthentication(response, expectedChallengeBytes, storedCredential, userVerification, storedUserHandle: null);
+        }
+
+        /// <summary>
+        /// Verifies a usernameless passkey sign-in, made from
+        /// <see cref="WebAuthnOptionsGenerator.CreateDiscoverableAuthenticationOptions"/>, against the
+        /// credential the application looked up and its owner's user handle.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Every check <see cref="VerifyAuthentication"/> makes, with user verification fixed at
+        /// <see cref="WebAuthnUserVerificationRequirement.Required"/> and one more (WebAuthn Level 3 §7.2
+        /// step 6): the assertion must carry a user handle, and it must be the owner's. The result's
+        /// <see cref="WebAuthnAuthenticationResult.Mode"/> is
+        /// <see cref="WebAuthnAuthenticationMode.Discoverable"/>, accepted or declined.
+        /// </para>
+        /// <para>
+        /// The user handle is checked last, after the signature and the sign counter. It is not among the
+        /// bytes the authenticator signs, so checking it earlier would let anyone who knows a credential id
+        /// choose between <see cref="WebAuthnAuthenticationFailureReason.UserHandleMissing"/> and
+        /// <see cref="WebAuthnAuthenticationFailureReason.UserHandleMismatch"/> without the private key,
+        /// and hide the <see cref="WebAuthnAuthenticationFailureReason.SignatureInvalid"/> an audit record
+        /// alerts on. Which assertions are accepted is the same in any order; only the reported reason
+        /// differs.
+        /// </para>
+        /// <para>
+        /// No user is known before this call: the lookup of <paramref name="storedCredential"/> is what
+        /// names the user, so the user signed in is that credential's owner, never anything the request
+        /// claims.
+        /// </para>
+        /// </remarks>
+        /// <param name="response">The assertion the browser posted back.</param>
+        /// <param name="expectedChallenge">
+        /// The challenge that was issued for this ceremony — the <c>Challenge</c> of the
+        /// <see cref="PublicKeyCredentialRequestOptions"/>, stored under the application's own ceremony id
+        /// and taken back exactly once.
+        /// </param>
+        /// <param name="storedCredential">
+        /// The credential looked up by <see cref="WebAuthnCredentialResponse.Id"/> across all users, among
+        /// the credentials registered as passkeys only — a key enrolled as a second factor must never sign
+        /// anyone in on its own.
+        /// </param>
+        /// <param name="storedUserHandle">
+        /// The owner's user handle: the same bytes that were passed as the <c>id</c> of the
+        /// <see cref="PublicKeyCredentialUserEntity"/> the credential was registered with (the bytes of the
+        /// owner's GUID, say), 1 to <see cref="PublicKeyCredentialUserEntity.MaximumIdLength"/> bytes.
+        /// Derive it from the owner the lookup named, as registration did.
+        /// </param>
+        /// <returns>
+        /// The outcome, carrying the sign counter to store when it succeeded. Every way a real ceremony can
+        /// fail is a reason on this result; nothing about a declined assertion is reported as an exception.
+        /// </returns>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="expectedChallenge"/> is not a challenge this library issued, or
+        /// <paramref name="storedUserHandle"/> is empty or longer than
+        /// <see cref="PublicKeyCredentialUserEntity.MaximumIdLength"/> bytes.
+        /// </exception>
+        public WebAuthnAuthenticationResult VerifyDiscoverableAuthentication(
+            WebAuthnAuthenticationResponse response,
+            string expectedChallenge,
+            WebAuthnStoredCredential storedCredential,
+            byte[] storedUserHandle)
+        {
+            ArgumentNullException.ThrowIfNull(response);
+            ArgumentNullException.ThrowIfNull(expectedChallenge);
+            ArgumentNullException.ThrowIfNull(storedCredential);
+            ArgumentNullException.ThrowIfNull(storedUserHandle);
+
+            byte[] expectedChallengeBytes = DecodeIssuedChallenge(expectedChallenge, nameof(expectedChallenge));
+            ThrowIfUserHandleIsOutOfRange(storedUserHandle, nameof(storedUserHandle));
+
+            return RunAuthentication(
+                response,
+                expectedChallengeBytes,
+                storedCredential,
+                WebAuthnUserVerificationRequirement.Required,
+                storedUserHandle);
+        }
+
+        /// <summary>
+        /// Runs the authentication checks for either mode and turns a malformed structure into a declined
+        /// result.
+        /// </summary>
+        /// <param name="response">The assertion the browser posted back.</param>
+        /// <param name="expectedChallengeBytes">The decoded challenge that was issued.</param>
+        /// <param name="storedCredential">The credential the application looked up.</param>
+        /// <param name="userVerification">The requirement the ceremony is held to.</param>
+        /// <param name="storedUserHandle">
+        /// The user handle to require, or null for a second factor, which does not read it. The mode is
+        /// derived from this alone, through <see cref="ModeFor"/>, so a result cannot report
+        /// <see cref="WebAuthnAuthenticationMode.Discoverable"/> without the user-handle check having run,
+        /// nor <see cref="WebAuthnAuthenticationMode.SecondFactor"/> with it.
+        /// </param>
+        private WebAuthnAuthenticationResult RunAuthentication(
+            WebAuthnAuthenticationResponse response,
+            byte[] expectedChallengeBytes,
+            WebAuthnStoredCredential storedCredential,
+            WebAuthnUserVerificationRequirement userVerification,
+            byte[]? storedUserHandle)
+        {
             try
             {
-                return VerifyAuthenticationOrThrow(response, expectedChallengeBytes, storedCredential, userVerification);
+                return VerifyAuthenticationOrThrow(response, expectedChallengeBytes, storedCredential, userVerification, storedUserHandle);
             }
             catch (WebAuthnParseException exception)
             {
-                return WebAuthnAuthenticationResult.Failed(WebAuthnFailureTranslation.ToAuthenticationReason(exception.Error), exception.Message);
+                return WebAuthnAuthenticationResult.Failed(
+                    ModeFor(storedUserHandle),
+                    WebAuthnFailureTranslation.ToAuthenticationReason(exception.Error),
+                    exception.Message);
             }
+        }
+
+        /// <summary>
+        /// The mode a verification runs in: <see cref="WebAuthnAuthenticationMode.Discoverable"/> exactly
+        /// when a user handle is required.
+        /// </summary>
+        /// <param name="storedUserHandle">The user handle to require, or null for a second factor.</param>
+        /// <returns>The mode to report on the result.</returns>
+        private static WebAuthnAuthenticationMode ModeFor(byte[]? storedUserHandle)
+        {
+            return storedUserHandle == null ? WebAuthnAuthenticationMode.SecondFactor : WebAuthnAuthenticationMode.Discoverable;
         }
 
         /// <summary>
@@ -206,14 +357,18 @@ namespace EasyReasy.Auth
             WebAuthnAuthenticationResponse response,
             byte[] expectedChallengeBytes,
             WebAuthnStoredCredential storedCredential,
-            WebAuthnUserVerificationRequirement userVerification)
+            WebAuthnUserVerificationRequirement userVerification,
+            byte[]? storedUserHandle)
         {
+            WebAuthnAuthenticationMode mode = ModeFor(storedUserHandle);
+
             if (!response.CredentialIdBytes.AsSpan().SequenceEqual(storedCredential.CredentialIdBytes))
             {
                 // Caught before anything else is read: verifying an assertion against a credential it does
                 // not name would answer a question nobody asked, and the signature check would fail in a
                 // way that reads as an attack rather than as a lookup that returned the wrong row.
                 return WebAuthnAuthenticationResult.Failed(
+                    mode,
                     WebAuthnAuthenticationFailureReason.CredentialIdMismatch,
                     "The assertion names a different credential than the one it was given to verify against.");
             }
@@ -229,6 +384,7 @@ namespace EasyReasy.Auth
             if (clientDataFailure != null)
             {
                 return WebAuthnAuthenticationResult.Failed(
+                    mode,
                     WebAuthnFailureTranslation.ToAuthenticationReason(clientDataFailure.Check),
                     clientDataFailure.Message);
             }
@@ -243,6 +399,7 @@ namespace EasyReasy.Auth
             if (authenticatorDataFailure != null)
             {
                 return WebAuthnAuthenticationResult.Failed(
+                    mode,
                     WebAuthnFailureTranslation.ToAuthenticationReason(authenticatorDataFailure.Check),
                     authenticatorDataFailure.Message);
             }
@@ -250,6 +407,7 @@ namespace EasyReasy.Auth
             if (!SignatureIsValid(response, storedCredential))
             {
                 return WebAuthnAuthenticationResult.Failed(
+                    mode,
                     WebAuthnAuthenticationFailureReason.SignatureInvalid,
                     "The signature does not verify against the stored public key.");
             }
@@ -259,15 +417,65 @@ namespace EasyReasy.Auth
             if (signCounterState == null)
             {
                 return WebAuthnAuthenticationResult.Failed(
+                    mode,
                     WebAuthnAuthenticationFailureReason.SignCounterRegressed,
                     $"The authenticator's signature counter did not advance: it reported {authenticatorData.SignCount} against a stored {storedCredential.SignCount}.");
             }
 
+            if (storedUserHandle != null)
+            {
+                // Last, after everything the signature covers: see VerifyDiscoverableAuthentication's
+                // remarks for why an unsigned value must not decide the reason ahead of the signature.
+                WebAuthnAuthenticationResult? userHandleFailure = CheckUserHandle(response.Response.UserHandleBytes, storedUserHandle);
+
+                if (userHandleFailure != null)
+                {
+                    return userHandleFailure;
+                }
+            }
+
             return WebAuthnAuthenticationResult.Succeeded(
+                mode,
                 authenticatorData.SignCount,
                 signCounterState.Value,
                 authenticatorData.UserVerified,
                 authenticatorData.BackedUp);
+        }
+
+        /// <summary>
+        /// Requires the assertion's user handle and compares it with the owner's (WebAuthn Level 3 §7.2
+        /// step 6, for the case where no user was identified first).
+        /// </summary>
+        /// <remarks>
+        /// Authentication-only, like the credential-id check, so it lives here rather than among
+        /// <see cref="WebAuthnCeremonyChecks"/>, which holds what both ceremonies check. Runs only when a
+        /// user handle is required, which is what makes the mode
+        /// <see cref="WebAuthnAuthenticationMode.Discoverable"/>, so that is the mode its results carry.
+        /// Compared in fixed time: in this mode the handle is one of the values that says whose account a
+        /// sign-in reaches.
+        /// </remarks>
+        /// <param name="presentedUserHandle">The decoded user handle the assertion carried, or null.</param>
+        /// <param name="storedUserHandle">The owner's user handle.</param>
+        /// <returns>The declined result, or null when the user handle matches.</returns>
+        private static WebAuthnAuthenticationResult? CheckUserHandle(byte[]? presentedUserHandle, byte[] storedUserHandle)
+        {
+            if (presentedUserHandle == null)
+            {
+                return WebAuthnAuthenticationResult.Failed(
+                    WebAuthnAuthenticationMode.Discoverable,
+                    WebAuthnAuthenticationFailureReason.UserHandleMissing,
+                    "The assertion carried no user handle; a passkey sign-in must, since the credential is what names the user.");
+            }
+
+            if (!CryptographicOperations.FixedTimeEquals(presentedUserHandle, storedUserHandle))
+            {
+                return WebAuthnAuthenticationResult.Failed(
+                    WebAuthnAuthenticationMode.Discoverable,
+                    WebAuthnAuthenticationFailureReason.UserHandleMismatch,
+                    "The assertion's user handle is not the credential owner's.");
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -350,6 +558,24 @@ namespace EasyReasy.Auth
             }
 
             return decoded;
+        }
+
+        /// <summary>
+        /// Rejects a user handle no registration could have been made with.
+        /// </summary>
+        /// <remarks>
+        /// The bounds <see cref="PublicKeyCredentialUserEntity"/> applies at registration, so a handle
+        /// outside them is the application's mistake rather than an assertion to decline: reported as a
+        /// mismatch, it would read as someone presenting another user's passkey on every attempt.
+        /// </remarks>
+        private static void ThrowIfUserHandleIsOutOfRange(byte[] userHandle, string parameterName)
+        {
+            if (userHandle.Length == 0 || userHandle.Length > PublicKeyCredentialUserEntity.MaximumIdLength)
+            {
+                throw new ArgumentException(
+                    $"'{parameterName}' is {userHandle.Length} bytes; a user handle is the id a {nameof(PublicKeyCredentialUserEntity)} was registered with, between 1 and {PublicKeyCredentialUserEntity.MaximumIdLength} bytes.",
+                    parameterName);
+            }
         }
     }
 }

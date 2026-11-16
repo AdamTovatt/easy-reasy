@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace EasyReasy.Auth.Tests
 {
     /// <summary>
@@ -23,6 +25,12 @@ namespace EasyReasy.Auth.Tests
         public static PublicKeyCredentialUserEntity NewUser()
         {
             return new PublicKeyCredentialUserEntity(new byte[] { 0x01, 0x02, 0x03, 0x04 }, UserName, UserDisplayName);
+        }
+
+        /// <summary>The names of a JSON object's properties, in the order they were written.</summary>
+        public static string[] PropertyNames(JsonElement element)
+        {
+            return element.EnumerateObject().Select(property => property.Name).ToArray();
         }
     }
 }
