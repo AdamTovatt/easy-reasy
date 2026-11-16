@@ -184,6 +184,120 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual("userVerification", exception.ParamName);
         }
 
+        [TestMethod]
+        public void VerifyDiscoverableRegistration_NullResponse_Throws()
+        {
+            ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
+                () => WebAuthnTestData.NewVerifier().VerifyDiscoverableRegistration(null!, WebAuthnTestData.Challenge));
+
+            Assert.AreEqual("response", exception.ParamName);
+        }
+
+        [TestMethod]
+        public void VerifyDiscoverableRegistration_NullChallenge_Throws()
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+
+            ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
+                () => WebAuthnTestData.NewVerifier().VerifyDiscoverableRegistration(NewResponse(authenticator), null!));
+
+            Assert.AreEqual("expectedChallenge", exception.ParamName);
+        }
+
+        [TestMethod]
+        public void VerifyDiscoverableRegistration_PaddedStoredChallenge_Throws()
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => WebAuthnTestData.NewVerifier().VerifyDiscoverableRegistration(NewResponse(authenticator), WebAuthnTestData.Challenge + "="));
+
+            Assert.AreEqual("expectedChallenge", exception.ParamName);
+        }
+
+        [TestMethod]
+        public void VerifyDiscoverableAuthentication_NullResponse_Throws()
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
+
+            ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
+                () => WebAuthnTestData.NewVerifier().VerifyDiscoverableAuthentication(
+                    null!, WebAuthnTestData.Challenge, ceremony.StoredCredential(), ceremony.OwnerUserHandle));
+
+            Assert.AreEqual("response", exception.ParamName);
+        }
+
+        [TestMethod]
+        public void VerifyDiscoverableAuthentication_NullChallenge_Throws()
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
+
+            ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
+                () => WebAuthnTestData.NewVerifier().VerifyDiscoverableAuthentication(
+                    ceremony.Build(), null!, ceremony.StoredCredential(), ceremony.OwnerUserHandle));
+
+            Assert.AreEqual("expectedChallenge", exception.ParamName);
+        }
+
+        [TestMethod]
+        public void VerifyDiscoverableAuthentication_NullStoredCredential_Throws()
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
+
+            ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
+                () => WebAuthnTestData.NewVerifier().VerifyDiscoverableAuthentication(
+                    ceremony.Build(), WebAuthnTestData.Challenge, null!, ceremony.OwnerUserHandle));
+
+            Assert.AreEqual("storedCredential", exception.ParamName);
+        }
+
+        [TestMethod]
+        public void VerifyDiscoverableAuthentication_NullStoredUserHandle_Throws()
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
+
+            ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
+                () => WebAuthnTestData.NewVerifier().VerifyDiscoverableAuthentication(
+                    ceremony.Build(), WebAuthnTestData.Challenge, ceremony.StoredCredential(), null!));
+
+            Assert.AreEqual("storedUserHandle", exception.ParamName);
+        }
+
+        [TestMethod]
+        public void VerifyDiscoverableAuthentication_PaddedStoredChallenge_Throws()
+        {
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => WebAuthnTestData.NewVerifier().VerifyDiscoverableAuthentication(
+                    ceremony.Build(), WebAuthnTestData.Challenge + "=", ceremony.StoredCredential(), ceremony.OwnerUserHandle));
+
+            Assert.AreEqual("expectedChallenge", exception.ParamName);
+        }
+
+        [DataTestMethod]
+        [DataRow(0)]
+        [DataRow(PublicKeyCredentialUserEntity.MaximumIdLength + 1)]
+        public void VerifyDiscoverableAuthentication_StoredUserHandleNoRegistrationCouldHaveUsed_Throws(int length)
+        {
+            // The bounds the user entity applies at registration. A handle outside them is the
+            // application's mistake, and declining it as a mismatch would report another user's passkey on
+            // every attempt.
+            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => WebAuthnTestData.NewVerifier().VerifyDiscoverableAuthentication(
+                    ceremony.Build(), WebAuthnTestData.Challenge, ceremony.StoredCredential(), new byte[length]));
+
+            Assert.AreEqual("storedUserHandle", exception.ParamName);
+        }
+
         private static void AssertAssertionChallengeRejected(string challenge)
         {
             using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();

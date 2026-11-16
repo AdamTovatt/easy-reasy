@@ -79,14 +79,16 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateAuthenticationOptions_NoAllowedCredentials_Throws()
         {
-            // An empty allowCredentials asks the browser for any discoverable credential, which is
-            // passwordless login — out of scope, and not something verification here could complete.
+            // An empty allowCredentials asks the browser for any discoverable credential: usernameless
+            // passkey sign-in, never a second factor. A second-factor caller that ends up with an empty list
+            // (a user with no keys, a failed lookup) gets this exception, which names the passkey method.
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
                 () => WebAuthnTestData.NewGenerator().CreateAuthenticationOptions(
                     Array.Empty<string>(),
                     WebAuthnUserVerificationRequirement.Required));
 
             Assert.AreEqual("allowCredentialIds", exception.ParamName);
+            StringAssert.Contains(exception.Message, nameof(WebAuthnOptionsGenerator.CreateDiscoverableAuthenticationOptions));
         }
 
         [TestMethod]

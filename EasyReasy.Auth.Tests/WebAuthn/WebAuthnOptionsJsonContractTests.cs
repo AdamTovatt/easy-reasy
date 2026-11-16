@@ -17,7 +17,7 @@ namespace EasyReasy.Auth.Tests
 
             CollectionAssert.AreEquivalent(
                 new[] { "rp", "user", "challenge", "pubKeyCredParams", "timeout", "excludeCredentials", "authenticatorSelection", "attestation" },
-                PropertyNames(document.RootElement));
+                WebAuthnOptionsTestData.PropertyNames(document.RootElement));
         }
 
         [TestMethod]
@@ -26,7 +26,7 @@ namespace EasyReasy.Auth.Tests
             using JsonDocument document = JsonDocument.Parse(RegistrationJson());
             JsonElement relyingParty = document.RootElement.GetProperty("rp");
 
-            CollectionAssert.AreEquivalent(new[] { "id", "name" }, PropertyNames(relyingParty));
+            CollectionAssert.AreEquivalent(new[] { "id", "name" }, WebAuthnOptionsTestData.PropertyNames(relyingParty));
             Assert.AreEqual("example.com", relyingParty.GetProperty("id").GetString());
             Assert.AreEqual("Contoso", relyingParty.GetProperty("name").GetString());
         }
@@ -37,7 +37,7 @@ namespace EasyReasy.Auth.Tests
             using JsonDocument document = JsonDocument.Parse(RegistrationJson());
             JsonElement user = document.RootElement.GetProperty("user");
 
-            CollectionAssert.AreEquivalent(new[] { "id", "name", "displayName" }, PropertyNames(user));
+            CollectionAssert.AreEquivalent(new[] { "id", "name", "displayName" }, WebAuthnOptionsTestData.PropertyNames(user));
             Assert.AreEqual(WebAuthnOptionsTestData.UserName, user.GetProperty("name").GetString());
             Assert.AreEqual(WebAuthnOptionsTestData.UserDisplayName, user.GetProperty("displayName").GetString());
         }
@@ -48,7 +48,33 @@ namespace EasyReasy.Auth.Tests
             using JsonDocument document = JsonDocument.Parse(RegistrationJson());
             JsonElement selection = document.RootElement.GetProperty("authenticatorSelection");
 
-            CollectionAssert.AreEquivalent(new[] { "residentKey", "requireResidentKey", "userVerification" }, PropertyNames(selection));
+            CollectionAssert.AreEquivalent(new[] { "residentKey", "requireResidentKey", "userVerification" }, WebAuthnOptionsTestData.PropertyNames(selection));
+            Assert.AreEqual("discouraged", selection.GetProperty("residentKey").GetString());
+            Assert.IsFalse(selection.GetProperty("requireResidentKey").GetBoolean());
+        }
+
+        [DataTestMethod]
+        [DataRow(false, WebAuthnUserVerificationRequirement.Required)]
+        [DataRow(false, WebAuthnUserVerificationRequirement.Preferred)]
+        [DataRow(false, WebAuthnUserVerificationRequirement.Discouraged)]
+        [DataRow(true, WebAuthnUserVerificationRequirement.Required)]
+        [DataRow(true, WebAuthnUserVerificationRequirement.Preferred)]
+        [DataRow(true, WebAuthnUserVerificationRequirement.Discouraged)]
+        public void CreateRegistrationOptions_AnyUserVerification_DiscouragesAResidentKey(
+            bool credentialReferenceOverload,
+            WebAuthnUserVerificationRequirement userVerification)
+        {
+            // Both second-factor overloads, every user-verification value. Required is the value the second
+            // factor shares with passkey registration, so it is the row a resident-key setting leaking from
+            // that path would most likely ride on.
+            WebAuthnOptionsGenerator generator = WebAuthnTestData.NewGenerator();
+            string json = credentialReferenceOverload
+                ? generator.CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), userVerification, Array.Empty<WebAuthnCredentialReference>()).ToJson()
+                : generator.CreateRegistrationOptions(WebAuthnOptionsTestData.NewUser(), userVerification).ToJson();
+
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement selection = document.RootElement.GetProperty("authenticatorSelection");
+
             Assert.AreEqual("discouraged", selection.GetProperty("residentKey").GetString());
             Assert.IsFalse(selection.GetProperty("requireResidentKey").GetBoolean());
         }
@@ -59,7 +85,7 @@ namespace EasyReasy.Auth.Tests
             using JsonDocument document = JsonDocument.Parse(RegistrationJson());
             JsonElement descriptor = document.RootElement.GetProperty("excludeCredentials")[0];
 
-            CollectionAssert.AreEquivalent(new[] { "type", "id" }, PropertyNames(descriptor));
+            CollectionAssert.AreEquivalent(new[] { "type", "id" }, WebAuthnOptionsTestData.PropertyNames(descriptor));
             Assert.AreEqual("public-key", descriptor.GetProperty("type").GetString());
             Assert.AreEqual(WebAuthnOptionsTestData.FirstCredentialId, descriptor.GetProperty("id").GetString());
         }
@@ -70,7 +96,7 @@ namespace EasyReasy.Auth.Tests
             using JsonDocument document = JsonDocument.Parse(RegistrationJson());
             JsonElement parameters = document.RootElement.GetProperty("pubKeyCredParams")[0];
 
-            CollectionAssert.AreEquivalent(new[] { "type", "alg" }, PropertyNames(parameters));
+            CollectionAssert.AreEquivalent(new[] { "type", "alg" }, WebAuthnOptionsTestData.PropertyNames(parameters));
             Assert.AreEqual(-7, parameters.GetProperty("alg").GetInt32());
         }
 
@@ -99,7 +125,7 @@ namespace EasyReasy.Auth.Tests
 
             CollectionAssert.AreEquivalent(
                 new[] { "challenge", "timeout", "rpId", "allowCredentials", "userVerification" },
-                PropertyNames(document.RootElement));
+                WebAuthnOptionsTestData.PropertyNames(document.RootElement));
         }
 
         [TestMethod]
@@ -119,7 +145,7 @@ namespace EasyReasy.Auth.Tests
             using JsonDocument document = JsonDocument.Parse(AuthenticationJson());
             JsonElement descriptor = document.RootElement.GetProperty("allowCredentials")[0];
 
-            CollectionAssert.AreEquivalent(new[] { "type", "id" }, PropertyNames(descriptor));
+            CollectionAssert.AreEquivalent(new[] { "type", "id" }, WebAuthnOptionsTestData.PropertyNames(descriptor));
             Assert.AreEqual(WebAuthnOptionsTestData.FirstCredentialId, descriptor.GetProperty("id").GetString());
         }
 
@@ -133,7 +159,7 @@ namespace EasyReasy.Auth.Tests
             using JsonDocument document = JsonDocument.Parse(json);
             JsonElement descriptor = document.RootElement.GetProperty("allowCredentials")[0];
 
-            CollectionAssert.AreEquivalent(new[] { "type", "id", "transports" }, PropertyNames(descriptor));
+            CollectionAssert.AreEquivalent(new[] { "type", "id", "transports" }, WebAuthnOptionsTestData.PropertyNames(descriptor));
             CollectionAssert.AreEqual(
                 new[] { "internal", "hybrid" },
                 descriptor.GetProperty("transports").EnumerateArray().Select(transport => transport.GetString()).ToArray());
@@ -150,7 +176,7 @@ namespace EasyReasy.Auth.Tests
             using JsonDocument document = JsonDocument.Parse(json);
             JsonElement descriptor = document.RootElement.GetProperty("excludeCredentials")[0];
 
-            CollectionAssert.AreEquivalent(new[] { "type", "id", "transports" }, PropertyNames(descriptor));
+            CollectionAssert.AreEquivalent(new[] { "type", "id", "transports" }, WebAuthnOptionsTestData.PropertyNames(descriptor));
             CollectionAssert.AreEqual(
                 new[] { "usb" },
                 descriptor.GetProperty("transports").EnumerateArray().Select(transport => transport.GetString()).ToArray());
@@ -223,11 +249,6 @@ namespace EasyReasy.Auth.Tests
         private static string AuthenticationJson()
         {
             return NewAuthenticationOptions().ToJson();
-        }
-
-        private static string[] PropertyNames(JsonElement element)
-        {
-            return element.EnumerateObject().Select(property => property.Name).ToArray();
         }
     }
 }

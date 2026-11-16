@@ -53,14 +53,18 @@ namespace EasyReasy.Auth
         /// authenticator reported none.
         /// </summary>
         /// <remarks>
-        /// Carried but not verified, and for a reason specific to this being a second factor. Matching a
+        /// <para>
+        /// Verified by <see cref="WebAuthnVerifier.VerifyDiscoverableAuthentication"/>, which requires it
+        /// and compares it against the credential owner's handle: in usernameless passkey
+        /// sign-in no user is known yet, so the handle is part of what says whose credential answered.
+        /// </para>
+        /// <para>
+        /// Not read by the second-factor <see cref="WebAuthnVerifier.VerifyAuthentication"/>. Matching a
         /// user handle answers "which user is this?", which is the question the first factor already
-        /// answered; here the application has a session and looked this credential up against it. An
+        /// answered; there the application has a session and looked this credential up against it. An
         /// authenticator answering a non-discoverable ceremony is not required to send one at all, so
-        /// requiring it would reject the ordinary case. An application that wants to compare it against the
-        /// handle it registered can, and the value is here for that — which is why it is held to the same
-        /// encoding and length rules as the fields this library does read, rather than passed through
-        /// unexamined.
+        /// requiring it would reject the ordinary case.
+        /// </para>
         /// </remarks>
         [JsonPropertyName(UserHandleFieldName)]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -74,6 +78,12 @@ namespace EasyReasy.Auth
 
         /// <summary>The decoded signature.</summary>
         internal byte[] SignatureBytes { get; }
+
+        /// <summary>
+        /// The decoded user handle, or null when the authenticator reported none. Decoded leniently, like
+        /// every other field the browser sends, so a padded spelling of the right bytes still matches.
+        /// </summary>
+        internal byte[]? UserHandleBytes { get; }
 
         /// <summary>
         /// Initializes the assertion response.
@@ -94,10 +104,12 @@ namespace EasyReasy.Auth
             AuthenticatorDataBytes = WebAuthnResponseReader.Decode(authenticatorData, nameof(authenticatorData));
             SignatureBytes = WebAuthnResponseReader.Decode(signature, nameof(signature));
 
+            UserHandleBytes = WebAuthnResponseReader.DecodeOptional(userHandle, nameof(userHandle));
+
             ClientDataJson = clientDataJson;
             AuthenticatorData = authenticatorData;
             Signature = signature;
-            UserHandle = WebAuthnResponseReader.CheckOptional(userHandle, nameof(userHandle));
+            UserHandle = userHandle;
         }
     }
 }

@@ -70,7 +70,7 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
-        /// Checks an optional base64url field without keeping the bytes, returning the text unchanged.
+        /// Decodes an optional base64url field, returning null when it is absent.
         /// </summary>
         /// <remarks>
         /// Holds an optional field to the same rules as a required one when it is present. The field is
@@ -80,16 +80,11 @@ namespace EasyReasy.Auth
         /// </remarks>
         /// <param name="value">The encoded text, or null.</param>
         /// <param name="parameterName">The parameter to name in the exception.</param>
-        /// <returns>The text, unchanged.</returns>
+        /// <returns>The decoded bytes, or null when the field is absent.</returns>
         /// <exception cref="ArgumentException">The text is present and is too long, is not base64url, or stands for no bytes.</exception>
-        public static string? CheckOptional(string? value, string parameterName)
+        public static byte[]? DecodeOptional(string? value, string parameterName)
         {
-            if (value != null)
-            {
-                Decode(value, parameterName);
-            }
-
-            return value;
+            return value == null ? null : Decode(value, parameterName);
         }
 
         /// <summary>

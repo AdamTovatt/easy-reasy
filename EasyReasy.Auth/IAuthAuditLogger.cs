@@ -119,8 +119,9 @@ namespace EasyReasy.Auth
 
         /// <summary>
         /// Invoked after a WebAuthn authentication ceremony is verified — a user presenting the security
-        /// key, Touch ID or Face ID they enrolled. <paramref name="result"/> carries success state and, on
-        /// failure, a <see cref="WebAuthnAuthenticationFailureReason"/> naming the check that rejected it.
+        /// key, Touch ID, Face ID or passkey they enrolled. <paramref name="result"/> carries success state,
+        /// the <see cref="WebAuthnAuthenticationResult.Mode"/> it ran in and, on failure, a
+        /// <see cref="WebAuthnAuthenticationFailureReason"/> naming the check that rejected it.
         /// </summary>
         /// <remarks>
         /// <para>
@@ -130,13 +131,21 @@ namespace EasyReasy.Auth
         /// consumer's.
         /// </para>
         /// <para>
-        /// The record an intrusion is most likely to show up in. A failed second factor is an attempt to
-        /// finish a login that already passed a first factor, so the reason matters:
+        /// The record an intrusion is most likely to show up in, and what a failure means depends on
+        /// <see cref="WebAuthnAuthenticationResult.Mode"/>, so record it. In
+        /// <see cref="WebAuthnAuthenticationMode.SecondFactor"/> a failure is an attempt to finish a login
+        /// that already passed a first factor. In <see cref="WebAuthnAuthenticationMode.Discoverable"/> it
+        /// is a first-factor login attempt with no known user: usernameless passkey sign-in has nothing in
+        /// front of it, so it belongs with failed password logins rather than with failed second factors.
+        /// Either way the reason matters:
         /// <see cref="WebAuthnAuthenticationFailureReason.SignatureInvalid"/> is something answering
         /// without the private key, <see cref="WebAuthnAuthenticationFailureReason.ChallengeMismatch"/> a
         /// replayed assertion, and
         /// <see cref="WebAuthnAuthenticationFailureReason.SignCounterRegressed"/> WebAuthn's one signal of
         /// a cloned credential — evidence worth alerting on rather than counting.
+        /// <see cref="WebAuthnAuthenticationFailureReason.UserHandleMismatch"/> is reported only after the
+        /// signature verified, so it is the key holder's own passkey disagreeing with your records about
+        /// whose it is: a data problem to investigate, not someone without the key.
         /// <see cref="WebAuthnAuthenticationResult.FailureMessage"/> may be recorded alongside it, on the
         /// same terms as the registration hook's.
         /// </para>

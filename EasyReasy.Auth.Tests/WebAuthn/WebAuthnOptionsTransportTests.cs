@@ -164,11 +164,12 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void CreateAuthenticationOptions_NoCredentials_Throws()
         {
-            // An empty allow-list is passwordless login whichever overload spells it.
+            // An empty allow-list is usernameless passkey sign-in whichever overload spells it.
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
                 () => NewAuthenticationOptions());
 
             Assert.AreEqual("allowCredentials", exception.ParamName);
+            StringAssert.Contains(exception.Message, nameof(WebAuthnOptionsGenerator.CreateDiscoverableAuthenticationOptions));
         }
 
         [TestMethod]

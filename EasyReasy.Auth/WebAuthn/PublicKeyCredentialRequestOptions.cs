@@ -33,8 +33,10 @@ namespace EasyReasy.Auth
         public string RelyingPartyId { get; }
 
         /// <summary>
-        /// The credentials this user may answer with. Never empty: an empty list is how a relying party
-        /// asks for any discoverable credential, which is passwordless login and out of scope here.
+        /// The credentials this user may answer with. Never empty for a second factor; empty exactly when
+        /// <see cref="WebAuthnOptionsGenerator.CreateDiscoverableAuthenticationOptions"/> made these
+        /// options, which is how a relying party asks for any discoverable credential (usernameless
+        /// passkey sign-in).
         /// </summary>
         [JsonPropertyName("allowCredentials")]
         public IReadOnlyList<PublicKeyCredentialDescriptor> AllowCredentials { get; }

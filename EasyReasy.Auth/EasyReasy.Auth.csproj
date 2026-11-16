@@ -7,7 +7,7 @@
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <Title>EasyReasy.Auth</Title>
     <Authors>Adam Tovatt</Authors>
-    <Description>A lightweight .NET library for internal JWT authentication and claims handling, with refresh token rotation, password hashing, TOTP primitives, WebAuthn/FIDO2 second-factor verification, query-string tokens for WebSocket connections and path-scoped cookie tokens for files opened in a new tab</Description>
+    <Description>A lightweight .NET library for internal JWT authentication and claims handling, with refresh token rotation, password hashing, TOTP primitives, WebAuthn/FIDO2 second-factor and passkey sign-in verification, query-string tokens for WebSocket connections and path-scoped cookie tokens for files opened in a new tab</Description>
     <Copyright>MIT</Copyright>
     <PackageProjectUrl>https://github.com/AdamTovatt/easy-reasy</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -17,9 +17,9 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>5.14.0</VersionPrefix>
+    <VersionPrefix>5.15.0</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>ExternalAuthResult gains FailureDetail, the provider package's own name for a refusal, set through a new four-parameter Failed overload; the existing Failed overload and ExternalAuthFailureReason are unchanged, so provider packages built against 5.13.1 run as before. HttpContext.SetNoStoreCacheControl() sets the Cache-Control: no-store every token-issuing endpoint sends. TimeProviderLifetimeValidator is now public, so a TokenValidationParameters built for another issuer's tokens can check lifetime on the registered clock. New ExternalSignInEndpoint.HandleAsync is the part every provider sign-in endpoint shares (no-store, the audit record, the access-token cookie, the progressive-delay reset, 200 or 401), with FindMissingServices for a provider's startup check, used by EasyReasy.Auth.Google 1.3.0 and EasyReasy.Auth.Microsoft 1.0.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-v$(VersionPrefix)/EasyReasy.Auth/README.md#migration-from-5131</PackageReleaseNotes>
+    <PackageReleaseNotes>Usernameless passkey sign-in (discoverable credentials), as a mode of its own beside the WebAuthn second factor: WebAuthnOptionsGenerator.CreateDiscoverableRegistrationOptions and CreateDiscoverableAuthenticationOptions, and WebAuthnVerifier.VerifyDiscoverableRegistration and VerifyDiscoverableAuthentication, which checks the assertion's user handle against the credential owner's, after the signature. User verification is always required in this mode. WebAuthnAuthenticationResult gains Mode (SecondFactor or Discoverable), and WebAuthnAuthenticationFailureReason gains UserHandleMissing and UserHandleMismatch. The second-factor methods keep their signatures and behaviour; only the message of the empty allow-list refusal changed, to point at the passkey method. See https://github.com/AdamTovatt/easy-reasy/blob/auth-v$(VersionPrefix)/EasyReasy.Auth/README.md#migration-from-5140</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
