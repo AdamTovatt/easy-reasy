@@ -10,7 +10,7 @@ namespace EasyReasy.Auth.Tests
     [TestClass]
     public class WebAuthnRegistrationVerificationTests
     {
-        private SyntheticAuthenticator _authenticator = null!;
+        private WebAuthnTestAuthenticator _authenticator = null!;
         private SyntheticRegistrationCeremony _ceremony = null!;
 
         /// <summary>
@@ -20,7 +20,7 @@ namespace EasyReasy.Auth.Tests
         [TestInitialize]
         public void BuildACeremonyThatVerifies()
         {
-            _authenticator = SyntheticAuthenticator.Create();
+            _authenticator = WebAuthnTestAuthenticator.Create();
             _ceremony = new SyntheticRegistrationCeremony(_authenticator, WebAuthnTestData.Challenge);
         }
 
@@ -47,10 +47,10 @@ namespace EasyReasy.Auth.Tests
             WebAuthnRegisteredCredential credential = Verify(_ceremony).Credential!;
 
             Assert.AreEqual(Base64UrlEncoding.Encode(_authenticator.CredentialId), credential.CredentialId);
-            Assert.AreEqual(Base64UrlEncoding.Encode(_authenticator.EncodeCoseKey()), credential.PublicKey);
+            Assert.AreEqual(Base64UrlEncoding.Encode(_authenticator.CosePublicKey), credential.PublicKey);
             Assert.AreEqual(CoseAlgorithm.Es256, credential.Algorithm);
             Assert.AreEqual(7u, credential.SignCount);
-            Assert.AreEqual(SyntheticAuthenticator.SyntheticAaguid, credential.Aaguid);
+            Assert.AreEqual(WebAuthnTestAuthenticator.TestAaguid, credential.Aaguid);
         }
 
         [TestMethod]
@@ -58,7 +58,7 @@ namespace EasyReasy.Auth.Tests
         {
             // The algorithm is read out of the key rather than assumed, so both supported ones have to
             // reach the stored credential.
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create(CoseAlgorithm.Rs256);
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Rs256);
             SyntheticRegistrationCeremony ceremony = new SyntheticRegistrationCeremony(authenticator, WebAuthnTestData.Challenge);
 
             WebAuthnRegisteredCredential credential = Verify(ceremony).Credential!;

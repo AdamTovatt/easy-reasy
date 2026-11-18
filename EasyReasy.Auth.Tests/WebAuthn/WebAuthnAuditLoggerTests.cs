@@ -77,7 +77,7 @@ namespace EasyReasy.Auth.Tests
         /// </summary>
         private static WebAuthnRegistrationResult VerifyADeclinedRegistration()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticRegistrationCeremony ceremony = new SyntheticRegistrationCeremony(authenticator, WebAuthnTestData.Challenge);
             ceremony.ClientData.Challenge = WebAuthnTestData.OtherChallenge;
 
@@ -93,7 +93,7 @@ namespace EasyReasy.Auth.Tests
         /// </summary>
         private static WebAuthnAuthenticationResult VerifyADeclinedAssertion()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = new SyntheticAuthenticationCeremony(authenticator, WebAuthnTestData.Challenge);
             ceremony.AuthenticatorData.SignCount = 3;
 

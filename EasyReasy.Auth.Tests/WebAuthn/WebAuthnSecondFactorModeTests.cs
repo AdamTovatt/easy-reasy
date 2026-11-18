@@ -10,7 +10,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyAuthentication_CorrectCeremony_ReportsSecondFactorMode()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = new SyntheticAuthenticationCeremony(authenticator, WebAuthnTestData.Challenge);
 
             WebAuthnAuthenticationResult result = Verify(ceremony);
@@ -22,7 +22,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyAuthentication_FailedCeremony_ReportsSecondFactorMode()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = new SyntheticAuthenticationCeremony(authenticator, WebAuthnTestData.Challenge);
             ceremony.ClientData.Challenge = WebAuthnTestData.OtherChallenge;
 
@@ -35,7 +35,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyAuthentication_MalformedStructure_ReportsSecondFactorMode()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = new SyntheticAuthenticationCeremony(authenticator, WebAuthnTestData.Challenge);
             ceremony.ClientData.Override = "not json";
 
@@ -49,7 +49,7 @@ namespace EasyReasy.Auth.Tests
         public void VerifyAuthentication_NoUserHandle_Succeeds()
         {
             // An authenticator answering a non-discoverable ceremony need not send one.
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = new SyntheticAuthenticationCeremony(authenticator, WebAuthnTestData.Challenge);
             ceremony.UserHandle = null;
 
@@ -62,7 +62,7 @@ namespace EasyReasy.Auth.Tests
         public void VerifyAuthentication_UserHandleThatMatchesNothing_Succeeds()
         {
             // The first factor already said who the user is; the second factor does not ask again.
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = new SyntheticAuthenticationCeremony(authenticator, WebAuthnTestData.Challenge);
             ceremony.UserHandle = Base64UrlEncoding.Encode(new byte[] { 0x0B, 0xAD });
 

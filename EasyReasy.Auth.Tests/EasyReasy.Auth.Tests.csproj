@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EasyReasy.Auth\EasyReasy.Auth.csproj" />
+    <ProjectReference Include="..\EasyReasy.Auth.Testing\EasyReasy.Auth.Testing.csproj" />
   </ItemGroup>
 
 </Project>

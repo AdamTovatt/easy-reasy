@@ -122,8 +122,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_AttestedCredentialData_ReadsAaguidCredentialIdAndPublicKey()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
-            byte[] coseKey = authenticator.EncodeCoseKey();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
+            byte[] coseKey = authenticator.CosePublicKey;
             Guid aaguid = new Guid("08987058-cadc-4b81-b6e1-30de50dcbe96");
 
             AuthenticatorDataBuilder builder = NewBuilder();
@@ -148,8 +148,8 @@ namespace EasyReasy.Auth.Tests
             byte[] firstCredentialId = new byte[] { 0x11, 0x22, 0x33 };
             byte[] secondCredentialId = new byte[] { 0x44, 0x55, 0x66, 0x77 };
 
-            using SyntheticAuthenticator first = SyntheticAuthenticator.Create(CoseAlgorithm.Es256, firstCredentialId);
-            using SyntheticAuthenticator second = SyntheticAuthenticator.Create(CoseAlgorithm.Es256, secondCredentialId);
+            using WebAuthnTestAuthenticator first = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Es256, firstCredentialId);
+            using WebAuthnTestAuthenticator second = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Es256, secondCredentialId);
 
             CollectionAssert.AreEqual(firstCredentialId, ParseAttestedCredentialData(first).CredentialId);
             CollectionAssert.AreEqual(secondCredentialId, ParseAttestedCredentialData(second).CredentialId);
@@ -158,8 +158,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_AttestedCredentialDataFollowedByExtensions_StillReadsThePublicKeyExactly()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
-            byte[] coseKey = authenticator.EncodeCoseKey();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
+            byte[] coseKey = authenticator.CosePublicKey;
 
             AuthenticatorDataBuilder builder = NewBuilder();
             builder.Aaguid = authenticator.Aaguid;
@@ -215,12 +215,12 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_CredentialIdLongerThanWhatFollowsIt_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             AuthenticatorDataBuilder builder = NewBuilder();
             builder.Aaguid = authenticator.Aaguid;
             builder.CredentialId = authenticator.CredentialId;
-            builder.CredentialPublicKey = authenticator.EncodeCoseKey();
+            builder.CredentialPublicKey = authenticator.CosePublicKey;
             // Deliberately under the 1023-byte cap so this exercises "longer than the bytes that follow"
             // rather than "longer than the spec allows"; raising it past 1023 silently moves the test to
             // the other branch, which is already covered below.
@@ -269,12 +269,12 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_TrailingBytesNoFlagAccountsFor_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             AuthenticatorDataBuilder builder = NewBuilder();
             builder.Aaguid = authenticator.Aaguid;
             builder.CredentialId = authenticator.CredentialId;
-            builder.CredentialPublicKey = authenticator.EncodeCoseKey();
+            builder.CredentialPublicKey = authenticator.CosePublicKey;
             builder.TrailingBytes = new byte[] { 0x01, 0x02 };
 
             AssertParseError(builder.Build());
@@ -296,12 +296,12 @@ namespace EasyReasy.Auth.Tests
             return new AuthenticatorDataBuilder { RelyingPartyIdHash = WebAuthnTestData.RelyingPartyIdHash };
         }
 
-        private static AuthenticatorData ParseAttestedCredentialData(SyntheticAuthenticator authenticator)
+        private static AuthenticatorData ParseAttestedCredentialData(WebAuthnTestAuthenticator authenticator)
         {
             AuthenticatorDataBuilder builder = NewBuilder();
             builder.Aaguid = authenticator.Aaguid;
             builder.CredentialId = authenticator.CredentialId;
-            builder.CredentialPublicKey = authenticator.EncodeCoseKey();
+            builder.CredentialPublicKey = authenticator.CosePublicKey;
 
             return AuthenticatorData.Parse(builder.Build());
         }

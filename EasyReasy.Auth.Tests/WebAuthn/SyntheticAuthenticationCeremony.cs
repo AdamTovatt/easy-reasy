@@ -5,7 +5,7 @@ namespace EasyReasy.Auth.Tests
 {
     /// <summary>
     /// Assembles the assertion a browser would post back, signed by a
-    /// <see cref="SyntheticAuthenticator"/> holding a real private key. Every field a verification check
+    /// <see cref="WebAuthnTestAuthenticator"/> holding a real private key. Every field a verification check
     /// reads is a property here, defaulted to the value that passes.
     /// </summary>
     /// <remarks>
@@ -14,10 +14,14 @@ namespace EasyReasy.Auth.Tests
     /// makes each check provable on its own rather than all of them collapsing into "the signature failed".
     /// <see cref="SignedBytesOverride"/> and <see cref="ClientDataJsonSentInstead"/> are for the tests that
     /// need the opposite: everything correct and the signature over something else.
+    /// Takes only the key, the credential id and the COSE public key from the authenticator, through its
+    /// public <see cref="WebAuthnTestAuthenticator.Sign"/>, <see cref="WebAuthnTestAuthenticator.CredentialId"/>
+    /// and <see cref="WebAuthnTestAuthenticator.CosePublicKey"/>:
+    /// the authenticator itself writes only honest ceremonies, and this one has to be able to write any.
     /// </remarks>
     internal sealed class SyntheticAuthenticationCeremony
     {
-        private readonly SyntheticAuthenticator _authenticator;
+        private readonly WebAuthnTestAuthenticator _authenticator;
 
         /// <summary>The client data the browser collected, field by field.</summary>
         public ClientDataBuilder ClientData { get; }
@@ -33,9 +37,9 @@ namespace EasyReasy.Auth.Tests
         public string? ReportedCredentialId { get; set; }
 
         /// <summary>
-        /// The user handle the response reports, base64url-encoded, or null for none. Defaults to the
-        /// authenticator's own <see cref="SyntheticAuthenticator.UserHandle"/>, as a discoverable
-        /// credential returns it.
+        /// The user handle the response reports, base64url-encoded, or null for none. Defaults to
+        /// <see cref="WebAuthnTestData.UserHandle"/>, the handle the credential was registered with, as a
+        /// discoverable credential returns it.
         /// </summary>
         public string? UserHandle { get; set; }
 
@@ -62,11 +66,11 @@ namespace EasyReasy.Auth.Tests
         /// </summary>
         /// <param name="authenticator">The authenticator that signs the assertion.</param>
         /// <param name="challenge">The base64url challenge the ceremony answers.</param>
-        public SyntheticAuthenticationCeremony(SyntheticAuthenticator authenticator, string challenge)
+        public SyntheticAuthenticationCeremony(WebAuthnTestAuthenticator authenticator, string challenge)
         {
             _authenticator = authenticator;
             ClientData = new ClientDataBuilder(CollectedClientData.AuthenticationCeremonyType, challenge);
-            UserHandle = Base64UrlEncoding.Encode(authenticator.UserHandle);
+            UserHandle = Base64UrlEncoding.Encode(WebAuthnTestData.UserHandle);
 
             AuthenticatorData = new AuthenticatorDataBuilder
             {
@@ -78,7 +82,7 @@ namespace EasyReasy.Auth.Tests
         /// The owner's user handle as the application derives it at sign-in: the bytes the credential was
         /// registered with.
         /// </summary>
-        public byte[] OwnerUserHandle => _authenticator.UserHandle;
+        public byte[] OwnerUserHandle => WebAuthnTestData.UserHandle;
 
         /// <summary>
         /// The credential this ceremony's authenticator registered, as the application would have stored it.
@@ -88,7 +92,7 @@ namespace EasyReasy.Auth.Tests
         {
             return new WebAuthnStoredCredential(
                 Base64UrlEncoding.Encode(_authenticator.CredentialId),
-                Base64UrlEncoding.Encode(_authenticator.EncodeCoseKey()),
+                Base64UrlEncoding.Encode(_authenticator.CosePublicKey),
                 signCount);
         }
 

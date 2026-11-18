@@ -12,13 +12,13 @@ namespace EasyReasy.Auth.Tests
     [TestClass]
     public class WebAuthnDiscoverableAuthenticationVerificationTests
     {
-        private SyntheticAuthenticator _authenticator = null!;
+        private WebAuthnTestAuthenticator _authenticator = null!;
         private SyntheticAuthenticationCeremony _ceremony = null!;
 
         [TestInitialize]
         public void BuildACeremonyThatVerifies()
         {
-            _authenticator = SyntheticAuthenticator.Create();
+            _authenticator = WebAuthnTestAuthenticator.Create();
             _ceremony = new SyntheticAuthenticationCeremony(_authenticator, WebAuthnTestData.Challenge);
         }
 
@@ -33,7 +33,7 @@ namespace EasyReasy.Auth.Tests
         [DataRow(CoseAlgorithm.Rs256)]
         public void VerifyDiscoverableAuthentication_CorrectCeremony_SucceedsAndReportsTheCounterInDiscoverableMode(CoseAlgorithm algorithm)
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create(algorithm);
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(algorithm);
             SyntheticAuthenticationCeremony ceremony = new SyntheticAuthenticationCeremony(authenticator, WebAuthnTestData.Challenge);
             ceremony.AuthenticatorData.SignCount = 8;
             ceremony.AuthenticatorData.BackupEligible = true;
@@ -82,7 +82,7 @@ namespace EasyReasy.Auth.Tests
         {
             // Same length as the owner's and differing in every byte, so neither a length check nor a
             // comparison of a prefix can pass it.
-            byte[] otherUserHandle = _authenticator.UserHandle.Select(value => (byte)~value).ToArray();
+            byte[] otherUserHandle = WebAuthnTestData.UserHandle.Select(value => (byte)~value).ToArray();
             _ceremony.UserHandle = Base64UrlEncoding.Encode(otherUserHandle);
 
             AssertFailure(WebAuthnAuthenticationFailureReason.UserHandleMismatch);
@@ -91,7 +91,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyDiscoverableAuthentication_UserHandleThatIsAPrefixOfTheOwners_IsRejected()
         {
-            _ceremony.UserHandle = Base64UrlEncoding.Encode(_authenticator.UserHandle.AsSpan(0, 8));
+            _ceremony.UserHandle = Base64UrlEncoding.Encode(WebAuthnTestData.UserHandle.AsSpan(0, 8));
 
             AssertFailure(WebAuthnAuthenticationFailureReason.UserHandleMismatch);
         }
@@ -100,7 +100,7 @@ namespace EasyReasy.Auth.Tests
         public void VerifyDiscoverableAuthentication_PaddedUserHandleFromTheBrowser_IsAccepted()
         {
             // The browser's spelling is decoded leniently, like every other field it sends.
-            _ceremony.UserHandle = Base64UrlEncoding.Encode(_authenticator.UserHandle) + "==";
+            _ceremony.UserHandle = Base64UrlEncoding.Encode(WebAuthnTestData.UserHandle) + "==";
 
             Assert.IsTrue(Verify().Success);
         }

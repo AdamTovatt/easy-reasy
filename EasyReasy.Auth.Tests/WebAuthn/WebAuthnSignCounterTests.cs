@@ -13,7 +13,7 @@ namespace EasyReasy.Auth.Tests
     [TestClass]
     public class WebAuthnSignCounterTests
     {
-        private SyntheticAuthenticator _authenticator = null!;
+        private WebAuthnTestAuthenticator _authenticator = null!;
         private SyntheticAuthenticationCeremony _ceremony = null!;
 
         /// <summary>
@@ -23,7 +23,7 @@ namespace EasyReasy.Auth.Tests
         [TestInitialize]
         public void BuildACeremonyThatVerifies()
         {
-            _authenticator = SyntheticAuthenticator.Create();
+            _authenticator = WebAuthnTestAuthenticator.Create();
             _ceremony = new SyntheticAuthenticationCeremony(_authenticator, WebAuthnTestData.Challenge);
         }
 

@@ -88,7 +88,7 @@ namespace EasyReasy.Auth.Tests
         {
             // The real round trip rather than a hand-written pair: whatever registration reports has to be
             // constructible here, or the two halves of the feature do not join up.
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticRegistrationCeremony ceremony = new SyntheticRegistrationCeremony(authenticator, WebAuthnTestData.Challenge);
 
             WebAuthnRegisteredCredential registered = WebAuthnTestData.NewVerifier().VerifyRegistration(
