@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace EasyReasy.Auth
@@ -22,7 +23,7 @@ namespace EasyReasy.Auth
     /// to every application in turn.
     /// </para>
     /// </remarks>
-    public abstract class WebAuthnCredentialResponse
+    public abstract class WebAuthnCredentialResponse : IWebAuthnJsonWritable
     {
         /// <summary>The wire (JSON) name of <see cref="Id"/>.</summary>
         public const string IdFieldName = "id";
@@ -50,6 +51,10 @@ namespace EasyReasy.Auth
         /// must not reach the message intact.
         /// </remarks>
         public const int MaximumQuotedTypeLength = 64;
+
+        // The two derived types carry converters; this base deliberately does not. A model would only reach it by
+        // declaring a property of this abstract type, which cannot be bound from a request, so a converter here would
+        // guard nothing real. The pins below name the same constants WriteEnvelope writes, and keep that case camelCase.
 
         /// <summary>The credential id, base64url-encoded, exactly as the browser wrote it.</summary>
         [JsonPropertyName(IdFieldName)]
@@ -128,12 +133,39 @@ namespace EasyReasy.Auth
         /// Serializes this response to JSON, in the shape the browser produced it.
         /// </summary>
         /// <returns>The JSON representation.</returns>
-        /// <remarks>
-        /// Implemented by each derived type rather than here, because <c>JsonSerializer.Serialize</c>
-        /// writes the properties of the type it is handed: called on this one it would serialize the
-        /// envelope and silently drop the response member that is the point of the document.
-        /// </remarks>
-        public abstract string ToJson();
+        public string ToJson()
+        {
+            return WebAuthnJson.ToJson(this);
+        }
+
+        void IWebAuthnJsonWritable.WriteJson(Utf8JsonWriter writer)
+        {
+            writer.WriteStartObject();
+            WriteResponse(writer);
+            WriteEnvelope(writer);
+            writer.WriteEndObject();
+        }
+
+        /// <summary>
+        /// Writes the derived type's response member, which comes first in the browser's JSON.
+        /// </summary>
+        /// <param name="writer">The writer of this response's object.</param>
+        private protected abstract void WriteResponse(Utf8JsonWriter writer);
+
+        /// <summary>
+        /// Writes the envelope's members, in the order the browser's JSON has them after the response member.
+        /// </summary>
+        private void WriteEnvelope(Utf8JsonWriter writer)
+        {
+            writer.WriteString(IdFieldName, Id);
+            writer.WriteString(RawIdFieldName, RawId);
+            writer.WriteString(TypeFieldName, Type);
+
+            if (AuthenticatorAttachment != null)
+            {
+                writer.WriteString(AuthenticatorAttachmentFieldName, AuthenticatorAttachment);
+            }
+        }
 
         /// <inheritdoc />
         public override string ToString()

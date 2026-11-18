@@ -14,22 +14,25 @@ namespace EasyReasy.Auth
     /// requirement, both of which verification takes as arguments — and making the options deserializable
     /// would mean a constructor taking already-encoded base64url strings, which is the encoding this package
     /// owns on the application's behalf. See the remarks on <see cref="PublicKeyCredentialCreationOptions"/>.
+    /// <para>
+    /// It can be a property of a response model: its System.Text.Json converter writes exactly the bytes of
+    /// <see cref="ToJson"/>, whatever options the host serializes with, and refuses to read with a
+    /// <see cref="NotSupportedException"/>.
+    /// </para>
     /// </remarks>
-    public sealed class PublicKeyCredentialRequestOptions
+    [JsonConverter(typeof(WebAuthnOptionsJsonConverter<PublicKeyCredentialRequestOptions>))]
+    public sealed class PublicKeyCredentialRequestOptions : IWebAuthnJsonWritable
     {
         /// <summary>
         /// The challenge this ceremony must answer, base64url-encoded. Store it against the session and
         /// hand it back to verification.
         /// </summary>
-        [JsonPropertyName("challenge")]
         public string Challenge { get; }
 
         /// <summary>How long the browser should wait for the user, in milliseconds.</summary>
-        [JsonPropertyName("timeout")]
         public int Timeout { get; }
 
         /// <summary>The relying-party id the credential is scoped to.</summary>
-        [JsonPropertyName("rpId")]
         public string RelyingPartyId { get; }
 
         /// <summary>
@@ -38,11 +41,9 @@ namespace EasyReasy.Auth
         /// options, which is how a relying party asks for any discoverable credential (usernameless
         /// passkey sign-in).
         /// </summary>
-        [JsonPropertyName("allowCredentials")]
         public IReadOnlyList<PublicKeyCredentialDescriptor> AllowCredentials { get; }
 
         /// <summary>How strongly the authenticator is asked to verify the user.</summary>
-        [JsonPropertyName("userVerification")]
         public WebAuthnUserVerificationRequirement UserVerification { get; }
 
         internal PublicKeyCredentialRequestOptions(
@@ -65,7 +66,19 @@ namespace EasyReasy.Auth
         /// <returns>A JSON string representation of these options.</returns>
         public string ToJson()
         {
-            return JsonSerializer.Serialize(this, JsonSerializerSettings.CurrentOptions);
+            return WebAuthnJson.ToJson(this);
+        }
+
+        void IWebAuthnJsonWritable.WriteJson(Utf8JsonWriter writer)
+        {
+            // The member names and order of PublicKeyCredentialRequestOptionsJSON (WebAuthn Level 3 §5.5).
+            writer.WriteStartObject();
+            writer.WriteString("challenge", Challenge);
+            writer.WriteNumber("timeout", Timeout);
+            writer.WriteString("rpId", RelyingPartyId);
+            WebAuthnJson.WriteProperty(writer, "allowCredentials", AllowCredentials);
+            WebAuthnJson.WriteProperty(writer, "userVerification", UserVerification);
+            writer.WriteEndObject();
         }
 
         /// <summary>

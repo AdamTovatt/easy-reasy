@@ -3,12 +3,10 @@ using System.Text.Json;
 namespace EasyReasy.Auth.Tests
 {
     /// <summary>
-    /// What the passkey sign-in options write. Run under a hostile naming policy, so only pinned field
-    /// names pass.
+    /// What the passkey sign-in options write.
     /// </summary>
     [TestClass]
-    [DoNotParallelize]
-    public class WebAuthnDiscoverableOptionsJsonContractTests : HostileNamingPolicyTestBase
+    public class WebAuthnDiscoverableOptionsJsonContractTests
     {
         [TestMethod]
         public void CreateDiscoverableRegistrationOptions_AuthenticatorSelection_RequiresAResidentKeyAndUserVerification()

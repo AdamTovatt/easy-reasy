@@ -33,6 +33,15 @@ public class MyGoogleAuthHandler : IGoogleAuthHandler
         User user = await _users.FindOrCreateByGoogleSubjectAsync(
             userInfo.Subject, userInfo.Email, userInfo.Name);
 
+        if (refreshTokenService != null)
+        {
+            // Starts the refresh token family and issues the first access token the way a refresh does.
+            SessionStartResult session = await refreshTokenService.StartSessionAsync(
+                jwtTokenService, user.Id.ToString(), "user", [], user.Roles);
+            return session.AuthResponse;
+        }
+
+        // No refresh service registered: an access token alone.
         DateTime expiresAt = DateTime.UtcNow.AddHours(1);
         string token = jwtTokenService.CreateToken(
             subject: user.Id.ToString(),
@@ -40,18 +49,12 @@ public class MyGoogleAuthHandler : IGoogleAuthHandler
             additionalClaims: [],
             roles: user.Roles,
             expiresAt: expiresAt);
-
-        string? refreshToken = null;
-        if (refreshTokenService != null)
-        {
-            refreshToken = await refreshTokenService.CreateRefreshTokenAsync(
-                user.Id.ToString(), "user", null, null);
-        }
-
-        return new AuthResponse(token, expiresAt.ToString("o"), refreshToken);
+        return new AuthResponse(token, expiresAt.ToString("o"));
     }
 }
 ```
+
+`StartSessionAsync` is described in [EasyReasy.Auth section 8](../EasyReasy.Auth/README.md#8-refresh-tokens).
 
 ### 3. Register Services
 

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace EasyReasy.Auth
@@ -17,7 +18,7 @@ namespace EasyReasy.Auth
     internal static class WebAuthnResponseReader
     {
         /// <summary>
-        /// Longest response body this library will parse.
+        /// Longest response body this library will parse, in bytes of UTF-8.
         /// </summary>
         /// <remarks>
         /// The body is untrusted and arrives before anything has decided it is a credential, so it is
@@ -148,10 +149,8 @@ namespace EasyReasy.Auth
         /// <exception cref="ArgumentException">The text is too long, or is not a JSON object.</exception>
         public static JsonDocument ParseObject(string json, string what)
         {
-            if (json.Length > MaximumResponseLength)
-            {
-                throw new ArgumentException($"{what} is {json.Length} characters; no credential is longer than {MaximumResponseLength}.");
-            }
+            // Counted in UTF-8 bytes, as the converter path counts the bytes it is handed, so one rule bounds both.
+            EnsureWithinBound(Encoding.UTF8.GetByteCount(json), what);
 
             JsonDocument document;
 
@@ -164,6 +163,60 @@ namespace EasyReasy.Auth
                 throw new ArgumentException($"{what} is not valid JSON: {exception.Message}");
             }
 
+            return EnsureObject(document, what);
+        }
+
+        /// <summary>
+        /// Reads a browser response nested in a larger document, from a System.Text.Json converter, by the same
+        /// rules as <see cref="ParseObject"/>.
+        /// </summary>
+        /// <remarks>
+        /// A value that is not a credential becomes a <see cref="JsonException"/> carrying the message
+        /// <see cref="ParseObject"/> and <paramref name="read"/> would give it as an <see cref="ArgumentException"/>,
+        /// so ASP.NET model binding answers it as a malformed body (400) rather than a server error.
+        /// </remarks>
+        /// <typeparam name="T">The response type.</typeparam>
+        /// <param name="reader">The reader, on the first token of the value; left on its last.</param>
+        /// <param name="what">The structure being read, named as it reads in a message.</param>
+        /// <param name="read">Reads the response from its root JSON object.</param>
+        /// <returns>The response.</returns>
+        /// <exception cref="JsonException">The value is too long, is not a JSON object, or is not a credential.</exception>
+        public static T ReadNested<T>(ref Utf8JsonReader reader, string what, Func<JsonElement, T> read)
+        {
+            try
+            {
+                // Measured on a copy of the reader, so the bound holds before any document is built from the value.
+                // TrySkip rather than Skip: a body read from a stream reaches the converter on a reader that is not
+                // the final block, where Skip throws even though the serializer has buffered the whole value.
+                Utf8JsonReader measuringReader = reader;
+                long valueStart = measuringReader.TokenStartIndex;
+                if (!measuringReader.TrySkip())
+                {
+                    // The serializer buffers a converter's whole value before calling it, so this is not reached through it.
+                    throw new InvalidOperationException($"{what} is not wholly buffered; read it through JsonSerializer.");
+                }
+
+                EnsureWithinBound(measuringReader.BytesConsumed - valueStart, what);
+
+                using JsonDocument document = EnsureObject(JsonDocument.ParseValue(ref reader), what);
+                return read(document.RootElement);
+            }
+            catch (ArgumentException exception)
+            {
+                throw new JsonException(exception.Message, exception);
+            }
+        }
+
+        private static void EnsureWithinBound(long utf8ByteCount, string what)
+        {
+            if (utf8ByteCount > MaximumResponseLength)
+            {
+                throw new ArgumentException($"{what} is {utf8ByteCount} bytes of UTF-8; no credential is longer than {MaximumResponseLength}.");
+            }
+        }
+
+        private static JsonDocument EnsureObject(JsonDocument document, string what)
+        {
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
                 document.Dispose();

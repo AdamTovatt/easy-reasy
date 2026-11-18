@@ -12,11 +12,19 @@ namespace EasyReasy.Auth
     /// The envelope — the credential id, the type, the attachment, and the guards over them — is
     /// <see cref="WebAuthnCredentialResponse"/>'s. What an authentication adds is the assertion the
     /// authenticator signed.
+    /// <para>
+    /// It binds directly as a property of a request model: its System.Text.Json converter reads through the same
+    /// parser as <see cref="FromJson"/>, and answers a credential that is present but malformed with a
+    /// <see cref="JsonException"/>, which ASP.NET model binding answers with 400. A <c>null</c> or missing member never
+    /// reaches the converter and binds as <c>null</c>, so check for it. Writing it produces exactly <see cref="WebAuthnCredentialResponse.ToJson"/>.
+    /// </para>
     /// </remarks>
+    [JsonConverter(typeof(WebAuthnAuthenticationResponseJsonConverter))]
     public sealed class WebAuthnAuthenticationResponse : WebAuthnCredentialResponse
     {
+        private const string DocumentName = "An authentication response";
+
         /// <summary>The assertion carrying the client data, authenticator data and signature.</summary>
-        [JsonPropertyName(ResponseFieldName)]
         public WebAuthnAssertionResponse Response { get; }
 
         /// <summary>
@@ -45,10 +53,9 @@ namespace EasyReasy.Auth
             Response = response;
         }
 
-        /// <inheritdoc />
-        public override string ToJson()
+        private protected override void WriteResponse(Utf8JsonWriter writer)
         {
-            return JsonSerializer.Serialize(this, JsonSerializerSettings.CurrentOptions);
+            WebAuthnJson.WriteProperty(writer, ResponseFieldName, Response);
         }
 
         /// <summary>
@@ -65,13 +72,26 @@ namespace EasyReasy.Auth
         {
             ArgumentNullException.ThrowIfNull(json);
 
-            const string what = "An authentication response";
+            using JsonDocument document = WebAuthnResponseReader.ParseObject(json, DocumentName);
+            return ReadObject(document.RootElement);
+        }
 
-            using JsonDocument document = WebAuthnResponseReader.ParseObject(json, what);
-            JsonElement root = document.RootElement;
+        /// <summary>
+        /// Reads an authentication response nested in a larger document, for its System.Text.Json converter, by
+        /// the same rules as <see cref="FromJson"/>.
+        /// </summary>
+        /// <param name="reader">The reader, on the first token of the value.</param>
+        /// <returns>The parsed response.</returns>
+        /// <exception cref="JsonException">The value is not an authentication response; the message is the parser's.</exception>
+        internal static WebAuthnAuthenticationResponse Read(ref Utf8JsonReader reader)
+        {
+            return WebAuthnResponseReader.ReadNested(ref reader, DocumentName, ReadObject);
+        }
 
-            JsonElement responseElement = WebAuthnResponseReader.ReadRequiredObject(root, ResponseFieldName, what);
-            string responseSubject = $"{what}'s \"{ResponseFieldName}\"";
+        private static WebAuthnAuthenticationResponse ReadObject(JsonElement root)
+        {
+            JsonElement responseElement = WebAuthnResponseReader.ReadRequiredObject(root, ResponseFieldName, DocumentName);
+            string responseSubject = $"{DocumentName}'s \"{ResponseFieldName}\"";
 
             WebAuthnAssertionResponse response = new WebAuthnAssertionResponse(
                 WebAuthnResponseReader.ReadRequiredString(responseElement, WebAuthnAssertionResponse.ClientDataJsonFieldName, responseSubject),
@@ -80,11 +100,11 @@ namespace EasyReasy.Auth
                 WebAuthnResponseReader.ReadOptionalString(responseElement, WebAuthnAssertionResponse.UserHandleFieldName, responseSubject));
 
             return new WebAuthnAuthenticationResponse(
-                WebAuthnResponseReader.ReadRequiredString(root, IdFieldName, what),
-                WebAuthnResponseReader.ReadRequiredString(root, RawIdFieldName, what),
-                WebAuthnResponseReader.ReadRequiredString(root, TypeFieldName, what),
+                WebAuthnResponseReader.ReadRequiredString(root, IdFieldName, DocumentName),
+                WebAuthnResponseReader.ReadRequiredString(root, RawIdFieldName, DocumentName),
+                WebAuthnResponseReader.ReadRequiredString(root, TypeFieldName, DocumentName),
                 response,
-                WebAuthnResponseReader.ReadOptionalString(root, AuthenticatorAttachmentFieldName, what));
+                WebAuthnResponseReader.ReadOptionalString(root, AuthenticatorAttachmentFieldName, DocumentName));
         }
     }
 }

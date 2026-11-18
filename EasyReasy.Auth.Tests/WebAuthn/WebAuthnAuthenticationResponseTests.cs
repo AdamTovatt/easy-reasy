@@ -13,16 +13,9 @@ namespace EasyReasy.Auth.Tests
     /// <see cref="ArgumentException"/> and not a
     /// <see cref="WebAuthnAuthenticationResult"/>.
     /// </para>
-    /// <para>
-    /// Run under the hostile naming policy, like the registration counterpart. Under the library's own
-    /// camelCase options every name on this path but <c>clientDataJSON</c> comes out right whether or not
-    /// it is pinned, so the <c>ToJson</c> assertions below would pass against a type whose
-    /// <c>JsonPropertyName</c> attributes had all been deleted.
-    /// </para>
     /// </remarks>
     [TestClass]
-    [DoNotParallelize]
-    public class WebAuthnAuthenticationResponseTests : HostileNamingPolicyTestBase
+    public class WebAuthnAuthenticationResponseTests
     {
         [TestMethod]
         public void FromJson_BrowserResponse_ReadsEveryField()

@@ -8,8 +8,8 @@ namespace EasyReasy.Auth
     /// <remarks>
     /// The <see cref="FamilyId"/> lets a caller that re-mints a token pair for an already-authenticated
     /// subject (for example an active-organization switch endpoint) later retire that exact family via
-    /// <see cref="IRefreshTokenService.RetireFamilyAsync"/>, or seed the <c>family_id</c> claim onto the
-    /// very first (login) access token itself.
+    /// <see cref="IRefreshTokenService.RetireFamilyAsync"/>. A sign-in that also needs the session's first access
+    /// token calls <see cref="IRefreshTokenService.StartSessionAsync"/> instead.
     /// </remarks>
     public sealed class RefreshTokenCreationResult
     {

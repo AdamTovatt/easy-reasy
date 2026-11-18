@@ -101,9 +101,9 @@ namespace EasyReasy.Auth
             services.AddAuthorization(authzOptions =>
             {
                 authzOptions.AddPolicy("ApiKeyOnly", policy =>
-                    policy.RequireClaim("auth_type", "apikey"));
+                    policy.RequireClaim(EasyReasyClaimTypes.AuthType, "apikey"));
                 authzOptions.AddPolicy("UserOnly", policy =>
-                    policy.RequireClaim("auth_type", "user"));
+                    policy.RequireClaim(EasyReasyClaimTypes.AuthType, "user"));
             });
 
             // Register JWT token service for dependency injection if requested
@@ -148,7 +148,7 @@ namespace EasyReasy.Auth
         /// The lifetime of refresh tokens. Defaults to 30 days if not specified.
         /// </param>
         /// <param name="accessTokenLifetime">
-        /// The lifetime of access tokens created during refresh. Defaults to 1 hour if not specified.
+        /// The lifetime of the access tokens this service issues, a session's first (<see cref="IRefreshTokenService.StartSessionAsync"/>) and every refreshed one. Defaults to 1 hour if not specified.
         /// </param>
         /// <param name="concurrentSessionPolicy">
         /// How many concurrent sessions a single subject may hold. Defaults to

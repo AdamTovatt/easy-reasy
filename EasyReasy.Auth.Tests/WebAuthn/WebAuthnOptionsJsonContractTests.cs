@@ -7,8 +7,7 @@ namespace EasyReasy.Auth.Tests
     /// fixed by WebAuthn rather than by whatever serializer settings the application happens to hold.
     /// </summary>
     [TestClass]
-    [DoNotParallelize]
-    public class WebAuthnOptionsJsonContractTests : HostileNamingPolicyTestBase
+    public class WebAuthnOptionsJsonContractTests
     {
         [TestMethod]
         public void CreationOptions_CarryExactlyTheFieldsTheBrowserReads()

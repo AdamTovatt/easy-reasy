@@ -17,9 +17,9 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>1.3.0</VersionPrefix>
+    <VersionPrefix>1.3.1</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>The Google sign-in endpoint now runs on EasyReasy.Auth's shared ExternalSignInEndpoint, so the no-store header, the audit record, the access-token cookie, the progressive-delay reset and the 200 or 401 happen exactly as for every other provider package. The sign-in itself is unchanged. One behaviour change: when several services the endpoint needs are missing at startup, AddGoogleAuthEndpoint now names all of them in one InvalidOperationException instead of throwing on the first. Requires EasyReasy.Auth 5.14.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-google-v$(VersionPrefix)/EasyReasy.Auth.Google/README.md#endpoint-behavior</PackageReleaseNotes>
+    <PackageReleaseNotes>Documentation only: the IGoogleAuthHandler sample starts the session with EasyReasy.Auth's IRefreshTokenService.StartSessionAsync, which issues the first access token the way a refresh does, instead of creating the token and the refresh token by hand. The package's behaviour is unchanged. Requires EasyReasy.Auth 5.16.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-google-v$(VersionPrefix)/EasyReasy.Auth.Google/README.md#2-implement-igoogleauthhandler</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

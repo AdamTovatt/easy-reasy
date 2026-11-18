@@ -32,9 +32,9 @@ namespace EasyReasy.Auth
                 // Fallback to JwtRegisteredClaimNames.Sub if mapping didn't work
                 string? userId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                     ?? context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-                string? tenantId = context.User.FindFirst("tenant_id")?.Value;
-                context.Items["UserId"] = userId;
-                context.Items["TenantId"] = tenantId;
+                string? tenantId = context.User.FindFirst(EasyReasyClaimTypes.TenantId)?.Value;
+                context.Items[HttpContextItemKeys.UserId] = userId;
+                context.Items[HttpContextItemKeys.TenantId] = tenantId;
             }
 
             await _next(context);

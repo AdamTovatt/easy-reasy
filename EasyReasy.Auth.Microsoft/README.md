@@ -60,6 +60,15 @@ public class MyMicrosoftAuthHandler : IMicrosoftAuthHandler
             return null; // not linked: the sign-in is refused and audited as Rejected
         }
 
+        if (refreshTokenService != null)
+        {
+            // Starts the refresh token family and issues the first access token the way a refresh does.
+            SessionStartResult session = await refreshTokenService.StartSessionAsync(
+                jwtTokenService, user.Id.ToString(), "user", [], user.Roles);
+            return session.AuthResponse;
+        }
+
+        // No refresh service registered: an access token alone.
         DateTime expiresAt = DateTime.UtcNow.AddHours(1);
         string token = jwtTokenService.CreateToken(
             subject: user.Id.ToString(),
@@ -67,17 +76,12 @@ public class MyMicrosoftAuthHandler : IMicrosoftAuthHandler
             additionalClaims: [],
             roles: user.Roles,
             expiresAt: expiresAt);
-
-        string? refreshToken = null;
-        if (refreshTokenService != null)
-        {
-            refreshToken = await refreshTokenService.CreateRefreshTokenAsync(user.Id.ToString(), "user", null, null);
-        }
-
-        return new AuthResponse(token, expiresAt.ToString("o"), refreshToken);
+        return new AuthResponse(token, expiresAt.ToString("o"));
     }
 }
 ```
+
+`StartSessionAsync` is described in [EasyReasy.Auth section 8](../EasyReasy.Auth/README.md#8-refresh-tokens).
 
 `GetSignInSettingsAsync` is called for every begin request, so the settings can depend on it (for example the tenant of the host the request came to).
 

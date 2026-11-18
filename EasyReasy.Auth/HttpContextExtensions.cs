@@ -21,13 +21,13 @@ namespace EasyReasy.Auth
             if (context == null)
                 return null;
             // Prefer Items (set by ClaimsInjectionMiddleware), fallback to JWT claims
-            if (context.Items.TryGetValue("TenantId", out object? value))
+            if (context.Items.TryGetValue(HttpContextItemKeys.TenantId, out object? value))
                 return value as string;
-            return context.GetClaimValue("tenant_id");
+            return context.GetClaimValue(EasyReasyClaimTypes.TenantId);
         }
 
         /// <summary>
-        /// Gets the refresh token family id (claim type <c>"family_id"</c>) from the HTTP context, if available.
+        /// Gets the refresh token family id (claim type <see cref="EasyReasyClaimTypes.RefreshFamilyId"/>) from the HTTP context, if available.
         /// This is the client's own opaque session identifier; it is intentionally readable from the signed
         /// access token, and possessing it grants no ability to revoke the session — retirement is a
         /// server-only operation via <see cref="IRefreshTokenService.RetireFamilyAsync"/>. A re-mint endpoint
@@ -35,7 +35,7 @@ namespace EasyReasy.Auth
         /// </summary>
         /// <param name="context">The HTTP context.</param>
         /// <returns>The refresh token family id, or null if not available.</returns>
-        public static string? GetRefreshFamilyId(this HttpContext context) => context.GetClaimValue("family_id");
+        public static string? GetRefreshFamilyId(this HttpContext context) => context.GetClaimValue(EasyReasyClaimTypes.RefreshFamilyId);
 
         /// <summary>
         /// Gets the user id from the HTTP context, if available.
@@ -47,7 +47,7 @@ namespace EasyReasy.Auth
             if (context == null)
                 return null;
             // Prefer Items (set by ClaimsInjectionMiddleware), fallback to JWT claims
-            if (context.Items.TryGetValue("UserId", out object? value))
+            if (context.Items.TryGetValue(HttpContextItemKeys.UserId, out object? value))
                 return value as string;
             // Try both possible claim locations for user ID
             return context.GetClaimValue(ClaimTypes.NameIdentifier)
@@ -95,22 +95,22 @@ namespace EasyReasy.Auth
             {
                 case EasyReasyClaim.UserId:
                     // Prefer Items, fallback to Claims
-                    return context.Items.TryGetValue("UserId", out object? userId) ? userId as string : context.GetClaimValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub);
+                    return context.Items.TryGetValue(HttpContextItemKeys.UserId, out object? userId) ? userId as string : context.GetClaimValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub);
                 case EasyReasyClaim.TenantId:
-                    return context.Items.TryGetValue("TenantId", out object? tenantId) ? tenantId as string : context.GetClaimValue("tenant_id");
+                    return context.Items.TryGetValue(HttpContextItemKeys.TenantId, out object? tenantId) ? tenantId as string : context.GetClaimValue(EasyReasyClaimTypes.TenantId);
                 case EasyReasyClaim.Email:
                     return context.GetClaimValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Email);
                 case EasyReasyClaim.AuthType:
-                    return context.GetClaimValue("auth_type");
+                    return context.GetClaimValue(EasyReasyClaimTypes.AuthType);
                 case EasyReasyClaim.RefreshFamilyId:
-                    return context.GetClaimValue("family_id");
+                    return context.GetClaimValue(EasyReasyClaimTypes.RefreshFamilyId);
                 case EasyReasyClaim.Issuer:
                     // JWT Issuer is not a claim, but a property on the token. Try to get it from ClaimsPrincipal if available.
                     ClaimsIdentity? jwt = context.User.Identity as ClaimsIdentity;
                     if (jwt != null && jwt.BootstrapContext is System.IdentityModel.Tokens.Jwt.JwtSecurityToken token)
                         return token.Issuer;
                     // Fallback: try to get from Items if set by custom middleware
-                    return context.Items.TryGetValue("Issuer", out object? issuer) ? issuer as string : null;
+                    return context.Items.TryGetValue(HttpContextItemKeys.Issuer, out object? issuer) ? issuer as string : null;
                 default:
                     return null;
             }
