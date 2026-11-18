@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
 
 namespace EasyReasy.Auth
 {
@@ -27,9 +28,9 @@ namespace EasyReasy.Auth
         /// </summary>
         /// <remarks>
         /// Use this overload when the caller needs the <see cref="RefreshTokenCreationResult.FamilyId"/>, for
-        /// example to seed the <c>family_id</c> claim onto the very first (login) access token, or to later
-        /// retire that exact family via <see cref="RetireFamilyAsync"/>. (A return-type-only overload is not
-        /// legal C#, hence the distinct name.)
+        /// example to later retire that exact family via <see cref="RetireFamilyAsync"/>. To start a session with its
+        /// first access token, call <see cref="StartSessionAsync"/> instead, which issues that token the way a refresh
+        /// does. (A return-type-only overload is not legal C#, hence the distinct name.)
         /// </remarks>
         /// <param name="subject">The subject (user identifier) the token is for.</param>
         /// <param name="authType">The authentication type (e.g., "apikey" or "user").</param>
@@ -38,6 +39,42 @@ namespace EasyReasy.Auth
         /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>The raw refresh token and the family identifier that was created.</returns>
         Task<RefreshTokenCreationResult> CreateRefreshTokenWithFamilyAsync(string subject, string authType, string? serializedClaims, string? serializedRoles, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Starts a session for a subject the caller has just signed in: creates a refresh token family holding the
+        /// claims and roles, and issues the first access token the way <see cref="RefreshAsync"/> issues a refreshed
+        /// one. Call it from any sign-in that does not go through the built-in login endpoint.
+        /// </summary>
+        /// <remarks>
+        /// The family is created as <see cref="CreateRefreshTokenWithFamilyAsync"/> creates it, so the configured
+        /// <see cref="ConcurrentSessionPolicy"/> applies. The first access token gets the same lifetime, clock, expiry
+        /// format and <see cref="EasyReasyClaimTypes.RefreshFamilyId"/> claim as a refreshed one. A
+        /// <see cref="EasyReasyClaimTypes.RefreshFamilyId"/> claim among <paramref name="claims"/> is dropped, from the
+        /// token and from the stored family alike, and the token carries the real family id instead. The claims are
+        /// stored as type and value only, and the first token is built from that stored form as a refreshed one is,
+        /// so a claim's value type is not kept: a claim passed as <see cref="ClaimValueTypes.Integer32"/> reaches the
+        /// token as a string.
+        /// <para>
+        /// It does not run the <see cref="IRefreshClaimsResolver"/>: the caller resolved the claims as part of the
+        /// sign-in. With no resolver registered, a refreshed token carries the same claims and roles as the first one;
+        /// a registered resolver changes later tokens by design. It fires no sign-in or refresh audit hook: a session
+        /// start is the success tail of a sign-in, which the caller already reports (for example through
+        /// <see cref="IAuthAuditLogger.OnLoginAsync"/>). Under <see cref="ConcurrentSessionPolicy.SingleSession"/>,
+        /// <see cref="IAuthAuditLogger.OnConcurrentSessionsRevokedAsync"/> still fires when earlier sessions are revoked.
+        /// </para>
+        /// <para>
+        /// When a check the caller makes after the session starts fails, retire the session with
+        /// <see cref="RetireFamilyAsync"/> and <see cref="SessionStartResult.FamilyId"/>.
+        /// </para>
+        /// </remarks>
+        /// <param name="jwtTokenService">The JWT token service used to create the first access token.</param>
+        /// <param name="subject">The subject (user identifier) the session is for.</param>
+        /// <param name="authType">The authentication type (e.g., "apikey" or "user").</param>
+        /// <param name="claims">The additional claims the session's tokens carry.</param>
+        /// <param name="roles">The roles the session's tokens carry.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
+        /// <returns>The token pair to return to the client and the family identifier that was created.</returns>
+        Task<SessionStartResult> StartSessionAsync(IJwtTokenService jwtTokenService, string subject, string authType, IEnumerable<Claim> claims, IEnumerable<string> roles, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Validates a refresh token and issues a new access token and refresh token pair.
@@ -116,14 +153,15 @@ namespace EasyReasy.Auth
         /// Security: the service performs no ownership check (it cannot map a family id to a subject), so source
         /// <paramref name="familyId"/> only from the caller's own authenticated access token — e.g.
         /// <see cref="HttpContextExtensions.GetRefreshFamilyId"/> — never from an untrusted request parameter.
-        /// Because <c>family_id</c> is readable in the signed JWT, echoing a client-supplied value back here would
+        /// Because <see cref="EasyReasyClaimTypes.RefreshFamilyId"/> is readable in the signed JWT, echoing a client-supplied value back here would
         /// let one caller retire another's session.
         /// </para>
         /// </remarks>
         /// <param name="familyId">
         /// The family identifier to retire. <c>null</c> or whitespace is a no-op — no store call, no audit hook,
-        /// no throw. This is the normal path for an access token minted before the <c>family_id</c> claim
-        /// existed, so callers can pass <see cref="HttpContextExtensions.GetRefreshFamilyId"/> directly.
+        /// no throw. This is the path for an access token issued without a refresh token family (by an app with no
+        /// refresh service, or built by hand), which carries no <see cref="EasyReasyClaimTypes.RefreshFamilyId"/> claim,
+        /// so callers can pass <see cref="HttpContextExtensions.GetRefreshFamilyId"/> directly.
         /// </param>
         /// <param name="subject">
         /// The subject (user identifier) the family belongs to, recorded only on the audit row. The service

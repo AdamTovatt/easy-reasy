@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
 
 namespace EasyReasy.Auth.Tests
 {
@@ -13,6 +14,9 @@ namespace EasyReasy.Auth.Tests
             => throw new NotImplementedException();
 
         public Task<RefreshTokenCreationResult> CreateRefreshTokenWithFamilyAsync(string subject, string authType, string? serializedClaims, string? serializedRoles, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<SessionStartResult> StartSessionAsync(IJwtTokenService jwtTokenService, string subject, string authType, IEnumerable<Claim> claims, IEnumerable<string> roles, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
 
         public Task<RefreshResult> RefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext = null, CancellationToken cancellationToken = default)

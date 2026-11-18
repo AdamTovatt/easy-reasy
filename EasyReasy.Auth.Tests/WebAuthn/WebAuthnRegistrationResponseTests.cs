@@ -7,8 +7,7 @@ namespace EasyReasy.Auth.Tests
     /// The JSON contract the browser writes and this library reads.
     /// </summary>
     [TestClass]
-    [DoNotParallelize]
-    public class WebAuthnRegistrationResponseTests : HostileNamingPolicyTestBase
+    public class WebAuthnRegistrationResponseTests
     {
         [TestMethod]
         public void FromJson_BrowserResponse_ReadsEveryField()

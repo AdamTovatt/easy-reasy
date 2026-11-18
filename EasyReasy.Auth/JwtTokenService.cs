@@ -76,7 +76,7 @@ namespace EasyReasy.Auth
             {
                 new Claim(JwtRegisteredClaimNames.Sub, subject),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim("auth_type", authType),
+                new Claim(EasyReasyClaimTypes.AuthType, authType),
                 new Claim(JwtRegisteredClaimNames.Iat, new DateTimeOffset(now).ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             };
             if (additionalClaims != null)

@@ -27,7 +27,7 @@ namespace EasyReasy.Auth
         /// The lifetime of refresh tokens. Defaults to 30 days if not specified.
         /// </param>
         /// <param name="accessTokenLifetime">
-        /// The lifetime of access tokens created during refresh. Defaults to 1 hour if not specified.
+        /// The lifetime of the access tokens this service issues, a session's first (<see cref="IRefreshTokenService.StartSessionAsync"/>) and every refreshed one. Defaults to 1 hour if not specified.
         /// </param>
         /// <param name="auditLogger">
         /// Optional audit logger. When supplied, this service invokes the matching service-layer hook after the
@@ -66,13 +66,13 @@ namespace EasyReasy.Auth
         /// </summary>
         /// <param name="store">The consumer-implemented refresh token store.</param>
         /// <param name="refreshTokenLifetime">The lifetime of refresh tokens, or null for 30 days.</param>
-        /// <param name="accessTokenLifetime">The lifetime of access tokens created during refresh, or null for 1 hour.</param>
+        /// <param name="accessTokenLifetime">The lifetime of the access tokens this service issues, or null for 1 hour.</param>
         /// <param name="auditLogger">Optional audit logger; see the other constructor.</param>
         /// <param name="claimsResolver">Optional claims/roles resolver; see the other constructor.</param>
         /// <param name="concurrentSessionPolicy">How many concurrent sessions a single subject may hold.</param>
         /// <param name="timeProvider">
         /// The clock that stamps a refresh token's <c>CreatedAt</c> and <c>ExpiresAt</c>, decides whether a presented
-        /// refresh token has expired, and sets the expiry of the access token minted on refresh.
+        /// refresh token has expired, and sets the expiry of the access tokens this service issues.
         /// <c>AddRefreshTokenService</c> passes the <see cref="TimeProvider"/> registered in DI, which token issuing and
         /// bearer validation also read.
         /// </param>
@@ -147,6 +147,77 @@ namespace EasyReasy.Auth
             }
 
             return new RefreshTokenCreationResult { RawToken = rawToken, FamilyId = familyId };
+        }
+
+        /// <inheritdoc />
+        public async Task<SessionStartResult> StartSessionAsync(
+            IJwtTokenService jwtTokenService,
+            string subject,
+            string authType,
+            IEnumerable<Claim> claims,
+            IEnumerable<string> roles,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(jwtTokenService);
+            ArgumentException.ThrowIfNullOrWhiteSpace(subject);
+            ArgumentException.ThrowIfNullOrWhiteSpace(authType);
+            ArgumentNullException.ThrowIfNull(claims);
+            ArgumentNullException.ThrowIfNull(roles);
+
+            // The stored family never holds a family id claim: every token gets the real one from the row's FamilyId.
+            string? serializedClaims = RefreshTokenClaims.SerializeClaims(WithoutFamilyIdClaim(claims));
+            string? serializedRoles = RefreshTokenClaims.SerializeRoles(roles);
+
+            RefreshTokenCreationResult family = await CreateRefreshTokenWithFamilyAsync(subject, authType, serializedClaims, serializedRoles, cancellationToken);
+
+            // The first token is built from the stored form, exactly what a refresh reads back, so nothing the store
+            // does not keep (a claim's value type, say) can make it differ from a refreshed token.
+            AuthResponse authResponse = IssueAccessToken(
+                jwtTokenService,
+                subject,
+                authType,
+                RefreshTokenClaims.DeserializeClaims(serializedClaims),
+                RefreshTokenClaims.DeserializeRoles(serializedRoles),
+                family.FamilyId,
+                family.RawToken,
+                _timeProvider.GetUtcNow().UtcDateTime);
+
+            return new SessionStartResult { AuthResponse = authResponse, FamilyId = family.FamilyId };
+        }
+
+        /// <summary>
+        /// Issues an access token for a refresh token family and wraps it with the family's raw refresh token. This is
+        /// the one place both a session's first token (<see cref="StartSessionAsync"/>) and every refreshed one
+        /// (<see cref="RefreshAsync"/>) are made, so the two share their lifetime, expiry format and family id claim.
+        /// </summary>
+        /// <remarks>
+        /// The family id rides on the access token as the authoritative <see cref="EasyReasyClaimTypes.RefreshFamilyId"/>
+        /// claim so a re-issue endpoint can name and retire exactly this family. The value always comes from the
+        /// server-side family id (copied onto every rotation's row, so it is stable across the family's lifetime), never
+        /// from the claims passed in, so any such claim among them is stripped and replaced here and cannot be spoofed.
+        /// </remarks>
+        private AuthResponse IssueAccessToken(
+            IJwtTokenService jwtTokenService,
+            string subject,
+            string authType,
+            IEnumerable<Claim> claims,
+            IEnumerable<string> roles,
+            string familyId,
+            string rawRefreshToken,
+            DateTime now)
+        {
+            DateTime expiresAt = now.Add(_accessTokenLifetime);
+
+            List<Claim> accessTokenClaims = WithoutFamilyIdClaim(claims);
+            accessTokenClaims.Add(new Claim(EasyReasyClaimTypes.RefreshFamilyId, familyId));
+
+            string accessToken = jwtTokenService.CreateToken(subject, authType, accessTokenClaims, roles, expiresAt);
+            return new AuthResponse(accessToken, expiresAt.ToString("O"), rawRefreshToken);
+        }
+
+        private static List<Claim> WithoutFamilyIdClaim(IEnumerable<Claim> claims)
+        {
+            return claims.Where(claim => claim.Type != EasyReasyClaimTypes.RefreshFamilyId).ToList();
         }
 
         /// <summary>
@@ -286,30 +357,23 @@ namespace EasyReasy.Auth
                 return RefreshResult.Failed(RefreshFailureReason.TheftDetected, storedToken.Subject, storedToken.FamilyId);
             }
 
-            DateTime accessTokenExpiresAt = now.Add(_accessTokenLifetime);
+            string newRawToken = GenerateToken();
+            string newTokenHash = HashToken(newRawToken);
 
-            // The family id rides on the access token as the authoritative "family_id" claim so a re-issue
-            // endpoint can name and retire exactly this prior family. The value always comes from
-            // storedToken.FamilyId (copied onto every rotation's row, so it is stable across the family's
-            // lifetime) — never from caller-supplied stored claims — so any value already present is stripped
-            // and replaced here, and it cannot be spoofed via SerializedClaims. Built as a separate list so it
-            // is not persisted into the new row's serialized claims; the re-injection above is the single source.
-            List<Claim> accessTokenClaims = claims.Where(claim => claim.Type != "family_id").ToList();
-            accessTokenClaims.Add(new Claim("family_id", storedToken.FamilyId));
-
-            string accessToken = jwtTokenService.CreateToken(
+            // The family id claim is added to the token only, never to the new row's serialized claims.
+            AuthResponse authResponse = IssueAccessToken(
+                jwtTokenService,
                 storedToken.Subject,
                 storedToken.AuthType,
-                accessTokenClaims,
+                claims,
                 roles,
-                accessTokenExpiresAt);
+                storedToken.FamilyId,
+                newRawToken,
+                now);
 
             // When the resolver ran, the new row persists the resolved claims/roles so subsequent
             // refreshes start from there; when no resolver is registered, the original serialized
             // JSON is reused verbatim.
-            string newRawToken = GenerateToken();
-            string newTokenHash = HashToken(newRawToken);
-
             string? newSerializedClaims = _claimsResolver != null ? RefreshTokenClaims.SerializeClaims(claims) : storedToken.SerializedClaims;
             string? newSerializedRoles = _claimsResolver != null ? RefreshTokenClaims.SerializeRoles(roles) : storedToken.SerializedRoles;
 
@@ -326,11 +390,6 @@ namespace EasyReasy.Auth
             };
 
             await _store.StoreAsync(newStoredToken, cancellationToken);
-
-            AuthResponse authResponse = new AuthResponse(
-                accessToken,
-                accessTokenExpiresAt.ToString("O"),
-                newRawToken);
 
             return RefreshResult.Succeeded(authResponse, newRawToken, storedToken.Subject, storedToken.FamilyId);
         }
@@ -390,8 +449,8 @@ namespace EasyReasy.Auth
         public async Task RetireFamilyAsync(string? familyId, string? subject = null, HttpContext? httpContext = null, CancellationToken cancellationToken = default)
         {
             // A null/whitespace family id can't name any family — no-op so a re-issue endpoint can pass
-            // HttpContext.GetRefreshFamilyId() directly (it is null for access tokens minted before the claim
-            // existed) without a store call, an audit record, or a throw.
+            // HttpContext.GetRefreshFamilyId() directly (it is null for an access token issued without a refresh
+            // token family) without a store call, an audit record, or a throw.
             if (string.IsNullOrWhiteSpace(familyId))
             {
                 return;

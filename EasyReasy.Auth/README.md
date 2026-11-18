@@ -58,7 +58,7 @@ IJwtTokenService tokenService = new JwtTokenService(jwtSecret, issuer: "my-issue
 string token = tokenService.CreateToken(
     subject: "user-123",
     authType: "apikey",
-    additionalClaims: new[] { new Claim("tenant_id", "tenant-42") },
+    additionalClaims: new[] { new Claim(EasyReasyClaimTypes.TenantId, "tenant-42") },
     roles: new[] { "admin", "user" },
     expiresAt: DateTime.UtcNow.AddHours(1));
 ```
@@ -98,7 +98,7 @@ public class MyAuthService : IAuthRequestValidationService
         List<Claim> claims = new List<Claim>();
         if (tenantId != null)
         {
-            claims.Add(new Claim("tenant_id", tenantId));
+            claims.Add(new Claim(EasyReasyClaimTypes.TenantId, tenantId));
         }
 
         DateTime expiresAt = DateTime.UtcNow.AddHours(1);
@@ -138,7 +138,7 @@ public class MyAuthService : IAuthRequestValidationService
         List<Claim> claims = new List<Claim>();
         if (tenantId != null)
         {
-            claims.Add(new Claim("tenant_id", tenantId));
+            claims.Add(new Claim(EasyReasyClaimTypes.TenantId, tenantId));
         }
 
         DateTime expiresAt = DateTime.UtcNow.AddHours(1);
@@ -223,7 +223,7 @@ public async Task<ApiKeyAuthResult> ValidateApiKeyRequestAsync(ApiKeyAuthRequest
     List<Claim> claims = new List<Claim>();
     if (tenantId != null)
     {
-        claims.Add(new Claim("tenant_id", tenantId));
+        claims.Add(new Claim(EasyReasyClaimTypes.TenantId, tenantId));
     }
 
     DateTime expiresAt = DateTime.UtcNow.AddHours(1);
@@ -261,7 +261,7 @@ public async Task<LoginResult> ValidateLoginRequestAsync(LoginAuthRequest reques
     List<Claim> claims = new List<Claim>();
     if (user.TenantId != null)
     {
-        claims.Add(new Claim("tenant_id", user.TenantId));
+        claims.Add(new Claim(EasyReasyClaimTypes.TenantId, user.TenantId));
     }
     if (organization != null)
     {
@@ -299,6 +299,8 @@ string? issuer = HttpContext.GetClaimValue(EasyReasyClaim.Issuer);
 string? familyId = HttpContext.GetRefreshFamilyId();
 string? familyId2 = HttpContext.GetClaimValue(EasyReasyClaim.RefreshFamilyId);
 ```
+
+The claim types the library writes are constants on `EasyReasyClaimTypes` (`RefreshFamilyId`, `TenantId`, `AuthType`), for code that reads a claim by its type or writes one the library reads, such as the tenant claim: `new Claim(EasyReasyClaimTypes.TenantId, tenantId)`.
 
 ### 6. Password Hashing
 
@@ -407,7 +409,7 @@ This creates `POST /api/auth/refresh` which accepts `{ "refreshToken": "..." }` 
 
 The logout endpoint (`POST /api/auth/logout`) is enabled by default when you call `AddAuthEndpoints` — see the Logout section below.
 
-3. **Issue refresh tokens in your validation service** by injecting `IRefreshTokenService` alongside whatever user repository / password hasher you already use:
+3. **Start the session in your validation service** by injecting `IRefreshTokenService` alongside whatever user repository / password hasher you already use:
 ```csharp
 public class MyAuthService : IAuthRequestValidationService
 {
@@ -440,20 +442,29 @@ public class MyAuthService : IAuthRequestValidationService
             return LoginResult.Failed(LoginFailureReason.InvalidCredentials, attemptedSubject: user.Id);
         }
 
-        // ... create access token (see the main example) ...
+        List<Claim> claims = [new Claim(EasyReasyClaimTypes.TenantId, user.TenantId)];
 
-        string refreshToken = await _refreshTokenService.CreateRefreshTokenAsync(
+        SessionStartResult session = await _refreshTokenService.StartSessionAsync(
+            jwtTokenService,
             subject: user.Id,
             authType: "user",
-            serializedClaims: RefreshTokenClaims.SerializeClaims(claims),
-            serializedRoles: RefreshTokenClaims.SerializeRoles(roles));
+            claims: claims,
+            roles: user.Roles);
 
-        return LoginResult.Succeeded(new AuthResponse(token, expiresAt.ToString("o"), refreshToken), user.Id);
+        return LoginResult.Succeeded(session.AuthResponse, user.Id);
     }
 }
 ```
 
-> **Producing the serialized strings.** `CreateRefreshTokenAsync` takes the claims and roles as already-serialized JSON. Use `RefreshTokenClaims.SerializeClaims(claims)` and `RefreshTokenClaims.SerializeRoles(roles)` to produce them — they emit the exact format the refresh path round-trips, so any claim you seed this way survives a refresh (subject to your `IRefreshClaimsResolver`, if registered).
+**`StartSessionAsync` is the way to start a session from any sign-in of your own**: a password check, a passkey, an identity provider, a magic link. It creates the refresh token family holding the claims and roles, and issues the first access token the way a refresh issues the next one: the same `accessTokenLifetime` on the same clock, the same `"O"` expiry format, and the family id as the `family_id` claim (`EasyReasyClaimTypes.RefreshFamilyId`). A `family_id` among your claims is dropped from the token and the stored family alike, and the real one takes its place. The configured `ConcurrentSessionPolicy` applies, as it does to every family created.
+
+- **It does not run your `IRefreshClaimsResolver`.** You resolved the claims as part of the sign-in. With no resolver registered, a refreshed token carries the same claims and roles as the first one; a registered resolver changes later tokens by design.
+- **It fires no sign-in or refresh audit hook.** The session start is the success tail of a sign-in, which you already report (`OnLoginAsync` from the built-in login endpoint, `OnExternalAuthAsync`, `OnWebAuthnAuthenticationAsync`). Under `SingleSession`, `OnConcurrentSessionsRevokedAsync` still fires when it revokes earlier sessions (Section 9).
+- **Claims keep their type and value, not their value type.** The family stores each claim as type and value, and the first token is built from that stored form, as every refreshed token is. A claim passed as `ClaimValueTypes.Integer32` therefore reaches the token as a string. A sign-in that built its first token by hand with typed claims sees this change on that token.
+- **A check you make after the session starts** (re-reading the password hash to catch a change made during the sign-in, say) retires the session it started when it fails: `await refreshTokenService.RetireFamilyAsync(session.FamilyId, user.Id);`.
+- **With no refresh service registered**, there is no family to start: create the access token with `IJwtTokenService.CreateToken` and return it without a refresh token, as the sign-in examples below do.
+
+`CreateRefreshTokenAsync` and `CreateRefreshTokenWithFamilyAsync` create a family without a first token; a sign-in that returns a token pair starts the session with `StartSessionAsync` instead. They take the claims and roles as JSON; produce it with `RefreshTokenClaims.SerializeClaims(claims)` and `RefreshTokenClaims.SerializeRoles(roles)`, the format the refresh path reads back.
 
 #### How It Works
 
@@ -491,7 +502,7 @@ public class PolicyAwareRefreshResolver : IRefreshClaimsResolver
         // context.StoredClaims only for facts that genuinely cannot be re-derived.)
         List<Claim> claims = new List<Claim>
         {
-            new Claim("tenant_id", user.TenantId),
+            new Claim(EasyReasyClaimTypes.TenantId, user.TenantId),
             new Claim("email", user.Email),
         };
         if (user.PasswordExpiresAt <= DateTime.UtcNow)
@@ -587,7 +598,7 @@ builder.Services.AddRefreshTokenService<MyStore>(
 ```
 
 - The default, `ConcurrentSessionPolicy.AllowMultiple`, places no limit on concurrent sessions — each login coexists with any existing ones.
-- Under `SingleSession`, `CreateRefreshTokenAsync` invalidates every existing family for the subject before storing the new one. Earlier sessions can no longer refresh, and any still-live access token expires within its (short) lifetime. Use it for "no shared accounts" / single-session requirements such as EU GMP Annex 11 or 21 CFR Part 11 §11.200.
+- Under `SingleSession`, every new session (`StartSessionAsync`, `CreateRefreshTokenAsync`, `CreateRefreshTokenWithFamilyAsync`) invalidates every existing family for the subject before storing the new one. Earlier sessions can no longer refresh, and any still-live access token expires within its (short) lifetime. Use it for "no shared accounts" / single-session requirements such as EU GMP Annex 11 or 21 CFR Part 11 §11.200.
 - This is the automatic, per-login counterpart to the manual `InvalidateAllSessionsAsync`. Reach for `SingleSession` when "newest login wins" should be a standing policy; call `InvalidateAllSessionsAsync` for one-off, event-driven kicks (password change, role demotion, admin-forced logout). Both go through the same `IRefreshTokenStore.InvalidateAllFamiliesForUserAsync` primitive and surface the same `SessionRevocationResult` shape.
 - When enforcement actually revokes at least one prior session, the service fires `IAuthAuditLogger.OnConcurrentSessionsRevokedAsync` — distinct from `OnSessionsInvalidatedAsync` so you can audit automatic, login-driven revocations separately. See Section 10.
 - **Concurrency caveat**: enforcement is two store calls (invalidate, then store), not one transaction. Two logins for the same subject racing concurrently can each miss the other's not-yet-stored family and both stay live. If you need a hard guarantee, serialize concurrent logins for the same subject in your store (a per-subject lock or a unique constraint) — the library cannot, because `IRefreshTokenStore` has no atomic store-and-invalidate-others operation.
@@ -598,18 +609,19 @@ builder.Services.AddRefreshTokenService<MyStore>(
 // At the re-issue endpoint (the caller is already authenticated):
 string? priorFamilyId = HttpContext.GetRefreshFamilyId();
 
-// ... mint the new pair carrying the changed claim, e.g. via IJwtTokenService.CreateToken +
-//     IRefreshTokenService.CreateRefreshTokenAsync (or CreateRefreshTokenWithFamilyAsync if you
-//     want the new family id to seed the family_id claim onto this first access token) ...
+// Mint the new pair carrying the changed claim. StartSessionAsync puts the new family id on its
+// first access token, so the new session can be retired the same way later.
+SessionStartResult session = await _refreshTokenService.StartSessionAsync(
+    jwtTokenService, HttpContext.GetUserId()!, "user", claimsWithNewActiveOrganization, roles);
 
 // Retire the caller's prior family. Other devices stay live; the event is audited as a
 // supersession (OnSessionSupersededAsync), not a logout.
 await _refreshTokenService.RetireFamilyAsync(priorFamilyId, HttpContext.GetUserId());
 ```
 
-- **How the prior family is named.** The refresh token family id is surfaced on every access token as the `family_id` claim, readable with `HttpContext.GetRefreshFamilyId()` (or `EasyReasyClaim.RefreshFamilyId`). The claim is injected authoritatively on every refresh from the server-side family id, so it is stable across a family's rotations and cannot be spoofed via stored claims. Exposing it in the signed, client-readable JWT is intended and safe: it is the client's own opaque session id, and possessing it grants no ability to revoke the session — retirement is a server-only operation.
+- **How the prior family is named.** The refresh token family id is carried on every access token the refresh token service issues, the first one from `StartSessionAsync` and every refreshed one, as the `family_id` claim (`EasyReasyClaimTypes.RefreshFamilyId`), readable with `HttpContext.GetRefreshFamilyId()` (or `EasyReasyClaim.RefreshFamilyId`). The claim is injected authoritatively from the server-side family id, so it is stable across a family's rotations and cannot be spoofed via stored claims. Exposing it in the signed, client-readable JWT is intended and safe: it is the client's own opaque session id, and possessing it grants no ability to revoke the session — retirement is a server-only operation.
 - **`subject` is for the audit row only.** The service cannot derive the subject from a family id, so pass it from the access token (`HttpContext.GetUserId()`). It is recorded on the `FamilyRetirementResult`; it does not affect which family is retired.
-- **Null/whitespace is a clean no-op** — no store call, no audit hook, no throw. This is the normal path during rollout: access tokens minted before 5.2.0 carry no `family_id`, so `GetRefreshFamilyId()` returns `null` and `RetireFamilyAsync(null)` simply does nothing. Existing sessions self-heal — each gains the `family_id` claim on its next refresh, no consumer action required.
+- **Null/whitespace is a clean no-op** — no store call, no audit hook, no throw. An access token issued without a refresh token family (by an app with no refresh service, or built by hand) carries no `family_id`, so `GetRefreshFamilyId()` returns `null` and `RetireFamilyAsync(null)` simply does nothing; a re-issue endpoint can pass the claim straight through.
 - This is the targeted, audited counterpart to `IRefreshTokenStore.InvalidateFamilyAsync` — distinct from the global `SingleSession` policy (which kills every other session) and from the bulk `InvalidateAllSessionsAsync`. When a non-empty family id is retired, the service fires `IAuthAuditLogger.OnSessionSupersededAsync`. See Section 10.
 - **Assumes `ConcurrentSessionPolicy.AllowMultiple` (the default).** Under `SingleSession`, minting the new pair already revokes the subject's *other* families during creation, so the prior family is gone before `RetireFamilyAsync` runs and "other devices stay live" no longer applies — targeted retirement is redundant there.
 
@@ -1080,6 +1092,16 @@ public enum WebAuthnAuthenticationMode { SecondFactor, Discoverable }
 
 Both ceremonies answer with a result carrying a reason, never an exception — a security key that failed a check is an outcome of authentication, not an error in it. An `ArgumentException` from these methods means the *request body* was not a WebAuthn credential, or that an argument your application supplied was wrong; it never means a ceremony was declined.
 
+**The WebAuthn types are members of your own request and response models.** Each carries a System.Text.Json converter. The options write exactly the bytes of their `ToJson()`, whatever serializer options your app uses (naming policy, null handling, enum converters, indentation), and they are never read back. A credential binds through the same parser as `FromJson`, with the same rules and the same 64 KiB bound, and a credential that is present but malformed becomes a `JsonException` carrying the parser's message, so model binding answers it with 400 before your handler runs. A `null` or missing `credential` member never reaches the parser and binds as `null`, so check for it, as below. `ToJson()` and `FromJson(string)` are for code that holds the JSON as text.
+
+```csharp
+// Your models: the page reads the options from "options" and posts the credential as "credential".
+public sealed record RegistrationOptionsResponse(PublicKeyCredentialCreationOptions Options);
+public sealed record RegistrationRequest(WebAuthnRegistrationResponse Credential);
+public sealed record AuthenticationOptionsResponse(PublicKeyCredentialRequestOptions Options);
+public sealed record AuthenticationRequest(WebAuthnAuthenticationResponse Credential);
+```
+
 ```csharp
 // 1. Enrolling an authenticator, for a user who is already signed in. Their existing credentials go
 //    back as they were stored: each one's id and the transports its registration reported.
@@ -1092,11 +1114,12 @@ PublicKeyCredentialCreationOptions options = generator.CreateRegistrationOptions
     excludeCredentials: existingCredentials);
 
 await sessions.StoreChallengeAsync(sessionId, options.Challenge);   // yours to keep
-return Results.Content(options.ToJson(), "application/json");        // parseCreationOptionsFromJSON()
+return Results.Ok(new RegistrationOptionsResponse(options));          // parseCreationOptionsFromJSON(body.options)
 
-// 2. Verifying what the browser posts back.
+// 2. Verifying what the browser posts back, bound from the body as a RegistrationRequest.
+if (request.Credential == null) return Results.BadRequest();         // a null or missing member binds as null
 WebAuthnRegistrationResult result = verifier.VerifyRegistration(
-    WebAuthnRegistrationResponse.FromJson(body),
+    request.Credential,
     await sessions.TakeChallengeAsync(sessionId),
     WebAuthnUserVerificationRequirement.Required);
 
@@ -1113,10 +1136,11 @@ PublicKeyCredentialRequestOptions requestOptions = generator.CreateAuthenticatio
     allowCredentials, WebAuthnUserVerificationRequirement.Required);
 
 await sessions.StoreChallengeAsync(sessionId, requestOptions.Challenge);
-return Results.Content(requestOptions.ToJson(), "application/json"); // parseRequestOptionsFromJSON()
+return Results.Ok(new AuthenticationOptionsResponse(requestOptions)); // parseRequestOptionsFromJSON(body.options)
 
-// 4. Verifying the assertion the browser posts back.
-WebAuthnAuthenticationResponse response = WebAuthnAuthenticationResponse.FromJson(body);
+// 4. Verifying the assertion the browser posts back, bound from the body as an AuthenticationRequest.
+if (request.Credential == null) return Results.BadRequest();
+WebAuthnAuthenticationResponse response = request.Credential;
 
 WebAuthnStoredCredential stored = await store.GetCredentialAsync(userId, response.Id)
     ?? throw new InvalidOperationException("no such credential for this user");
@@ -1136,7 +1160,7 @@ Feature-detect them rather than assuming them — as `window.PublicKeyCredential
 
 - **Decode**, base64url to `ArrayBuffer`, before `navigator.credentials.create()`: `challenge`, `user.id`, and each `excludeCredentials[].id`. Before `navigator.credentials.get()`: `challenge` and each `allowCredentials[].id`.
 - **Encode**, `ArrayBuffer` to base64url, into the body posted back: `response.clientDataJSON` for both ceremonies; `response.attestationObject` for a registration; and for an assertion `response.authenticatorData`, `response.signature`, and `response.userHandle` when the authenticator sent one.
-- **Copy across unchanged**: `type`, `authenticatorAttachment`, and `id` — which the browser already exposes as the base64url of `rawId`, so `rawId` carries that same string. Parsing rejects a body whose two ids stand for different bytes, and does it with an `ArgumentException`: disagreeing ids are a malformed body rather than a declined ceremony.
+- **Copy across unchanged**: `type`, `authenticatorAttachment`, and `id` — which the browser already exposes as the base64url of `rawId`, so `rawId` carries that same string. Parsing rejects a body whose two ids stand for different bytes, and does it with an `ArgumentException` (a `JsonException`, so a 400, when the credential is bound from a model): disagreeing ids are a malformed body rather than a declined ceremony.
 - **Include `response.transports` on a registration**, the plain string array `getTransports()` returns. `toJSON()` sends it, and a body that leaves it out silently drops `WebAuthnRegisteredCredential.Transports` — the one value no later ceremony reports again.
 - **Leave `transports` on each `allowCredentials[]` and `excludeCredentials[]` entry as it is.** It is already the string array `navigator.credentials` takes, and it only appears for a credential handed in as a `WebAuthnCredentialReference` with transports stored.
 
@@ -1163,6 +1187,8 @@ A "Sign in with passkey" button that needs no typing: the browser offers the pas
 Endpoints, the credential store and the challenge store stay yours, as for the second factor. Issuing the session is written out by hand below, because this is a first-factor login: it does not go through `ExternalSignInEndpoint.HandleAsync`, which would record a passkey login with `OnExternalAuthAsync` as an external-provider sign-in next to the WebAuthn record.
 
 ```csharp
+// The request and response models are the second factor's, above.
+
 // 1. Register a passkey, for a user who is already signed in. The user handle is their stable,
 //    opaque id (here the bytes of their GUID), never their email.
 IEnumerable<WebAuthnCredentialReference> existingCredentials = (await store.GetCredentialsAsync(user.Id))
@@ -1173,11 +1199,12 @@ PublicKeyCredentialCreationOptions options = generator.CreateDiscoverableRegistr
     existingCredentials);
 
 await sessions.StoreChallengeAsync(sessionId, options.Challenge);
-return Results.Content(options.ToJson(), "application/json");
+return Results.Ok(new RegistrationOptionsResponse(options));
 
-// ...and verify what the browser posts back.
+// ...and verify what the browser posts back, bound from the body as a RegistrationRequest.
+if (request.Credential == null) return Results.BadRequest();
 WebAuthnRegistrationResult registration = verifier.VerifyDiscoverableRegistration(
-    WebAuthnRegistrationResponse.FromJson(body), await sessions.TakeChallengeAsync(sessionId));
+    request.Credential, await sessions.TakeChallengeAsync(sessionId));
 
 await auditLogger.OnWebAuthnRegistrationAsync(httpContext, registration);
 if (!registration.Success) return Results.BadRequest();
@@ -1195,15 +1222,17 @@ httpContext.Response.Cookies.Append("passkey_ceremony", ceremonyId, new CookieOp
 {
     HttpOnly = true, Secure = true, SameSite = SameSiteMode.Strict, MaxAge = lifetime,
 });
-return Results.Content(requestOptions.ToJson(), "application/json");   // parseRequestOptionsFromJSON()
+return Results.Ok(new AuthenticationOptionsResponse(requestOptions));   // parseRequestOptionsFromJSON(body.options)
 
-// 3. Look up. Spend the challenge first: read and delete it in one atomic step, before verifying.
+// 3. Look up, with the assertion bound from the body as an AuthenticationRequest. Spend the challenge
+//    first: read and delete it in one atomic step, before verifying.
 httpContext.SetNoStoreCacheControl();
 string? ceremonyIdFromCookie = httpContext.Request.Cookies["passkey_ceremony"];
 string? challenge = ceremonyIdFromCookie == null ? null : await challenges.TakeAsync(ceremonyIdFromCookie);
 if (challenge == null) return Results.Unauthorized();
+if (request.Credential == null) return Results.BadRequest();
 
-WebAuthnAuthenticationResponse response = WebAuthnAuthenticationResponse.FromJson(body);
+WebAuthnAuthenticationResponse response = request.Credential;
 StoredCredentialRow? passkey = await store.FindByCredentialIdAsync(response.Id, CredentialKind.Passkey);
 if (passkey == null) return Results.Unauthorized();   // across all users, passkeys only
 
@@ -1222,22 +1251,27 @@ await store.UpdateSignCountAsync(passkey.CredentialId, assertion.SignCount);   /
 await store.UpdateBackedUpAsync(passkey.CredentialId, assertion.BackedUp);
 
 // 5. Issue the session to the credential's owner, never to anyone the request names.
-DateTime expiresAt = DateTime.UtcNow.AddHours(1);
 IJwtTokenService jwtTokenService = httpContext.RequestServices.GetRequiredService<IJwtTokenService>();
-string token = jwtTokenService.CreateToken(owner.Id.ToString(), "user", [], owner.Roles, expiresAt);
-
 IRefreshTokenService? refreshTokenService = httpContext.RequestServices.GetService<IRefreshTokenService>();
-string? refreshToken = refreshTokenService == null
-    ? null
-    : await refreshTokenService.CreateRefreshTokenAsync(owner.Id.ToString(), "user", null, null);
+AuthResponse session;
+if (refreshTokenService != null)
+{
+    SessionStartResult started = await refreshTokenService.StartSessionAsync(jwtTokenService, owner.Id.ToString(), "user", [], owner.Roles);
+    session = started.AuthResponse;
+}
+else
+{
+    DateTime expiresAt = DateTime.UtcNow.AddHours(1);
+    session = new AuthResponse(jwtTokenService.CreateToken(owner.Id.ToString(), "user", [], owner.Roles, expiresAt), expiresAt.ToString("o"));
+}
 
 if (httpContext.IsAccessTokenCookieEnabled())
 {
-    httpContext.TrySetAccessTokenCookie(token);
+    httpContext.TrySetAccessTokenCookie(session.Token);
 }
 
 httpContext.MarkAuthenticationSucceeded();   // after a verified assertion, never before
-return Results.Ok(new AuthResponse(token, expiresAt.ToString("o"), refreshToken));
+return Results.Ok(session);
 ```
 
 **What you must do, and each one, done wrong, leaves login looking like it works:**
@@ -1256,6 +1290,7 @@ The page's side is the second factor's with two differences: `allowCredentials` 
 **Key Features:**
 - Both ceremonies verified in the order WebAuthn Level 3 §7.1 and §7.2 state their checks, with the checks common to both written once so neither path can be hardened without the other
 - Options generated in the JSON shape the browser's `parseCreationOptionsFromJSON()` and `parseRequestOptionsFromJSON()` consume, with a 32-byte CSPRNG challenge
+- System.Text.Json converters on the options and response types, so they nest in your own models: the WebAuthn JSON is written with fixed settings of its own, independent of `JsonSerializerSettings.CurrentOptions` and of your app's serializer options, and a credential that is present but malformed is a `JsonException` (400 from model binding)
 - Stored transports handed back on each `allowCredentials` and `excludeCredentials` entry, bounded as registration bounded them, so the browser can go straight to the enrolled authenticator
 - Result objects with a failure-reason enum naming the individual check that rejected a ceremony, for the audit record — never an exception for a declined ceremony
 - The signature-counter rule including the both-zero exemption platform authenticators need, and a counter regression reported distinctly from an authenticator that keeps no counter
@@ -1564,6 +1599,28 @@ The progressive delay middleware helps protect your API from brute-force attacks
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
 
+## Migration from 5.15.0
+
+Version 5.16.0 adds a call that starts a session, a home for the library's claim names, and System.Text.Json converters on the WebAuthn options and response types. Nothing is removed. The WebAuthn JSON no longer follows `JsonSerializerSettings.CurrentOptions`, which changes output only for an app that had changed it (below). The one source-level change is for a **custom `IRefreshTokenService` implementation** (rare: most consumers implement only `IRefreshTokenStore` and use the built-in service), which must add `StartSessionAsync`; the member is not default-implemented, as `CreateRefreshTokenWithFamilyAsync` was not in 5.2.0.
+
+### New: `IRefreshTokenService.StartSessionAsync`
+- **Starts a session from any sign-in of your own**: creates the refresh token family holding the claims and roles, and issues the first access token the way a refresh issues the next one, with the same lifetime, clock, `"O"` expiry format and `family_id` claim. It returns a **`SessionStartResult`** carrying the `AuthResponse` and the `FamilyId`. See [section 8](#8-refresh-tokens).
+- **A sign-in that issues the first access token and the refresh token by hand** can switch to it, so the first token cannot drift from a refreshed one. The hand-written form keeps working. One difference shows on the first token after switching: claims reach it as type and value, as on every refreshed token, so a claim passed with a value type such as `ClaimValueTypes.Integer32` becomes a string.
+- It does not run `IRefreshClaimsResolver` and fires no sign-in or refresh audit hook: the sign-in that calls it already resolved the claims and reports the login. Under `SingleSession`, `OnConcurrentSessionsRevokedAsync` still fires when it revokes earlier sessions.
+
+### New: `EasyReasyClaimTypes`
+- **`RefreshFamilyId` (`"family_id"`), `TenantId` (`"tenant_id"`) and `AuthType` (`"auth_type"`)**, the claim types the library writes and reads, as constants. The values are unchanged, so tokens issued before and after the upgrade read the same.
+
+### New: the WebAuthn types serialize and bind directly
+- **`PublicKeyCredentialCreationOptions` and `PublicKeyCredentialRequestOptions`** can be members of your response models: serialized with any `JsonSerializerOptions`, indented or not, they write exactly the bytes of `ToJson()`. Reading one throws `NotSupportedException`, since the server never reads its options back.
+- **`WebAuthnRegistrationResponse` and `WebAuthnAuthenticationResponse`** can be members of your request models: they bind through the same parser as `FromJson`, and a credential that is present but malformed is a `JsonException` carrying the parser's message, so model binding answers 400 rather than 500. A `null` or missing member binds as `null`; check for it. An endpoint that parses `JsonElement.GetRawText()` with `FromJson`, or re-parses `ToJson()` into a `JsonElement`, can bind and return the types directly. See [section 13](#13-webauthn--fido2-second-factor-and-passkey-sign-in).
+- **`ToJson()` and `FromJson(string)` stay**, and share the converters' code.
+
+### Changed: the WebAuthn JSON is fixed
+- **`ToJson()` no longer reads `JsonSerializerSettings.CurrentOptions`.** WebAuthn fixes its JSON format, so the four types write with fixed settings of their own. For an app that never changed `CurrentOptions` the bytes are identical. For one that did (indentation, a naming policy, a number or null setting), the WebAuthn output was following it and now no longer does, which is the format the browser expects.
+- **The 64 KiB bound on a credential counts UTF-8 bytes**, both in `FromJson(string)` and through the converter, where it counted characters. A credential of ASCII text, which is what a browser sends, measures the same either way.
+- **`WebAuthnCredentialResponse.ToJson()` is implemented on the base class** and is no longer abstract, so the two credential types share their writing. Calls are unchanged. The base class can no longer be derived from outside the library; its two derived types are the two ceremonies' credentials.
+
 ## Migration from 5.14.0
 
 Version 5.15.0 is additive: a second-factor flow built against 5.14.0 compiles and behaves as before. The only change to existing behaviour is the wording of one exception message.
@@ -1766,7 +1823,7 @@ Version 5.2.0 is additive. Existing callers using the built-in `RefreshTokenServ
 - **`IRefreshTokenService.RetireFamilyAsync(familyId, subject?, httpContext?, ct)`** retires exactly one family (other devices stay live). Null/whitespace family id is a no-op. When a non-empty family id is retired and an audit logger is registered, it fires the new hook.
 - **New `IAuthAuditLogger.OnSessionSupersededAsync(httpContext, FamilyRetirementResult)` hook** reports the supersession. It has a default no-op implementation, so existing audit loggers are unaffected. Distinct from `OnLogoutAsync` (a real logout) and `OnConcurrentSessionsRevokedAsync` (global single-session enforcement).
 
-**Rollout is safe with no consumer action.** Access tokens minted before 5.2.0 carry no `family_id`, so `GetRefreshFamilyId()` returns `null` and `RetireFamilyAsync(null)` is a clean no-op. Existing sessions self-heal — each gains the `family_id` claim on its next refresh. A consumer that wants the claim on the very first (login) access token adds it itself using the `FamilyId` from `CreateRefreshTokenWithFamilyAsync`.
+**Rollout is safe with no consumer action.** Access tokens minted before 5.2.0 carry no `family_id`, so `GetRefreshFamilyId()` returns `null` and `RetireFamilyAsync(null)` is a clean no-op. Existing sessions self-heal — each gains the `family_id` claim on its next refresh. A consumer that wants the claim on the very first (login) access token starts the session with `StartSessionAsync` (5.16.0), which issues that token the way a refresh does; see [section 8](#8-refresh-tokens).
 
 **`IRefreshTokenService` gains two methods; nothing else changes.** No `IRefreshTokenStore`, DI-registration, or wire-format changes, and the new `IAuthAuditLogger` member is a default-method addition so existing audit loggers keep compiling. The two new `IRefreshTokenService` methods are *not* default-implemented, so a **custom `IRefreshTokenService` implementation** (rare — most consumers implement only `IRefreshTokenStore` and use the built-in service) must add `CreateRefreshTokenWithFamilyAsync` and `RetireFamilyAsync`.
 
