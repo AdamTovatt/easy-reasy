@@ -6,7 +6,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_NoneFormat_ReturnsTheAuthenticatorDataItCarried()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             byte[] authenticatorData = BuildAuthenticatorData(authenticator);
 
             AttestationObject parsed = AttestationObject.Parse(
@@ -25,7 +25,7 @@ namespace EasyReasy.Auth.Tests
         [DataRow("")]
         public void Parse_AnyFormatOtherThanNone_ThrowsUnsupportedAttestationFormat(string format)
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             byte[] encoded = CborTestEncoder.EncodeAttestationObject(format, BuildAuthenticatorData(authenticator), CborTestEncoder.EncodeEmptyMap());
 
@@ -35,7 +35,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_NoneFormatCarryingAnAttestationStatement_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             byte[] statement = new CborMapBuilder()
                 .With(CborTestEncoder.EncodeTextString("sig"), CborTestEncoder.EncodeByteString(new byte[] { 0x01 }))
@@ -50,7 +50,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_AttestationStatementThatIsNotAMap_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             byte[] encoded = CborTestEncoder.EncodeAttestationObject(
                 "none",
@@ -64,7 +64,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_WithNoAttestationStatementAtAll_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             byte[] encoded = CborTestEncoder.EncodeAttestationObject("none", BuildAuthenticatorData(authenticator), null);
 
@@ -74,7 +74,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_WithNoFormat_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             byte[] encoded = CborTestEncoder.EncodeAttestationObject(null, BuildAuthenticatorData(authenticator), CborTestEncoder.EncodeEmptyMap());
 
@@ -96,7 +96,7 @@ namespace EasyReasy.Auth.Tests
         {
             // CTAP authenticators add keys of their own — largeBlobKey and epAtt among them — and a
             // ceremony must not fail because one of them was present.
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             byte[] encoded = new CborMapBuilder()
                 .With(CborTestEncoder.EncodeTextString("fmt"), CborTestEncoder.EncodeTextString("none"))
@@ -117,7 +117,7 @@ namespace EasyReasy.Auth.Tests
             // CBOR Strict mode compares encoded key bytes, so "fmt" written minimally and non-minimally is
             // not a repeat to the reader. Without the parser's own guard the second "fmt" would win and a
             // packed attestation statement would sail through the format check as "none".
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             byte[] encoded = new CborMapBuilder()
                 .With(CborTestEncoder.EncodeTextString("fmt"), CborTestEncoder.EncodeTextString("packed"))
@@ -133,7 +133,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_FollowedByTrailingBytes_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             byte[] attestationObject = CborTestEncoder.EncodeAttestationObject("none", BuildAuthenticatorData(authenticator), CborTestEncoder.EncodeEmptyMap());
 
             byte[] withTrailingBytes = new byte[attestationObject.Length + 4];
@@ -163,14 +163,14 @@ namespace EasyReasy.Auth.Tests
             AssertMalformed(new byte[] { 0x01 });
         }
 
-        private static byte[] BuildAuthenticatorData(SyntheticAuthenticator authenticator)
+        private static byte[] BuildAuthenticatorData(WebAuthnTestAuthenticator authenticator)
         {
             return new AuthenticatorDataBuilder
             {
                 RelyingPartyIdHash = WebAuthnTestData.RelyingPartyIdHash,
                 Aaguid = authenticator.Aaguid,
                 CredentialId = authenticator.CredentialId,
-                CredentialPublicKey = authenticator.EncodeCoseKey(),
+                CredentialPublicKey = authenticator.CosePublicKey,
             }.Build();
         }
 

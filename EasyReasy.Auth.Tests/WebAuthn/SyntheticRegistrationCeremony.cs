@@ -3,18 +3,22 @@ using System.Text;
 namespace EasyReasy.Auth.Tests
 {
     /// <summary>
-    /// Assembles the registration a browser would post back, from a <see cref="SyntheticAuthenticator"/>
+    /// Assembles the registration a browser would post back, from a <see cref="WebAuthnTestAuthenticator"/>
     /// that holds a real key pair. Every field a verification check reads is a property here, defaulted to
     /// the value that passes, so a test breaks exactly one and shows that exactly that check fails.
     /// </summary>
     /// <remarks>
     /// The point of building the ceremony rather than pasting a captured one is that a captured response is
     /// correct in every field at once: nothing can be mutated without re-deriving the rest of it, so the
-    /// checks would all be exercised by the same passing case and none of them proven.
+    /// checks would all be exercised by the same passing case and none of them proven. Takes only the
+    /// credential id, COSE key and AAGUID from the authenticator, for the reason
+    /// <see cref="SyntheticAuthenticationCeremony"/> gives. Named "synthetic" rather than after
+    /// <see cref="WebAuthnTestAuthenticator"/> because it is not that authenticator's ceremony: it is
+    /// assembled by hand so it can be wrong in any field, which the authenticator never is.
     /// </remarks>
     internal sealed class SyntheticRegistrationCeremony
     {
-        private readonly SyntheticAuthenticator _authenticator;
+        private readonly WebAuthnTestAuthenticator _authenticator;
 
         /// <summary>The client data the browser collected, field by field.</summary>
         public ClientDataBuilder ClientData { get; }
@@ -47,7 +51,7 @@ namespace EasyReasy.Auth.Tests
         /// </summary>
         /// <param name="authenticator">The authenticator whose key and credential id the ceremony enrolls.</param>
         /// <param name="challenge">The base64url challenge the ceremony answers.</param>
-        public SyntheticRegistrationCeremony(SyntheticAuthenticator authenticator, string challenge)
+        public SyntheticRegistrationCeremony(WebAuthnTestAuthenticator authenticator, string challenge)
         {
             _authenticator = authenticator;
             ClientData = new ClientDataBuilder(CollectedClientData.RegistrationCeremonyType, challenge);
@@ -57,7 +61,7 @@ namespace EasyReasy.Auth.Tests
                 RelyingPartyIdHash = WebAuthnTestData.RelyingPartyIdHash,
                 Aaguid = authenticator.Aaguid,
                 CredentialId = authenticator.CredentialId,
-                CredentialPublicKey = authenticator.EncodeCoseKey(),
+                CredentialPublicKey = authenticator.CosePublicKey,
             };
         }
 

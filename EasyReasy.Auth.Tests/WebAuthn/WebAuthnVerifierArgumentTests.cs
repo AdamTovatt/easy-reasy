@@ -28,7 +28,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyRegistration_NullChallenge_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             Assert.ThrowsException<ArgumentNullException>(
                 () => WebAuthnTestData.NewVerifier().VerifyRegistration(
@@ -71,7 +71,7 @@ namespace EasyReasy.Auth.Tests
 
         private static void AssertChallengeRejected(string challenge)
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
                 () => WebAuthnTestData.NewVerifier().VerifyRegistration(
@@ -87,7 +87,7 @@ namespace EasyReasy.Auth.Tests
         {
             // An undefined value compares unequal to Required, so without the guard it would verify as the
             // weakest setting — a cast turning a policy off instead of failing.
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             ArgumentOutOfRangeException exception = Assert.ThrowsException<ArgumentOutOfRangeException>(
                 () => WebAuthnTestData.NewVerifier().VerifyRegistration(
@@ -101,7 +101,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyAuthentication_NullResponse_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             Assert.ThrowsException<ArgumentNullException>(
                 () => WebAuthnTestData.NewVerifier().VerifyAuthentication(
@@ -114,7 +114,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyAuthentication_NullChallenge_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
 
             Assert.ThrowsException<ArgumentNullException>(
@@ -130,7 +130,7 @@ namespace EasyReasy.Auth.Tests
         {
             // The argument without which there is nothing to verify against. Left unguarded it would
             // surface as a null reference from inside the credential-id comparison.
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             Assert.ThrowsException<ArgumentNullException>(
                 () => WebAuthnTestData.NewVerifier().VerifyAuthentication(
@@ -171,7 +171,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyAuthentication_UndefinedUserVerification_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
 
             ArgumentOutOfRangeException exception = Assert.ThrowsException<ArgumentOutOfRangeException>(
@@ -196,7 +196,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyDiscoverableRegistration_NullChallenge_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
                 () => WebAuthnTestData.NewVerifier().VerifyDiscoverableRegistration(NewResponse(authenticator), null!));
@@ -207,7 +207,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyDiscoverableRegistration_PaddedStoredChallenge_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
 
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
                 () => WebAuthnTestData.NewVerifier().VerifyDiscoverableRegistration(NewResponse(authenticator), WebAuthnTestData.Challenge + "="));
@@ -218,7 +218,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyDiscoverableAuthentication_NullResponse_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
 
             ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
@@ -231,7 +231,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyDiscoverableAuthentication_NullChallenge_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
 
             ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
@@ -244,7 +244,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyDiscoverableAuthentication_NullStoredCredential_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
 
             ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
@@ -257,7 +257,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyDiscoverableAuthentication_NullStoredUserHandle_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
 
             ArgumentNullException exception = Assert.ThrowsException<ArgumentNullException>(
@@ -270,7 +270,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyDiscoverableAuthentication_PaddedStoredChallenge_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
 
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
@@ -288,7 +288,7 @@ namespace EasyReasy.Auth.Tests
             // The bounds the user entity applies at registration. A handle outside them is the
             // application's mistake, and declining it as a mismatch would report another user's passkey on
             // every attempt.
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
 
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
@@ -300,7 +300,7 @@ namespace EasyReasy.Auth.Tests
 
         private static void AssertAssertionChallengeRejected(string challenge)
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticAuthenticationCeremony ceremony = NewCeremony(authenticator);
 
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(
@@ -313,12 +313,12 @@ namespace EasyReasy.Auth.Tests
             Assert.AreEqual("expectedChallenge", exception.ParamName);
         }
 
-        private static WebAuthnRegistrationResponse NewResponse(SyntheticAuthenticator authenticator)
+        private static WebAuthnRegistrationResponse NewResponse(WebAuthnTestAuthenticator authenticator)
         {
             return new SyntheticRegistrationCeremony(authenticator, WebAuthnTestData.Challenge).Build();
         }
 
-        private static SyntheticAuthenticationCeremony NewCeremony(SyntheticAuthenticator authenticator)
+        private static SyntheticAuthenticationCeremony NewCeremony(WebAuthnTestAuthenticator authenticator)
         {
             return new SyntheticAuthenticationCeremony(authenticator, WebAuthnTestData.Challenge);
         }

@@ -10,7 +10,7 @@ namespace EasyReasy.Auth.Tests
     [TestClass]
     public class WebAuthnAuthenticationVerificationTests
     {
-        private SyntheticAuthenticator _authenticator = null!;
+        private WebAuthnTestAuthenticator _authenticator = null!;
         private SyntheticAuthenticationCeremony _ceremony = null!;
 
         /// <summary>
@@ -20,7 +20,7 @@ namespace EasyReasy.Auth.Tests
         [TestInitialize]
         public void BuildACeremonyThatVerifies()
         {
-            _authenticator = SyntheticAuthenticator.Create();
+            _authenticator = WebAuthnTestAuthenticator.Create();
             _ceremony = new SyntheticAuthenticationCeremony(_authenticator, WebAuthnTestData.Challenge);
         }
 
@@ -44,7 +44,7 @@ namespace EasyReasy.Auth.Tests
         {
             // The signature encoding differs between the two algorithms — a DER sequence against PKCS#1 —
             // so a verifier that handled only one would pass every test above and fail here.
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create(CoseAlgorithm.Rs256);
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Rs256);
             SyntheticAuthenticationCeremony ceremony = new SyntheticAuthenticationCeremony(authenticator, WebAuthnTestData.Challenge);
 
             WebAuthnAuthenticationResult result = Verify(ceremony);
@@ -66,7 +66,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyAuthentication_SignatureFromAnotherAuthenticator_IsRejected()
         {
-            using SyntheticAuthenticator other = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator other = WebAuthnTestAuthenticator.Create();
             _ceremony.SignatureOverride = other.Sign(Encoding.UTF8.GetBytes("anything"));
 
             AssertFailure(WebAuthnAuthenticationFailureReason.SignatureInvalid);

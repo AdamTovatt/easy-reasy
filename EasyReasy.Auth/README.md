@@ -1253,6 +1253,10 @@ return Results.Ok(new AuthResponse(token, expiresAt.ToString("o"), refreshToken)
 
 The page's side is the second factor's with two differences: `allowCredentials` is empty, so there are no ids to decode before `navigator.credentials.get()`, and the posted assertion must include `response.userHandle`, which `toJSON()` does. Conditional mediation (passkey autofill in the username field) uses these same options; only the page changes, by passing `mediation: "conditional"`.
 
+#### Testing your endpoints
+
+To test your registration and sign-in endpoints in both modes without a browser, reference [EasyReasy.Auth.Testing](../EasyReasy.Auth.Testing/README.md) from your test project. Its `WebAuthnTestAuthenticator` answers the options your endpoint returns with the body the browser would post, signed by a real key and accepted by this verifier. You can also set it to skip user verification, send another user's handle or wind its counter back, to show your endpoint refuses each one. Never reference it from production code.
+
 **Key Features:**
 - Both ceremonies verified in the order WebAuthn Level 3 §7.1 and §7.2 state their checks, with the checks common to both written once so neither path can be hardened without the other
 - Options generated in the JSON shape the browser's `parseCreationOptionsFromJSON()` and `parseRequestOptionsFromJSON()` consume, with a 32-byte CSPRNG challenge

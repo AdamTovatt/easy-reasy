@@ -38,6 +38,13 @@ namespace EasyReasy.Auth.Tests
         /// </summary>
         public static byte[] RelyingPartyIdHash => SHA256.HashData(Encoding.UTF8.GetBytes(RelyingPartyId));
 
+        /// <summary>
+        /// The user handle a synthetic credential was registered with and a synthetic assertion returns, as
+        /// a discoverable credential does: the bytes of a GUID, the stable opaque id the library tells
+        /// applications to use. A property for the reason <see cref="RelyingPartyIdHash"/> gives.
+        /// </summary>
+        public static byte[] UserHandle => new Guid("05e2a7d1-0b1e-4c7a-9d3e-5a5a5a5a5a5a").ToByteArray();
+
         /// <summary>The relying party the WebAuthn tests are written against.</summary>
         public static WebAuthnRelyingParty NewRelyingParty()
         {

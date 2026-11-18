@@ -11,9 +11,9 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_Es256Key_ReportsEs256AndVerifiesASignatureFromThatKey()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create(CoseAlgorithm.Es256);
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Es256);
 
-            using CoseKey key = CoseKey.Parse(authenticator.EncodeCoseKey());
+            using CoseKey key = CoseKey.Parse(authenticator.CosePublicKey);
 
             Assert.AreEqual(CoseAlgorithm.Es256, key.Algorithm);
             Assert.IsTrue(key.VerifySignature(SignedData, authenticator.Sign(SignedData)));
@@ -22,9 +22,9 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_Rs256Key_ReportsRs256AndVerifiesASignatureFromThatKey()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create(CoseAlgorithm.Rs256);
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Rs256);
 
-            using CoseKey key = CoseKey.Parse(authenticator.EncodeCoseKey());
+            using CoseKey key = CoseKey.Parse(authenticator.CosePublicKey);
 
             Assert.AreEqual(CoseAlgorithm.Rs256, key.Algorithm);
             Assert.IsTrue(key.VerifySignature(SignedData, authenticator.Sign(SignedData)));
@@ -35,8 +35,8 @@ namespace EasyReasy.Auth.Tests
         [DataRow(CoseAlgorithm.Rs256)]
         public void VerifySignature_SignatureOverDifferentBytes_ReturnsFalse(CoseAlgorithm algorithm)
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create(algorithm);
-            using CoseKey key = CoseKey.Parse(authenticator.EncodeCoseKey());
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(algorithm);
+            using CoseKey key = CoseKey.Parse(authenticator.CosePublicKey);
 
             byte[] signature = authenticator.Sign(Encoding.UTF8.GetBytes("some other bytes entirely"));
 
@@ -48,9 +48,9 @@ namespace EasyReasy.Auth.Tests
         [DataRow(CoseAlgorithm.Rs256)]
         public void VerifySignature_SignatureFromAnotherAuthenticator_ReturnsFalse(CoseAlgorithm algorithm)
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create(algorithm);
-            using SyntheticAuthenticator otherAuthenticator = SyntheticAuthenticator.Create(algorithm);
-            using CoseKey key = CoseKey.Parse(authenticator.EncodeCoseKey());
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(algorithm);
+            using WebAuthnTestAuthenticator otherAuthenticator = WebAuthnTestAuthenticator.Create(algorithm);
+            using CoseKey key = CoseKey.Parse(authenticator.CosePublicKey);
 
             Assert.IsFalse(key.VerifySignature(SignedData, otherAuthenticator.Sign(SignedData)));
         }
@@ -60,8 +60,8 @@ namespace EasyReasy.Auth.Tests
         [DataRow(CoseAlgorithm.Rs256)]
         public void VerifySignature_SignatureThatIsNotEvenWellFormed_ReturnsFalseRatherThanThrowing(CoseAlgorithm algorithm)
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create(algorithm);
-            using CoseKey key = CoseKey.Parse(authenticator.EncodeCoseKey());
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(algorithm);
+            using CoseKey key = CoseKey.Parse(authenticator.CosePublicKey);
 
             Assert.IsFalse(key.VerifySignature(SignedData, new byte[] { 0xFF, 0xFF, 0xFF }));
         }
@@ -69,8 +69,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_Es256KeyStatingTheRsaKeyType_Throws()
         {
-            using Es256SyntheticAuthenticator authenticator = Es256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            ECParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Es256);
+            ECParameters parameters = CosePublicKeyReader.ReadEs256(authenticator.CosePublicKey);
 
             byte[] encoded = CborTestEncoder.EncodeCoseEc2Key(parameters.Q.X!, parameters.Q.Y!, keyType: 3);
 
@@ -80,8 +80,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_Es256KeyOnACurveOtherThanP256_Throws()
         {
-            using Es256SyntheticAuthenticator authenticator = Es256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            ECParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Es256);
+            ECParameters parameters = CosePublicKeyReader.ReadEs256(authenticator.CosePublicKey);
 
             // Curve 2 is P-384; the coordinates are still the P-256 ones, so only the stated curve is wrong.
             byte[] encoded = CborTestEncoder.EncodeCoseEc2Key(parameters.Q.X!, parameters.Q.Y!, curve: 2);
@@ -92,8 +92,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_Es256KeyWithATruncatedCoordinate_Throws()
         {
-            using Es256SyntheticAuthenticator authenticator = Es256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            ECParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Es256);
+            ECParameters parameters = CosePublicKeyReader.ReadEs256(authenticator.CosePublicKey);
 
             byte[] encoded = CborTestEncoder.EncodeCoseEc2Key(parameters.Q.X![..31], parameters.Q.Y!);
 
@@ -105,8 +105,8 @@ namespace EasyReasy.Auth.Tests
         [DataRow(-3)]
         public void Parse_Es256KeyMissingACoordinate_Throws(int omittedLabel)
         {
-            using Es256SyntheticAuthenticator authenticator = Es256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            ECParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Es256);
+            ECParameters parameters = CosePublicKeyReader.ReadEs256(authenticator.CosePublicKey);
 
             CborMapBuilder builder = new CborMapBuilder()
                 .With(CborTestEncoder.EncodeInteger(1), CborTestEncoder.EncodeInteger(2))
@@ -140,8 +140,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_Rs256KeyStatingTheEc2KeyType_Throws()
         {
-            using Rs256SyntheticAuthenticator authenticator = Rs256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            RSAParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Rs256);
+            RSAParameters parameters = CosePublicKeyReader.ReadRs256(authenticator.CosePublicKey);
 
             byte[] encoded = CborTestEncoder.EncodeCoseRsaKey(parameters.Modulus!, parameters.Exponent!, keyType: 2);
 
@@ -153,8 +153,8 @@ namespace EasyReasy.Auth.Tests
         {
             // The stated algorithm selects how the rest of the map is read, so an RSA key claiming ES256 is
             // read as an EC2 key and rejected on the key type rather than reinterpreted.
-            using Rs256SyntheticAuthenticator authenticator = Rs256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            RSAParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Rs256);
+            RSAParameters parameters = CosePublicKeyReader.ReadRs256(authenticator.CosePublicKey);
 
             byte[] encoded = CborTestEncoder.EncodeCoseRsaKey(parameters.Modulus!, parameters.Exponent!, algorithm: -7);
 
@@ -190,8 +190,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_Rs256KeyWhoseModulusCarriesALeadingZero_StillVerifiesSignaturesFromThatKey()
         {
-            using Rs256SyntheticAuthenticator authenticator = Rs256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            RSAParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Rs256);
+            RSAParameters parameters = CosePublicKeyReader.ReadRs256(authenticator.CosePublicKey);
 
             byte[] paddedModulus = new byte[parameters.Modulus!.Length + 1];
             parameters.Modulus.CopyTo(paddedModulus, 1);
@@ -204,8 +204,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_Rs256KeyWithAnEmptyExponent_Throws()
         {
-            using Rs256SyntheticAuthenticator authenticator = Rs256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            RSAParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Rs256);
+            RSAParameters parameters = CosePublicKeyReader.ReadRs256(authenticator.CosePublicKey);
 
             byte[] encoded = CborTestEncoder.EncodeCoseRsaKey(parameters.Modulus!, Array.Empty<byte>());
 
@@ -219,8 +219,8 @@ namespace EasyReasy.Auth.Tests
         [DataRow(-65535L)] // RS1
         public void Parse_KeyStatingAnAlgorithmOutsideTheSupportedSet_ThrowsUnsupportedAlgorithm(long algorithm)
         {
-            using Es256SyntheticAuthenticator authenticator = Es256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            ECParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Es256);
+            ECParameters parameters = CosePublicKeyReader.ReadEs256(authenticator.CosePublicKey);
 
             byte[] encoded = CborTestEncoder.EncodeCoseEc2Key(parameters.Q.X!, parameters.Q.Y!, algorithm: algorithm);
 
@@ -255,8 +255,8 @@ namespace EasyReasy.Auth.Tests
             // CBOR Strict mode compares encoded key bytes, so the same label written minimally and
             // non-minimally is not a repeat to the reader. Without the parser's own guard the second value
             // would simply win, and a key could carry two algorithms.
-            using Es256SyntheticAuthenticator authenticator = Es256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            ECParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Es256);
+            ECParameters parameters = CosePublicKeyReader.ReadEs256(authenticator.CosePublicKey);
 
             byte[] encoded = new CborMapBuilder()
                 .With(CborTestEncoder.EncodeInteger(1), CborTestEncoder.EncodeInteger(2))
@@ -276,8 +276,8 @@ namespace EasyReasy.Auth.Tests
         {
             // COSE is extensible; a key carrying a text-string label, or a label whose value is neither an
             // integer nor a byte string, still parses on the labels that matter.
-            using Es256SyntheticAuthenticator authenticator = Es256SyntheticAuthenticator.Create(new byte[] { 0x01 });
-            ECParameters parameters = authenticator.ExportParameters();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(CoseAlgorithm.Es256);
+            ECParameters parameters = CosePublicKeyReader.ReadEs256(authenticator.CosePublicKey);
 
             byte[] encoded = new CborMapBuilder()
                 .With(CborTestEncoder.EncodeTextString("comment"), CborTestEncoder.EncodeTextString("ignored"))
@@ -298,8 +298,8 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void Parse_KeyFollowedByTrailingBytes_Throws()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
-            byte[] coseKey = authenticator.EncodeCoseKey();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
+            byte[] coseKey = authenticator.CosePublicKey;
 
             byte[] withTrailingBytes = new byte[coseKey.Length + 2];
             coseKey.CopyTo(withTrailingBytes, 0);

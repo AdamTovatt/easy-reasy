@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Title>EasyReasy.Auth.Testing</Title>
+    <Authors>Adam Tovatt</Authors>
+    <Description>A software WebAuthn authenticator for testing passkey and security-key endpoints built on EasyReasy.Auth against its real verifier. For test projects only: never reference it from production code</Description>
+    <Copyright>MIT</Copyright>
+    <PackageProjectUrl>https://github.com/AdamTovatt/easy-reasy</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/AdamTovatt/easy-reasy</RepositoryUrl>
+    <PackageTags>auth;webauthn;fido2;passkey;testing;easyreasy</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <IncludeSymbols>True</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <PackageIcon>BaseIcon.png</PackageIcon>
+    <PackageReleaseNotes>First release: WebAuthnTestAuthenticator, a software authenticator for a test project's passkey and security-key endpoint tests. It reads the creation or request options an endpoint returned, typed or as JSON, and answers with the body the browser's PublicKeyCredential.toJSON() posts, signed ES256 or RS256 with attestation none. Its sign count, user verification, backup flags, user handle and transports are settable, so a test can make the verifier refuse it, and it refuses the options its README's Refusals table lists, as a real authenticator or browser does. Requires EasyReasy.Auth 5.15.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-testing-v$(VersionPrefix)/EasyReasy.Auth.Testing/README.md</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\Icons\PNG\Normal\128w\BaseIcon.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- System.Formats.Cbor ships inside the ASP.NET Core shared framework, as EasyReasy.Auth's csproj
+         explains, so the CBOR writer needs no package reference of its own. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- No InternalsVisibleTo in either direction: this package builds on EasyReasy.Auth's public API
+         alone, so a release of it is not tied to one EasyReasy.Auth build. -->
+    <ProjectReference Include="..\EasyReasy.Auth\EasyReasy.Auth.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+
+</Project>

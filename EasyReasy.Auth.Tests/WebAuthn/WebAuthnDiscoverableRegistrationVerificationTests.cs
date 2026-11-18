@@ -12,7 +12,7 @@ namespace EasyReasy.Auth.Tests
         [DataRow(CoseAlgorithm.Rs256)]
         public void VerifyDiscoverableRegistration_CorrectCeremony_ReportsTheCredentialToStore(CoseAlgorithm algorithm)
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create(algorithm);
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create(algorithm);
             SyntheticRegistrationCeremony ceremony = new SyntheticRegistrationCeremony(authenticator, WebAuthnTestData.Challenge);
 
             WebAuthnRegistrationResult result = Verify(ceremony);
@@ -29,7 +29,7 @@ namespace EasyReasy.Auth.Tests
         {
             // The passkey is the whole login, so a touch without verification must not enroll one. A
             // verify call that took the requirement from anywhere but Required would accept this.
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticRegistrationCeremony ceremony = new SyntheticRegistrationCeremony(authenticator, WebAuthnTestData.Challenge);
             ceremony.AuthenticatorData.UserVerified = false;
 
@@ -42,7 +42,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public void VerifyDiscoverableRegistration_ChallengeFromAnotherCeremony_IsRejected()
         {
-            using SyntheticAuthenticator authenticator = SyntheticAuthenticator.Create();
+            using WebAuthnTestAuthenticator authenticator = WebAuthnTestAuthenticator.Create();
             SyntheticRegistrationCeremony ceremony = new SyntheticRegistrationCeremony(authenticator, WebAuthnTestData.Challenge);
             ceremony.ClientData.Challenge = WebAuthnTestData.OtherChallenge;
 
