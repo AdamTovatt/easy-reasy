@@ -55,6 +55,26 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        [DataRow("http://127.0.0.1:53682/other", DisplayName = "another path")]
+        [DataRow("http://127.0.0.1:53682/callback?next=1", DisplayName = "a query")]
+        [DataRow("http://localhost:53682/callback", DisplayName = "another loopback host")]
+        [DataRow("http://client.example:53682/callback", DisplayName = "a host that is not loopback")]
+        [DataRow("https://127.0.0.1:53682/callback", DisplayName = "https")]
+        [DataRow("http://user@127.0.0.1:53682/callback", DisplayName = "userinfo")]
+        public async Task Authorize_LoopbackRedirectOnAnotherPortDifferingInMore_IsRefused(string redirectUri)
+        {
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
+            OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync("http://127.0.0.1/callback");
+
+            OAuthTestFlowException refused = await Assert.ThrowsExceptionAsync<OAuthTestFlowException>(
+                () => server.OAuth.AuthorizeAsync(client, redirectUri: redirectUri));
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, refused.StatusCode);
+            Assert.AreEqual("invalid_request", refused.Error);
+            Assert.AreEqual(0, server.Store.AuthorizationRequests.Count);
+        }
+
+        [TestMethod]
         public async Task Authorize_UnknownClient_Is400AndDoesNotRedirect()
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();

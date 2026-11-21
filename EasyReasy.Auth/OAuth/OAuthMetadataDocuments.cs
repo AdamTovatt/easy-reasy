@@ -9,38 +9,32 @@ namespace EasyReasy.Auth
     internal static class OAuthMetadataDocuments
     {
         /// <summary>
+        /// The response types the server supports: <c>code</c>.
+        /// </summary>
+        public static readonly IReadOnlyList<string> ResponseTypesSupported = ["code"];
+
+        /// <summary>
+        /// The grant types the server supports.
+        /// </summary>
+        public static readonly IReadOnlyList<string> GrantTypesSupported = ["authorization_code", "refresh_token"];
+
+        /// <summary>
         /// The authorization server metadata.
         /// </summary>
         /// <param name="settings">The server's settings.</param>
         /// <returns>The JSON response.</returns>
         public static IResult AuthorizationServer(OAuthServerSettings settings)
         {
-            Dictionary<string, object> document = new Dictionary<string, object>
+            OAuthAuthorizationServerMetadata document = new OAuthAuthorizationServerMetadata
             {
-                ["issuer"] = settings.Issuer,
-                ["authorization_endpoint"] = settings.EndpointUrl(OAuthServerPaths.Authorize),
-                ["token_endpoint"] = settings.EndpointUrl(OAuthServerPaths.Token),
-                ["revocation_endpoint"] = settings.EndpointUrl(OAuthServerPaths.Revoke),
-                ["response_types_supported"] = new[] { "code" },
-                ["response_modes_supported"] = new[] { "query" },
-                ["grant_types_supported"] = new[] { "authorization_code", "refresh_token" },
-                ["code_challenge_methods_supported"] = new[] { "S256" },
-                ["token_endpoint_auth_methods_supported"] = OAuthClientAuthenticationMethodNames.All,
-                ["revocation_endpoint_auth_methods_supported"] = OAuthClientAuthenticationMethodNames.All,
-                ["authorization_response_iss_parameter_supported"] = true,
-                ["client_id_metadata_document_supported"] = settings.AllowClientIdMetadataDocuments,
+                Issuer = settings.Issuer,
+                AuthorizationEndpoint = settings.EndpointUrl(OAuthServerPaths.Authorize),
+                TokenEndpoint = settings.EndpointUrl(OAuthServerPaths.Token),
+                RevocationEndpoint = settings.EndpointUrl(OAuthServerPaths.Revoke),
+                RegistrationEndpoint = settings.AllowDynamicClientRegistration ? settings.EndpointUrl(OAuthServerPaths.Register) : null,
+                ClientIdMetadataDocumentSupported = settings.AllowClientIdMetadataDocuments,
+                ScopesSupported = ScopesOrNull(settings),
             };
-
-            if (settings.AllowDynamicClientRegistration)
-            {
-                document["registration_endpoint"] = settings.EndpointUrl(OAuthServerPaths.Register);
-            }
-
-            if (settings.ScopesSupported.Count > 0)
-            {
-                document["scopes_supported"] = settings.ScopesSupported;
-            }
-
             return Results.Json(document, OAuthJson.Options);
         }
 
@@ -51,18 +45,12 @@ namespace EasyReasy.Auth
         /// <returns>The JSON response.</returns>
         public static IResult ProtectedResource(OAuthServerSettings settings)
         {
-            Dictionary<string, object> document = new Dictionary<string, object>
+            OAuthProtectedResourceMetadata document = new OAuthProtectedResourceMetadata
             {
-                ["resource"] = settings.Resource,
-                ["authorization_servers"] = new[] { settings.Issuer },
-                ["bearer_methods_supported"] = new[] { "header" },
+                Resource = settings.Resource,
+                AuthorizationServers = [settings.Issuer],
+                ScopesSupported = ScopesOrNull(settings),
             };
-
-            if (settings.ScopesSupported.Count > 0)
-            {
-                document["scopes_supported"] = settings.ScopesSupported;
-            }
-
             return Results.Json(document, OAuthJson.Options);
         }
 
@@ -80,6 +68,12 @@ namespace EasyReasy.Auth
             }
 
             return challenge;
+        }
+
+        // A server that names no scopes leaves scopes_supported out rather than writing an empty list.
+        private static IReadOnlyList<string>? ScopesOrNull(OAuthServerSettings settings)
+        {
+            return settings.ScopesSupported.Count > 0 ? settings.ScopesSupported : null;
         }
     }
 }

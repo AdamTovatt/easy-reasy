@@ -34,6 +34,59 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public async Task GetRequest_InternationalizedHost_ShowsItInPunycode()
+        {
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
+            const string lookAlikeClientId = "https://\u0430pple.example/client.json";
+            server.MetadataDocuments.Serve(lookAlikeClientId, "{\"client_id\":\"" + lookAlikeClientId + "\",\"redirect_uris\":[\"" + RedirectUri + "\"]}");
+
+            OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(Client() with { ClientId = lookAlikeClientId });
+            OAuthAuthorizationRequestDetails details = await server.OAuth.GetRequestAsync(authorization, server.SignIn());
+
+            Assert.AreEqual("xn--pple-43d.example", details.Client.MetadataDocumentHost);
+        }
+
+        [TestMethod]
+        public async Task Authorize_SameClientAgain_FetchesTheDocumentOnce()
+        {
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
+            server.MetadataDocuments.Serve(ClientId, Document());
+
+            await server.OAuth.AuthorizeAsync(Client());
+            server.Clock.Advance(OAuthClientMetadataDocumentFetcher.CacheLifetime - TimeSpan.FromSeconds(1));
+            await server.OAuth.AuthorizeAsync(Client());
+
+            Assert.AreEqual(1, server.MetadataDocuments.Requests.Count);
+        }
+
+        [TestMethod]
+        public async Task Authorize_AfterTheCacheLifetime_FetchesTheDocumentAgain()
+        {
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
+            server.MetadataDocuments.Serve(ClientId, Document());
+
+            await server.OAuth.AuthorizeAsync(Client());
+            server.Clock.Advance(OAuthClientMetadataDocumentFetcher.CacheLifetime);
+            await server.OAuth.AuthorizeAsync(Client());
+
+            Assert.AreEqual(2, server.MetadataDocuments.Requests.Count);
+        }
+
+        [TestMethod]
+        public async Task Authorize_AfterAnUnusableDocument_FetchesTheFixedOne()
+        {
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
+            server.MetadataDocuments.Serve(ClientId, "not json");
+            await Assert.ThrowsExceptionAsync<OAuthTestFlowException>(() => server.OAuth.AuthorizeAsync(Client()));
+            server.MetadataDocuments.Serve(ClientId, Document());
+
+            await server.OAuth.AuthorizeAsync(Client());
+
+            Assert.AreEqual(1, server.Store.AuthorizationRequests.Count);
+            Assert.AreEqual(2, server.MetadataDocuments.Requests.Count);
+        }
+
+        [TestMethod]
         [DataRow("{\"client_id\":\"https://agent.example/other.json\",\"redirect_uris\":[\"https://agent.example/callback\"]}", DisplayName = "client_id is another URL")]
         [DataRow("{\"client_id\":\"https://agent.example/oauth/client.json/\",\"redirect_uris\":[\"https://agent.example/callback\"]}", DisplayName = "client_id differs by a slash")]
         [DataRow("{\"client_id\":\"https://agent.example/oauth/client.json\",\"redirect_uris\":[\"https://agent.example/callback\"],\"client_secret\":\"s\"}", DisplayName = "carries a secret")]
@@ -144,9 +197,9 @@ namespace EasyReasy.Auth.Tests
         [DataRow("https://agent.example/./client.json", false)]
         [DataRow("https://agent.example/%2e%2e/client.json", false)]
         [DataRow("https://agent.example/client.json#x", false)]
-        public void IsValidClientIdUrl_AppliesTheDraftsRules(string clientId, bool allowed)
+        public void IsValid_AppliesTheDraftsRules(string clientId, bool allowed)
         {
-            Assert.AreEqual(allowed, OAuthClientMetadataDocumentFetcher.IsValidClientIdUrl(clientId));
+            Assert.AreEqual(allowed, OAuthClientIdUrl.IsValid(clientId));
         }
 
         private static OAuthTestRegisteredClient Client()

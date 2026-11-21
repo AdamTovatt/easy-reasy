@@ -94,7 +94,6 @@ namespace EasyReasy.Auth.Testing.Tests
             {
                 RequestHash = hash,
                 ClientId = "client-1",
-                ClientRegistrationKind = OAuthClientRegistrationKind.Registered,
                 RedirectUri = "https://client.example/callback",
                 CodeChallenge = "challenge",
                 ExpiresAt = Now.AddMinutes(10),

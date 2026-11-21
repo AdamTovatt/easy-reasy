@@ -18,11 +18,6 @@ namespace EasyReasy.Auth
         public required string ClientId { get; init; }
 
         /// <summary>
-        /// How the server knows the client.
-        /// </summary>
-        public required OAuthClientRegistrationKind ClientRegistrationKind { get; init; }
-
-        /// <summary>
         /// The client's self-asserted name when the request was made, or null. Kept on the request so the consent page
         /// shows what was validated, and a metadata document is fetched once per request.
         /// </summary>

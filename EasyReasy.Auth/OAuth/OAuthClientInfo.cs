@@ -37,33 +37,34 @@ namespace EasyReasy.Auth
         /// <summary>
         /// For a client identified by a metadata document, the host of its client id URL, which the client cannot assert
         /// falsely: whoever answers at that host published the document. Show it on the consent page (the metadata
-        /// document draft asks for this). Null for a registered client.
+        /// document draft asks for this). An internationalized host is given in its punycode form
+        /// (<c>xn--pple-43d.com</c>, not a look-alike of <c>apple.com</c> written in Cyrillic), so what the page shows is
+        /// the host the server fetched from. Null for a registered client.
         /// </summary>
         [JsonPropertyName("metadataDocumentHost")]
         public string? MetadataDocumentHost { get; init; }
 
         /// <summary>
-        /// The one place a client's info is put together: the metadata document host is read from the client id URL, so
-        /// it is never stored or passed apart from it.
+        /// The one place a client's info is put together: how the server knows the client and the metadata document host
+        /// are both read from the client id, so neither is ever stored or passed apart from it.
         /// </summary>
         /// <param name="clientId">The client id.</param>
-        /// <param name="registrationKind">How the server knows the client.</param>
         /// <param name="clientName">The self-asserted name, or null.</param>
         /// <param name="clientUri">The self-asserted home page, or null.</param>
         /// <returns>The info.</returns>
-        internal static OAuthClientInfo Create(string clientId, OAuthClientRegistrationKind registrationKind, string? clientName, string? clientUri)
+        internal static OAuthClientInfo Create(string clientId, string? clientName, string? clientUri)
         {
+            bool isMetadataDocument = OAuthClientIdUrl.IsMetadataDocument(clientId);
             string? host = null;
-            if (registrationKind == OAuthClientRegistrationKind.MetadataDocument
-                && Uri.TryCreate(clientId, UriKind.Absolute, out Uri? clientIdUrl))
+            if (isMetadataDocument && Uri.TryCreate(clientId, UriKind.Absolute, out Uri? clientIdUrl))
             {
-                host = clientIdUrl.Host;
+                host = clientIdUrl.IdnHost;
             }
 
             return new OAuthClientInfo
             {
                 ClientId = clientId,
-                RegistrationKind = registrationKind,
+                RegistrationKind = isMetadataDocument ? OAuthClientRegistrationKind.MetadataDocument : OAuthClientRegistrationKind.Registered,
                 ClientName = clientName,
                 ClientUri = clientUri,
                 MetadataDocumentHost = host,

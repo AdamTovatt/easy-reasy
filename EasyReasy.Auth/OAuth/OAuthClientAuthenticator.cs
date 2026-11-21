@@ -25,13 +25,36 @@ namespace EasyReasy.Auth
         }
 
         /// <summary>
+        /// Reads a token or revocation request's form and authenticates its client: the opening both endpoints share.
+        /// </summary>
+        /// <param name="httpContext">The request.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
+        /// <returns>The form and the client's authentication, or the <c>invalid_request</c> for a body that is not one form.</returns>
+        public async Task<OAuthClientRequest> ReadRequestAsync(HttpContext httpContext, CancellationToken cancellationToken)
+        {
+            if (!httpContext.Request.HasFormContentType)
+            {
+                return OAuthClientRequest.Malformed("The body must be application/x-www-form-urlencoded.");
+            }
+
+            OAuthParameters form = new OAuthParameters(await httpContext.Request.ReadFormAsync(cancellationToken));
+            string? repeated = form.FirstRepeated;
+            if (repeated != null)
+            {
+                return OAuthClientRequest.Malformed($"The parameter '{repeated}' was sent more than once.");
+            }
+
+            return OAuthClientRequest.WellFormed(form, await AuthenticateAsync(httpContext, form, cancellationToken));
+        }
+
+        /// <summary>
         /// Authenticates the calling client.
         /// </summary>
         /// <param name="httpContext">The request, for its <c>Authorization</c> header.</param>
         /// <param name="form">The form parameters.</param>
         /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>The authenticated client id, or the refusal.</returns>
-        public async Task<OAuthClientAuthentication> AuthenticateAsync(HttpContext httpContext, OAuthParameters form, CancellationToken cancellationToken)
+        private async Task<OAuthClientAuthentication> AuthenticateAsync(HttpContext httpContext, OAuthParameters form, CancellationToken cancellationToken)
         {
             string? formClientId = form.Get("client_id");
             string? formSecret = form.Get("client_secret");
@@ -67,7 +90,7 @@ namespace EasyReasy.Auth
 
             // A metadata document client is public by the draft's rules, and was checked at the authorization endpoint;
             // its codes and refresh tokens are bound to its id, so it needs no lookup here.
-            if (OAuthClientMetadataDocumentFetcher.IsMetadataDocumentClientId(clientId))
+            if (OAuthClientIdUrl.IsMetadataDocument(clientId))
             {
                 if (!_settings.AllowClientIdMetadataDocuments || usedBasic || formSecret != null)
                 {

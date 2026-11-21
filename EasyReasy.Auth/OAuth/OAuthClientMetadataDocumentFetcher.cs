@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -5,10 +6,14 @@ using System.Text.Json;
 namespace EasyReasy.Auth
 {
     /// <summary>
-    /// Fetches and checks a client ID metadata document (draft-ietf-oauth-client-id-metadata-document-03, the revision
-    /// the MCP authorization specification of 2025-11-25 cites; "the draft" below): a client whose id
-    /// is an https URL publishes its metadata at that URL, and the server reads it there instead of from a registration.
+    /// Fetches and checks a client ID metadata document (draft-ietf-oauth-client-id-metadata-document-03, "the draft"
+    /// below): a client whose id is an https URL publishes its metadata at that URL, and the server reads it there instead
+    /// of from a registration.
     /// </summary>
+    /// <remarks>
+    /// A usable document is kept for <see cref="CacheLifetime"/>, as the draft recommends, so a client's repeated
+    /// authorizations fetch it once. A failure is not kept, so a client fixing its document is not made to wait.
+    /// </remarks>
     internal sealed class OAuthClientMetadataDocumentFetcher
     {
         /// <summary>
@@ -16,75 +21,78 @@ namespace EasyReasy.Auth
         /// </summary>
         public const int MaxDocumentBytes = 5 * 1024;
 
+        /// <summary>
+        /// How long a usable document is kept before it is fetched again.
+        /// </summary>
+        public static readonly TimeSpan CacheLifetime = TimeSpan.FromMinutes(5);
+
+        /// <summary>
+        /// The most documents kept at once. Client ids are chosen by anonymous callers, so the cache is bounded: when it
+        /// is full of live entries, a new document is used without being kept.
+        /// </summary>
+        public const int MaxCachedDocuments = 1000;
+
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly TimeProvider _timeProvider;
+        private readonly ConcurrentDictionary<string, CachedDocument> _cache = new ConcurrentDictionary<string, CachedDocument>(StringComparer.Ordinal);
 
         /// <summary>
         /// Initializes the fetcher.
         /// </summary>
         /// <param name="httpClientFactory">The factory for <see cref="OAuthServerServiceCollectionExtensions.MetadataDocumentHttpClientName"/>.</param>
-        public OAuthClientMetadataDocumentFetcher(IHttpClientFactory httpClientFactory)
+        /// <param name="timeProvider">The clock the cache runs on.</param>
+        public OAuthClientMetadataDocumentFetcher(IHttpClientFactory httpClientFactory, TimeProvider timeProvider)
         {
             _httpClientFactory = httpClientFactory;
+            _timeProvider = timeProvider;
         }
 
         /// <summary>
-        /// Whether a client id is written as a client ID metadata document URL (starts with <c>https://</c>), so it is
-        /// looked up by fetching, never in the store. A registered client's id is random base64url and never has a colon.
+        /// Returns the document a client id names: the one kept from an earlier fetch while it is live, or a fresh fetch,
+        /// checked.
         /// </summary>
-        /// <param name="clientId">The client id.</param>
-        /// <returns>Whether it names a metadata document.</returns>
-        public static bool IsMetadataDocumentClientId(string clientId)
-        {
-            return clientId.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Whether a client id URL meets the rules draft-ietf-oauth-client-id-metadata-document-03 sets for one: https,
-        /// no userinfo, a path other than <c>/</c>, no dot segments, no fragment.
-        /// </summary>
-        /// <param name="clientId">The client id.</param>
-        /// <returns>Whether it is allowed.</returns>
-        public static bool IsValidClientIdUrl(string clientId)
-        {
-            if (clientId.Length > OAuthRedirectUri.MaxLength
-                || OAuthUrl.HasFragment(clientId)
-                || !Uri.TryCreate(clientId, UriKind.Absolute, out Uri? parsed)
-                || parsed.Scheme != Uri.UriSchemeHttps
-                || !string.IsNullOrEmpty(parsed.UserInfo)
-                || parsed.AbsolutePath == "/")
-            {
-                return false;
-            }
-
-            // Uri removes dot segments while parsing, so they are looked for in what the client sent.
-            string afterScheme = clientId.Substring("https://".Length);
-            int pathStart = afterScheme.IndexOf('/');
-            string path = pathStart < 0 ? "" : afterScheme.Substring(pathStart);
-            int queryStart = path.IndexOf('?');
-            if (queryStart >= 0)
-            {
-                path = path.Substring(0, queryStart);
-            }
-
-            foreach (string segment in path.Split('/'))
-            {
-                string decoded = segment.Replace("%2e", ".", StringComparison.OrdinalIgnoreCase);
-                if (decoded == "." || decoded == "..")
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Fetches and checks the document a client id names.
-        /// </summary>
-        /// <param name="clientId">The client id, already allowed by <see cref="IsValidClientIdUrl"/>.</param>
+        /// <param name="clientId">The client id, already allowed by <see cref="OAuthClientIdUrl.IsValid"/>.</param>
         /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>The client's metadata, or why it could not be used.</returns>
         public async Task<OAuthClientMetadataDocumentResult> FetchAsync(string clientId, CancellationToken cancellationToken)
+        {
+            DateTimeOffset now = _timeProvider.GetUtcNow();
+            if (_cache.TryGetValue(clientId, out CachedDocument? cached) && cached.ExpiresAt > now)
+            {
+                return OAuthClientMetadataDocumentResult.Succeeded(cached.Metadata);
+            }
+
+            OAuthClientMetadataDocumentResult result = await FetchUncachedAsync(clientId, cancellationToken);
+            if (result.IsUsable)
+            {
+                Keep(clientId, new CachedDocument(result.Metadata, now.Add(CacheLifetime)), now);
+            }
+
+            return result;
+        }
+
+        private void Keep(string clientId, CachedDocument document, DateTimeOffset now)
+        {
+            if (_cache.Count >= MaxCachedDocuments)
+            {
+                foreach (KeyValuePair<string, CachedDocument> entry in _cache)
+                {
+                    if (entry.Value.ExpiresAt <= now)
+                    {
+                        _cache.TryRemove(entry);
+                    }
+                }
+
+                if (_cache.Count >= MaxCachedDocuments)
+                {
+                    return;
+                }
+            }
+
+            _cache[clientId] = document;
+        }
+
+        private async Task<OAuthClientMetadataDocumentResult> FetchUncachedAsync(string clientId, CancellationToken cancellationToken)
         {
             HttpClient client = _httpClientFactory.CreateClient(OAuthServerServiceCollectionExtensions.MetadataDocumentHttpClientName);
 
@@ -155,5 +163,7 @@ namespace EasyReasy.Auth
 
             return OAuthClientMetadataDocumentResult.Succeeded(metadata);
         }
+
+        private sealed record CachedDocument(OAuthClientMetadata Metadata, DateTimeOffset ExpiresAt);
     }
 }

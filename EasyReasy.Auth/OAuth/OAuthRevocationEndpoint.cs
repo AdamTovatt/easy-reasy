@@ -29,31 +29,26 @@ namespace EasyReasy.Auth
         /// Handles a revocation request: a refresh token of the calling client has its family invalidated.
         /// </summary>
         /// <param name="httpContext">The request.</param>
-        /// <returns>200 for any token, known or not (RFC 7009 section 2.2), 401 for a client that does not authenticate.</returns>
+        /// <returns>200 for any token, known or not (RFC 7009 section 2.2), 401 <c>invalid_client</c> for a client that
+        /// does not authenticate, 400 <c>invalid_request</c> for a body that is not a form or names no token.</returns>
         public async Task<IResult> RevokeAsync(HttpContext httpContext)
         {
             httpContext.SetNoStoreCacheControl();
             CancellationToken cancellationToken = httpContext.RequestAborted;
 
-            if (!httpContext.Request.HasFormContentType)
+            OAuthClientRequest request = await _authenticator.ReadRequestAsync(httpContext, cancellationToken);
+            if (!request.IsWellFormed)
             {
-                return new OAuthError(OAuthError.InvalidRequest, "The body must be application/x-www-form-urlencoded.").ToResult();
+                return request.RequestError.ToResult();
             }
 
-            OAuthParameters form = new OAuthParameters(await httpContext.Request.ReadFormAsync(cancellationToken));
-            string? repeated = form.FirstRepeated;
-            if (repeated != null)
-            {
-                return new OAuthError(OAuthError.InvalidRequest, $"The parameter '{repeated}' was sent more than once.").ToResult();
-            }
-
-            OAuthClientAuthentication client = await _authenticator.AuthenticateAsync(httpContext, form, cancellationToken);
+            OAuthClientAuthentication client = request.Client;
             if (!client.Success)
             {
                 return client.ToResult(httpContext);
             }
 
-            string? token = form.Get("token");
+            string? token = request.Form.Get("token");
             if (token == null)
             {
                 return new OAuthError(OAuthError.InvalidRequest, "token is required.").ToResult();

@@ -11,9 +11,10 @@ namespace EasyReasy.Auth
     /// caller only (in SQL, an <c>UPDATE ... WHERE completed_at IS NULL</c> and a check that one row was affected): they
     /// are what makes an approval, a code and a refresh token usable once. Every method's write must be committed when
     /// its task completes: the server orders separate calls (it marks a code invalidated before it invalidates the
-    /// refresh tokens, and checks the code again after storing a new refresh token), and that order is what keeps a
-    /// redemption racing a revocation or a second redemption from leaving a token alive. Rows past their
-    /// <c>ExpiresAt</c> are never accepted, so deleting them is housekeeping the application schedules as it likes.
+    /// refresh tokens, and checks the code, or the refresh token it consumed, again after storing a new refresh token),
+    /// and that order is what keeps a redemption or refresh racing a revocation or a replay from leaving a token alive.
+    /// Rows past their <c>ExpiresAt</c> are never accepted, so deleting them is housekeeping the application schedules
+    /// as it likes.
     /// </remarks>
     public interface IOAuthServerStore
     {
@@ -105,8 +106,8 @@ namespace EasyReasy.Auth
         Task<bool> ConsumeRefreshTokenAsync(string tokenHash, DateTime consumedAt, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Invalidates every refresh token in a family: on reuse of a consumed token, on a second redemption of the
-        /// code the family came from, or on revocation by the client.
+        /// Invalidates every refresh token in a family, consumed ones included: on reuse of a consumed token, on a second
+        /// redemption of the code the family came from, or on revocation by the client.
         /// </summary>
         /// <param name="familyId">The family to invalidate.</param>
         /// <param name="cancellationToken">A token to cancel the operation.</param>
@@ -129,7 +130,8 @@ namespace EasyReasy.Auth
         Task InvalidateGrantAuthorizationCodesAsync(string grantId, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Invalidates every refresh token whose <see cref="OAuthRefreshToken.GrantId"/> is <paramref name="grantId"/>.
+        /// Invalidates every refresh token whose <see cref="OAuthRefreshToken.GrantId"/> is <paramref name="grantId"/>,
+        /// consumed ones included.
         /// </summary>
         /// <param name="grantId">The application's grant id.</param>
         /// <param name="cancellationToken">A token to cancel the operation.</param>

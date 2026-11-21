@@ -31,14 +31,14 @@ namespace EasyReasy.Auth
         /// <returns>The client, or why there is none.</returns>
         public async Task<OAuthClientLookup> FindAsync(string clientId, CancellationToken cancellationToken)
         {
-            if (OAuthClientMetadataDocumentFetcher.IsMetadataDocumentClientId(clientId))
+            if (OAuthClientIdUrl.IsMetadataDocument(clientId))
             {
                 if (!_settings.AllowClientIdMetadataDocuments)
                 {
                     return OAuthClientLookup.Failed("This server does not accept client ID metadata documents.");
                 }
 
-                if (!OAuthClientMetadataDocumentFetcher.IsValidClientIdUrl(clientId))
+                if (!OAuthClientIdUrl.IsValid(clientId))
                 {
                     return OAuthClientLookup.Failed("The client_id is not a valid client ID metadata document URL: https, with a path other than /, no userinfo, dot segments or fragment.");
                 }
@@ -49,7 +49,7 @@ namespace EasyReasy.Auth
                     return OAuthClientLookup.Failed(document.Failure);
                 }
 
-                OAuthClientInfo info = OAuthClientInfo.Create(clientId, OAuthClientRegistrationKind.MetadataDocument, document.Metadata.ClientName, document.Metadata.ClientUri);
+                OAuthClientInfo info = OAuthClientInfo.Create(clientId, document.Metadata.ClientName, document.Metadata.ClientUri);
                 return OAuthClientLookup.Found(new OAuthResolvedClient(info, document.Metadata.RedirectUris));
             }
 
@@ -59,7 +59,7 @@ namespace EasyReasy.Auth
                 return OAuthClientLookup.Failed("The client_id is not a registered client.");
             }
 
-            OAuthClientInfo registeredInfo = OAuthClientInfo.Create(client.ClientId, OAuthClientRegistrationKind.Registered, client.ClientName, client.ClientUri);
+            OAuthClientInfo registeredInfo = OAuthClientInfo.Create(client.ClientId, client.ClientName, client.ClientUri);
             return OAuthClientLookup.Found(new OAuthResolvedClient(registeredInfo, client.RedirectUris));
         }
     }

@@ -73,44 +73,29 @@ namespace EasyReasy.Auth
 
             if (_auditLogger != null)
             {
-                await _auditLogger.OnOAuthClientRegistrationAsync(httpContext, new OAuthClientRegistrationResult
-                {
-                    Success = true,
-                    ClientId = clientId,
-                    ClientName = client.ClientName,
-                    RedirectUris = client.RedirectUris,
-                    AuthenticationMethod = method,
-                });
+                await _auditLogger.OnOAuthClientRegistrationAsync(
+                    httpContext,
+                    OAuthClientRegistrationResult.Succeeded(clientId, client.ClientName, client.RedirectUris, method));
             }
 
-            // RFC 7591 section 3.2.1: the registered metadata, which is what this server supports whatever was asked.
-            Dictionary<string, object?> response = new Dictionary<string, object?>
+            OAuthClientRegistrationResponse response = new OAuthClientRegistrationResponse
             {
-                ["client_id"] = clientId,
-                ["client_id_issued_at"] = new DateTimeOffset(now).ToUnixTimeSeconds(),
-                ["client_secret"] = clientSecret,
-                ["client_secret_expires_at"] = clientSecret == null ? null : 0,
-                ["client_name"] = client.ClientName,
-                ["client_uri"] = client.ClientUri,
-                ["redirect_uris"] = client.RedirectUris,
-                ["grant_types"] = new[] { "authorization_code", "refresh_token" },
-                ["response_types"] = new[] { "code" },
-                ["token_endpoint_auth_method"] = methodName,
+                ClientId = clientId,
+                ClientIdIssuedAt = new DateTimeOffset(now).ToUnixTimeSeconds(),
+                ClientSecret = clientSecret,
+                ClientName = client.ClientName,
+                ClientUri = client.ClientUri,
+                RedirectUris = client.RedirectUris,
+                TokenEndpointAuthMethod = methodName,
             };
-            // A dictionary's null entries are written whatever the ignore condition, so they are left out here.
-            Dictionary<string, object> written = response.Where(entry => entry.Value != null).ToDictionary(entry => entry.Key, entry => entry.Value!);
-            return Results.Json(written, OAuthJson.Options, statusCode: StatusCodes.Status201Created);
+            return Results.Json(response, OAuthJson.Options, statusCode: StatusCodes.Status201Created);
         }
 
         private async Task<IResult> RefuseAsync(HttpContext httpContext, OAuthError error)
         {
             if (_auditLogger != null)
             {
-                await _auditLogger.OnOAuthClientRegistrationAsync(httpContext, new OAuthClientRegistrationResult
-                {
-                    Success = false,
-                    FailureCode = error.Code,
-                });
+                await _auditLogger.OnOAuthClientRegistrationAsync(httpContext, OAuthClientRegistrationResult.Failed(error.Code));
             }
 
             return error.ToResult();

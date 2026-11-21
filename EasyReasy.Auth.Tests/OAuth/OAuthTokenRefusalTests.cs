@@ -16,9 +16,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RedeemCode_WrongVerifier_IsInvalidGrantAndUsesTheCodeUp()
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
-            OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync(RedirectUri);
-            OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client);
-            string code = await server.OAuth.ApproveAsync(authorization, server.SignIn());
+            (_, OAuthTestAuthorization authorization, string code) = await server.ApprovePublicClientAsync();
 
             OAuthTestFlowException refused = await Assert.ThrowsExceptionAsync<OAuthTestFlowException>(
                 () => server.OAuth.RedeemCodeAsync(authorization, code, codeVerifier: OAuthTestPkce.CreateVerifier()));
@@ -72,9 +70,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RedeemCode_RedirectUriOtherThanTheRequests_IsInvalidGrant()
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
-            OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync("http://127.0.0.1/callback");
-            OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client, redirectUri: "http://127.0.0.1:5000/callback");
-            string code = await server.OAuth.ApproveAsync(authorization, server.SignIn());
+            (_, OAuthTestAuthorization authorization, string code) = await server.ApprovePublicClientAsync("http://127.0.0.1/callback", redirectUri: "http://127.0.0.1:5000/callback");
 
             OAuthTestFlowException refused = await Assert.ThrowsExceptionAsync<OAuthTestFlowException>(
                 () => server.OAuth.RedeemCodeAsync(authorization with { RedirectUri = "http://127.0.0.1/callback" }, code));
@@ -87,10 +83,8 @@ namespace EasyReasy.Auth.Tests
         public async Task RedeemCode_ByAnotherClient_IsInvalidGrant()
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
-            OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync(RedirectUri);
+            (_, OAuthTestAuthorization authorization, string code) = await server.ApprovePublicClientAsync();
             OAuthTestRegisteredClient other = await server.OAuth.RegisterAsync(RedirectUri);
-            OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client);
-            string code = await server.OAuth.ApproveAsync(authorization, server.SignIn());
 
             OAuthTestFlowException refused = await Assert.ThrowsExceptionAsync<OAuthTestFlowException>(
                 () => server.OAuth.RedeemCodeAsync(authorization with { Client = other }, code));
@@ -103,9 +97,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RedeemCode_Expired_IsInvalidGrant()
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
-            OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync(RedirectUri);
-            OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client);
-            string code = await server.OAuth.ApproveAsync(authorization, server.SignIn());
+            (_, OAuthTestAuthorization authorization, string code) = await server.ApprovePublicClientAsync();
             server.Clock.Advance(HostedOAuthServer.DefaultOptions().AuthorizationCodeLifetime);
 
             OAuthTestFlowException refused = await Assert.ThrowsExceptionAsync<OAuthTestFlowException>(() => server.OAuth.RedeemCodeAsync(authorization, code));
@@ -118,15 +110,53 @@ namespace EasyReasy.Auth.Tests
         public async Task RedeemCode_ResourceOtherThanTheRequests_IsInvalidTarget()
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
-            OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync(RedirectUri);
-            OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client, HostedOAuthServer.Resource);
-            string code = await server.OAuth.ApproveAsync(authorization, server.SignIn());
+            (_, OAuthTestAuthorization authorization, string code) = await server.ApprovePublicClientAsync(resource: HostedOAuthServer.Resource);
 
             OAuthTestFlowException refused = await Assert.ThrowsExceptionAsync<OAuthTestFlowException>(
                 () => server.OAuth.RedeemCodeAsync(authorization with { Resource = HostedOAuthServer.Resource + "/other" }, code));
 
             Assert.AreEqual("invalid_target", refused.Error);
             Assert.AreEqual(OAuthTokenFailureReason.ResourceMismatch, server.AuditLogger.Tokens.Last().FailureReason);
+        }
+
+        [TestMethod]
+        public async Task RedeemCode_ResourceNotThisServers_IsInvalidTargetAndLeavesTheCodeUnused()
+        {
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
+            (_, OAuthTestAuthorization authorization, string code) = await server.ApprovePublicClientAsync(resource: HostedOAuthServer.Resource);
+
+            OAuthTestFlowException refused = await Assert.ThrowsExceptionAsync<OAuthTestFlowException>(
+                () => server.OAuth.RedeemCodeAsync(authorization with { Resource = "https://other.example/mcp" }, code));
+
+            Assert.AreEqual("invalid_target", refused.Error);
+            Assert.AreEqual(OAuthTokenFailureReason.ResourceMismatch, server.AuditLogger.Tokens.Last().FailureReason);
+            Assert.IsNull(server.Store.AuthorizationCodes.Single().RedeemedAt);
+        }
+
+        [TestMethod]
+        public async Task Refresh_ResourceNotThisServers_IsInvalidTargetAndLeavesTheTokenUnused()
+        {
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
+            HostedOAuthServer.ConnectedClient connected = await server.ConnectPublicClientAsync();
+
+            using HttpResponseMessage response = await server.PostFormAsync(OAuthServerPaths.Token, RefreshForm(connected, "https://other.example/mcp"));
+
+            await AssertErrorAsync(response, HttpStatusCode.BadRequest, "invalid_target");
+            Assert.AreEqual(OAuthTokenFailureReason.ResourceMismatch, server.AuditLogger.Tokens.Last().FailureReason);
+            Assert.IsNull(server.Store.RefreshTokens.Single().ConsumedAt);
+        }
+
+        [TestMethod]
+        public async Task Refresh_ThisServersResource_Rotates()
+        {
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
+            HostedOAuthServer.ConnectedClient connected = await server.ConnectPublicClientAsync();
+
+            using HttpResponseMessage response = await server.PostFormAsync(OAuthServerPaths.Token, RefreshForm(connected, HostedOAuthServer.Resource));
+
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+            Assert.IsTrue(server.AuditLogger.Tokens.Last().Success);
+            Assert.AreEqual(2, server.Store.RefreshTokens.Count);
         }
 
         [TestMethod]
@@ -210,9 +240,7 @@ namespace EasyReasy.Auth.Tests
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
             server.Handler.Approve = _ => OAuthApprovalDecision.Approve(new OAuthGrant { GrantId = "connection-2", Subject = "person-1", AuthType = "user" });
-            OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync(RedirectUri);
-            OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client);
-            string code = await server.OAuth.ApproveAsync(authorization, server.SignIn());
+            (_, OAuthTestAuthorization authorization, string code) = await server.ApprovePublicClientAsync();
             await server.RevokeGrantAsync("connection-2");
 
             OAuthTestFlowException refused = await Assert.ThrowsExceptionAsync<OAuthTestFlowException>(() => server.OAuth.RedeemCodeAsync(authorization, code));
@@ -291,9 +319,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RedeemCode_ParameterMissing_IsInvalidRequestAndLeavesTheCodeUnused(string missing)
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
-            OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync(RedirectUri);
-            OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client);
-            string code = await server.OAuth.ApproveAsync(authorization, server.SignIn());
+            (OAuthTestRegisteredClient client, OAuthTestAuthorization authorization, string code) = await server.ApprovePublicClientAsync();
             Dictionary<string, string> fields = new Dictionary<string, string>
             {
                 ["grant_type"] = "authorization_code",
@@ -324,6 +350,17 @@ namespace EasyReasy.Auth.Tests
 
             await AssertErrorAsync(response, HttpStatusCode.BadRequest, "invalid_request");
             Assert.AreEqual(OAuthTokenFailureReason.InvalidRequest, server.AuditLogger.Tokens.Last().FailureReason);
+        }
+
+        private static List<KeyValuePair<string, string>> RefreshForm(HostedOAuthServer.ConnectedClient connected, string resource)
+        {
+            return
+            [
+                new KeyValuePair<string, string>("grant_type", "refresh_token"),
+                new KeyValuePair<string, string>("client_id", connected.Client.ClientId),
+                new KeyValuePair<string, string>("refresh_token", connected.Tokens.RefreshToken),
+                new KeyValuePair<string, string>("resource", resource),
+            ];
         }
 
         internal static async Task AssertErrorAsync(HttpResponseMessage response, HttpStatusCode statusCode, string error)

@@ -21,6 +21,7 @@ namespace EasyReasy.Auth.Tests
         public const string Resource = "https://app.example/mcp";
         public const string ConsentPageUrl = "/connect/approve";
         public const string MePath = "/api/me";
+        public const string DefaultRedirectUri = "https://client.example/callback";
         private const string Secret = "super_secret_key_12345_12345_12345";
 
         private HostedOAuthServer(WebApplication app, HttpClient client, Parts parts)
@@ -161,9 +162,22 @@ namespace EasyReasy.Auth.Tests
         }
 
         /// <summary>
+        /// Registers a public client, authorizes it and approves as person-1, stopping at the code: the setup of a test of
+        /// what the token endpoint does with it. <paramref name="redirectUri"/> names another redirect URI on the
+        /// authorization request than the registered one, as a loopback client's on another port.
+        /// </summary>
+        public async Task<ApprovedClient> ApprovePublicClientAsync(string registeredRedirectUri = DefaultRedirectUri, string? resource = null, string? redirectUri = null)
+        {
+            OAuthTestRegisteredClient client = await OAuth.RegisterAsync(registeredRedirectUri);
+            OAuthTestAuthorization authorization = await OAuth.AuthorizeAsync(client, resource, redirectUri: redirectUri);
+            string code = await OAuth.ApproveAsync(authorization, SignIn());
+            return new ApprovedClient(client, authorization, code);
+        }
+
+        /// <summary>
         /// Registers a public client and approves a connection for it as person-1, returning everything a test needs next.
         /// </summary>
-        public async Task<ConnectedClient> ConnectPublicClientAsync(string redirectUri = "https://client.example/callback")
+        public async Task<ConnectedClient> ConnectPublicClientAsync(string redirectUri = DefaultRedirectUri)
         {
             OAuthTestRegisteredClient client = await OAuth.RegisterAsync(redirectUri, clientName: "Test Agent");
             OAuthTestAuthorization authorization = await OAuth.AuthorizeAsync(client, Resource);
@@ -183,6 +197,8 @@ namespace EasyReasy.Auth.Tests
                 await App.DisposeAsync();
             }
         }
+
+        internal sealed record ApprovedClient(OAuthTestRegisteredClient Client, OAuthTestAuthorization Authorization, string Code);
 
         internal sealed record ConnectedClient(OAuthTestRegisteredClient Client, OAuthTestAuthorization Authorization, string Code, OAuthTestTokens Tokens);
 
