@@ -7,7 +7,7 @@ namespace EasyReasy.Auth.Tests
     /// The address guard on metadata document fetches: only public unicast addresses are connected to.
     /// </summary>
     [TestClass]
-    public class OAuthPublicAddressTests
+    public class PublicNetworkAddressTests
     {
         [TestMethod]
         [DataRow("8.8.8.8")]
@@ -18,7 +18,7 @@ namespace EasyReasy.Auth.Tests
         [DataRow("::ffff:8.8.8.8")]
         public void IsPublic_PublicAddress_IsTrue(string address)
         {
-            Assert.IsTrue(OAuthPublicAddress.IsPublic(IPAddress.Parse(address)));
+            Assert.IsTrue(PublicNetworkAddress.IsPublic(IPAddress.Parse(address)));
         }
 
         [TestMethod]
@@ -52,7 +52,7 @@ namespace EasyReasy.Auth.Tests
         [DataRow("2001::1")]
         public void IsPublic_NonPublicAddress_IsFalse(string address)
         {
-            Assert.IsFalse(OAuthPublicAddress.IsPublic(IPAddress.Parse(address)));
+            Assert.IsFalse(PublicNetworkAddress.IsPublic(IPAddress.Parse(address)));
         }
 
         [TestMethod]

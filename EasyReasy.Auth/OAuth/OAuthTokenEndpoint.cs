@@ -56,18 +56,13 @@ namespace EasyReasy.Auth
             httpContext.Response.Headers.Pragma = "no-cache";
             CancellationToken cancellationToken = httpContext.RequestAborted;
 
-            if (!httpContext.Request.HasFormContentType)
+            OAuthClientRequest request = await _authenticator.ReadRequestAsync(httpContext, cancellationToken);
+            if (!request.IsWellFormed)
             {
-                return await RefuseAsync(httpContext, null, null, OAuthTokenFailureReason.InvalidRequest, OAuthError.InvalidRequest, "The body must be application/x-www-form-urlencoded.");
+                return await RefuseAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.InvalidRequest, null, null), request.RequestError);
             }
 
-            OAuthParameters form = new OAuthParameters(await httpContext.Request.ReadFormAsync(cancellationToken));
-            string? repeated = form.FirstRepeated;
-            if (repeated != null)
-            {
-                return await RefuseAsync(httpContext, null, null, OAuthTokenFailureReason.InvalidRequest, OAuthError.InvalidRequest, $"The parameter '{repeated}' was sent more than once.");
-            }
-
+            OAuthParameters form = request.Form;
             OAuthGrantType? grantType = form.Get("grant_type") switch
             {
                 "authorization_code" => OAuthGrantType.AuthorizationCode,
@@ -75,30 +70,24 @@ namespace EasyReasy.Auth
                 _ => null,
             };
 
-            OAuthClientAuthentication client = await _authenticator.AuthenticateAsync(httpContext, form, cancellationToken);
+            OAuthClientAuthentication client = request.Client;
             if (!client.Success)
             {
-                await AuditAsync(httpContext, new OAuthTokenResult
-                {
-                    Success = false,
-                    GrantType = grantType,
-                    ClientId = client.ClientId,
-                    FailureReason = OAuthTokenFailureReason.InvalidClient,
-                });
+                await AuditAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.InvalidClient, grantType, client.ClientId));
                 return client.ToResult(httpContext);
             }
 
             if (grantType == null)
             {
                 return form.Get("grant_type") == null
-                    ? await RefuseAsync(httpContext, null, client.ClientId, OAuthTokenFailureReason.InvalidRequest, OAuthError.InvalidRequest, "grant_type is required.")
-                    : await RefuseAsync(httpContext, null, client.ClientId, OAuthTokenFailureReason.UnsupportedGrantType, OAuthError.UnsupportedGrantType, "grant_type must be authorization_code or refresh_token.");
+                    ? await RefuseAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.InvalidRequest, null, client.ClientId), new OAuthError(OAuthError.InvalidRequest, "grant_type is required."))
+                    : await RefuseAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.UnsupportedGrantType, null, client.ClientId), new OAuthError(OAuthError.UnsupportedGrantType, "grant_type must be authorization_code or refresh_token."));
             }
 
             string? resource = form.Get("resource");
             if (resource != null && !_settings.IsOwnResource(resource))
             {
-                return await RefuseAsync(httpContext, grantType, client.ClientId, OAuthTokenFailureReason.ResourceMismatch, OAuthError.InvalidTarget, "resource is not this server's.");
+                return await RefuseAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.ResourceMismatch, grantType, client.ClientId), new OAuthError(OAuthError.InvalidTarget, "resource is not this server's."));
             }
 
             return grantType == OAuthGrantType.AuthorizationCode
@@ -113,32 +102,25 @@ namespace EasyReasy.Auth
             string? codeVerifier = form.Get("code_verifier");
             if (rawCode == null || redirectUri == null || codeVerifier == null)
             {
-                return await RefuseAsync(httpContext, OAuthGrantType.AuthorizationCode, clientId, OAuthTokenFailureReason.InvalidRequest, OAuthError.InvalidRequest, "code, redirect_uri and code_verifier are required.");
+                return await RefuseAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.InvalidRequest, OAuthGrantType.AuthorizationCode, clientId), new OAuthError(OAuthError.InvalidRequest, "code, redirect_uri and code_verifier are required."));
             }
 
             string codeHash = SecureToken.Hash(rawCode);
             OAuthAuthorizationCode? code = await _store.GetAuthorizationCodeAsync(codeHash, cancellationToken);
             if (code == null)
             {
-                return await RefuseAsync(httpContext, OAuthGrantType.AuthorizationCode, clientId, OAuthTokenFailureReason.CodeNotFound, OAuthError.InvalidGrant, "The code is invalid.");
+                return await RefuseAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.CodeNotFound, OAuthGrantType.AuthorizationCode, clientId), new OAuthError(OAuthError.InvalidGrant, "The code is invalid."));
             }
 
             DateTime now = _timeProvider.GetUtcNow().UtcDateTime;
 
             // Each refusal from here on names the code's grant, subject and family for the audit record.
-            async Task<IResult> RefuseCodeAsync(OAuthTokenFailureReason reason, string error = OAuthError.InvalidGrant)
+            Task<IResult> RefuseCodeAsync(OAuthTokenFailureReason reason, string error = OAuthError.InvalidGrant)
             {
-                await AuditAsync(httpContext, new OAuthTokenResult
-                {
-                    Success = false,
-                    GrantType = OAuthGrantType.AuthorizationCode,
-                    ClientId = clientId,
-                    GrantId = code.GrantId,
-                    Subject = code.Subject,
-                    FamilyId = code.FamilyId,
-                    FailureReason = reason,
-                });
-                return new OAuthError(error, error == OAuthError.InvalidTarget ? "resource is not the authorization request's." : "The code is invalid.").ToResult();
+                return RefuseAsync(
+                    httpContext,
+                    OAuthTokenResult.Failed(reason, OAuthGrantType.AuthorizationCode, clientId, code.GrantId, code.Subject, code.FamilyId),
+                    new OAuthError(error, error == OAuthError.InvalidTarget ? "resource is not the authorization request's." : "The code is invalid."));
             }
 
             // A code presented after it was redeemed: one of the two presenters is not the client, so whatever the first
@@ -203,15 +185,7 @@ namespace EasyReasy.Auth
                 return await RefuseCodeAsync(OAuthTokenFailureReason.CodeInvalidated);
             }
 
-            await AuditAsync(httpContext, new OAuthTokenResult
-            {
-                Success = true,
-                GrantType = OAuthGrantType.AuthorizationCode,
-                ClientId = clientId,
-                GrantId = code.GrantId,
-                Subject = code.Subject,
-                FamilyId = session.FamilyId,
-            });
+            await AuditAsync(httpContext, OAuthTokenResult.Succeeded(OAuthGrantType.AuthorizationCode, clientId, code.GrantId, code.Subject, session.FamilyId));
 
             httpContext.MarkAuthenticationSucceeded();
             return TokenResponse(session.AuthResponse);
@@ -222,7 +196,7 @@ namespace EasyReasy.Auth
             string? refreshToken = form.Get("refresh_token");
             if (refreshToken == null)
             {
-                return await RefuseAsync(httpContext, OAuthGrantType.RefreshToken, clientId, OAuthTokenFailureReason.InvalidRequest, OAuthError.InvalidRequest, "refresh_token is required.");
+                return await RefuseAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.InvalidRequest, OAuthGrantType.RefreshToken, clientId), new OAuthError(OAuthError.InvalidRequest, "refresh_token is required."));
             }
 
             // The token's row is read here first, so the grant the refresh runs under is known before the service starts,
@@ -230,7 +204,7 @@ namespace EasyReasy.Auth
             OAuthRefreshToken? row = await _store.GetRefreshTokenAsync(SecureToken.Hash(refreshToken), cancellationToken);
             if (row == null || !string.Equals(row.ClientId, clientId, StringComparison.Ordinal))
             {
-                return await RefuseAsync(httpContext, OAuthGrantType.RefreshToken, clientId, OAuthTokenFailureReason.RefreshTokenNotFound, OAuthError.InvalidGrant, "The refresh token is invalid.");
+                return await RefuseAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.RefreshTokenNotFound, OAuthGrantType.RefreshToken, clientId), new OAuthError(OAuthError.InvalidGrant, "The refresh token is invalid."));
             }
 
             string grantId = row.GrantId;
@@ -245,35 +219,21 @@ namespace EasyReasy.Auth
             catch
             {
                 // The audit trail records every outcome, a throwing handler's too, before the exception propagates.
-                await AuditAsync(httpContext, new OAuthTokenResult
-                {
-                    Success = false,
-                    GrantType = OAuthGrantType.RefreshToken,
-                    ClientId = clientId,
-                    GrantId = grantId,
-                    FailureReason = OAuthTokenFailureReason.HandlerError,
-                });
+                await AuditAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.HandlerError, OAuthGrantType.RefreshToken, clientId, grantId));
                 throw;
             }
 
-            await AuditAsync(httpContext, new OAuthTokenResult
-            {
-                Success = result.Success,
-                GrantType = OAuthGrantType.RefreshToken,
-                ClientId = clientId,
-                GrantId = grantId,
-                Subject = result.Subject,
-                FamilyId = result.FamilyId,
-                FailureReason = result.Success ? null : ToTokenFailureReason(result.FailureReason!.Value),
-            });
-
             if (!result.Success)
             {
-                return new OAuthError(OAuthError.InvalidGrant, "The refresh token is invalid.").ToResult();
+                return await RefuseAsync(
+                    httpContext,
+                    OAuthTokenResult.Failed(ToTokenFailureReason(result.FailureReason.Value), OAuthGrantType.RefreshToken, clientId, grantId, result.Subject, result.FamilyId),
+                    new OAuthError(OAuthError.InvalidGrant, "The refresh token is invalid."));
             }
 
+            await AuditAsync(httpContext, OAuthTokenResult.Succeeded(OAuthGrantType.RefreshToken, clientId, grantId, result.Subject, result.FamilyId));
             httpContext.MarkAuthenticationSucceeded();
-            return TokenResponse(result.AuthResponse!);
+            return TokenResponse(result.AuthResponse);
         }
 
         // A service per request, over the client's refresh tokens: no audit logger, since a client's refresh is reported
@@ -293,12 +253,12 @@ namespace EasyReasy.Auth
 
         private IResult TokenResponse(AuthResponse authResponse)
         {
-            Dictionary<string, object?> body = new Dictionary<string, object?>
+            OAuthTokenResponse body = new OAuthTokenResponse
             {
-                ["access_token"] = authResponse.Token,
-                ["token_type"] = "Bearer",
-                ["expires_in"] = (long)_settings.AccessTokenLifetime.TotalSeconds,
-                ["refresh_token"] = authResponse.RefreshToken,
+                AccessToken = authResponse.Token,
+                ExpiresIn = (long)_settings.AccessTokenLifetime.TotalSeconds,
+                // The refresh token service always issues one alongside the access token.
+                RefreshToken = authResponse.RefreshToken ?? throw new InvalidOperationException("The refresh token service issued no refresh token."),
             };
             return Results.Json(body, OAuthJson.Options);
         }
@@ -317,16 +277,10 @@ namespace EasyReasy.Auth
             };
         }
 
-        private async Task<IResult> RefuseAsync(HttpContext httpContext, OAuthGrantType? grantType, string? clientId, OAuthTokenFailureReason reason, string error, string description)
+        private async Task<IResult> RefuseAsync(HttpContext httpContext, OAuthTokenResult refusal, OAuthError error)
         {
-            await AuditAsync(httpContext, new OAuthTokenResult
-            {
-                Success = false,
-                GrantType = grantType,
-                ClientId = clientId,
-                FailureReason = reason,
-            });
-            return new OAuthError(error, description).ToResult();
+            await AuditAsync(httpContext, refusal);
+            return error.ToResult();
         }
 
         private async Task AuditAsync(HttpContext httpContext, OAuthTokenResult result)

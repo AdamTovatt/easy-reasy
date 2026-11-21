@@ -91,7 +91,7 @@ namespace EasyReasy.Auth
         /// <inheritdoc />
         public Task<int> InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken = default)
         {
-            // Review skip (S2): left unsupported rather than given a meaning. The service is built per request by the token
+            // Left unsupported rather than given a meaning. The service is built per request by the token
             // endpoint with ConcurrentSessionPolicy.AllowMultiple and only rotates, so nothing reaches this; a client's
             // connections end by grant (IOAuthGrantService) or family (revocation), never by subject.
             throw new NotSupportedException("A client's refresh tokens are revoked by grant or family, not by subject.");

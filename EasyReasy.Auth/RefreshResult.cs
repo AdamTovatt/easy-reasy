@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace EasyReasy.Auth
 {
     /// <summary>
@@ -9,6 +11,8 @@ namespace EasyReasy.Auth
         /// <summary>
         /// Whether the refresh operation was successful.
         /// </summary>
+        [MemberNotNullWhen(true, nameof(AuthResponse), nameof(NewRefreshToken))]
+        [MemberNotNullWhen(false, nameof(FailureReason))]
         public bool Success { get; }
 
         /// <summary>

@@ -35,9 +35,14 @@ namespace EasyReasy.Auth
         Task<bool> MarkAsConsumedAsync(string tokenHash, DateTime consumedAt, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Invalidates all refresh tokens in a token family.
+        /// Invalidates all refresh tokens in a token family, consumed ones included.
         /// Called when token theft is detected (a consumed token is reused) or when a user logs out.
         /// </summary>
+        /// <remarks>
+        /// A refresh under way reads the token it consumed again after storing the next one, and gives the next one up
+        /// if the consumed token is invalidated by then. So the consumed token must be marked too, and the write
+        /// committed before this returns.
+        /// </remarks>
         /// <param name="familyId">The family identifier of the token chain to invalidate.</param>
         /// <param name="cancellationToken">A token to cancel the operation.</param>
         Task InvalidateFamilyAsync(string familyId, CancellationToken cancellationToken = default);

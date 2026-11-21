@@ -4,12 +4,12 @@ using System.Net.Sockets;
 namespace EasyReasy.Auth
 {
     /// <summary>
-    /// Keeps the server's fetch of a client ID metadata document, whose URL an anonymous caller chooses, from reaching
-    /// anything but the public internet: the connection is made only to an address this class calls public, checked on the
-    /// address actually connected to, so a host name that resolves to a private address (or is re-pointed at one between
-    /// lookups) is refused too.
+    /// Keeps a server-side fetch whose URL an untrusted caller chooses (such as the OAuth server's fetch of a client ID
+    /// metadata document) from reaching anything but the public internet: the connection is made only to an address this
+    /// class calls public, checked on the address actually connected to, so a host name that resolves to a private address
+    /// (or is re-pointed at one between lookups) is refused too.
     /// </summary>
-    internal static class OAuthPublicAddress
+    internal static class PublicNetworkAddress
     {
         /// <summary>
         /// Whether an address is a public unicast address: not unspecified, loopback, private (RFC 1918, unique local),

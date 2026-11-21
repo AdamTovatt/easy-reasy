@@ -133,7 +133,6 @@ namespace EasyReasy.Auth
             {
                 RequestHash = SecureToken.Hash(requestId),
                 ClientId = lookup.Client.Info.ClientId,
-                ClientRegistrationKind = lookup.Client.Info.RegistrationKind,
                 ClientName = lookup.Client.Info.ClientName,
                 ClientUri = lookup.Client.Info.ClientUri,
                 RedirectUri = redirectUri,
@@ -315,7 +314,7 @@ namespace EasyReasy.Auth
 
         private static OAuthClientInfo ClientInfo(OAuthAuthorizationRequest request)
         {
-            return OAuthClientInfo.Create(request.ClientId, request.ClientRegistrationKind, request.ClientName, request.ClientUri);
+            return OAuthClientInfo.Create(request.ClientId, request.ClientName, request.ClientUri);
         }
 
         private static IReadOnlyList<string> Scopes(string? scope)

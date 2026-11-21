@@ -261,7 +261,6 @@ namespace EasyReasy.Auth.Testing
             {
                 RequestHash = request.RequestHash,
                 ClientId = request.ClientId,
-                ClientRegistrationKind = request.ClientRegistrationKind,
                 ClientName = request.ClientName,
                 ClientUri = request.ClientUri,
                 RedirectUri = request.RedirectUri,

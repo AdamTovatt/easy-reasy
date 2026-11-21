@@ -101,9 +101,9 @@ namespace EasyReasy.Auth
             services.AddAuthorization(authzOptions =>
             {
                 authzOptions.AddPolicy("ApiKeyOnly", policy =>
-                    policy.RequireClaim(EasyReasyClaimTypes.AuthType, "apikey"));
+                    policy.RequireClaim(EasyReasyClaimTypes.AuthType, EasyReasyAuthTypes.ApiKey));
                 authzOptions.AddPolicy("UserOnly", policy =>
-                    policy.RequireClaim(EasyReasyClaimTypes.AuthType, "user"));
+                    policy.RequireClaim(EasyReasyClaimTypes.AuthType, EasyReasyAuthTypes.User));
             });
 
             // Register JWT token service for dependency injection if requested

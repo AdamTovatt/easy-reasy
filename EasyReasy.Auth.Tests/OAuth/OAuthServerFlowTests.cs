@@ -99,6 +99,28 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public async Task Approve_GrantCarryingAClientIdClaim_IsDroppedForTheRealClient()
+        {
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
+            server.Handler.Approve = context => OAuthApprovalDecision.Approve(new OAuthGrant
+            {
+                GrantId = "connection-5",
+                Subject = "person-1",
+                AuthType = "user",
+                Claims = [new System.Security.Claims.Claim(EasyReasyClaimTypes.ClientId, "spoofed"), new System.Security.Claims.Claim("organization_id", "org-7")],
+            });
+            (OAuthTestRegisteredClient client, OAuthTestAuthorization authorization, string code) = await server.ApprovePublicClientAsync();
+
+            OAuthTestTokens tokens = await server.OAuth.RedeemCodeAsync(authorization, code);
+
+            Assert.IsFalse(RefreshTokenClaims.DeserializeClaims(server.Store.AuthorizationCodes.Single().SerializedClaims).Any(claim => claim.Type == EasyReasyClaimTypes.ClientId));
+            JsonElement me = await ReadMeAsync(server, tokens.AccessToken);
+            Assert.AreEqual(client.ClientId, me.GetProperty("client_id").GetString());
+            Assert.AreEqual(1, me.GetProperty("client_id_claims").GetInt32());
+            Assert.AreEqual("org-7", me.GetProperty("organization_id").GetString());
+        }
+
+        [TestMethod]
         public async Task Refresh_HandlerSeesTheGrantAndCanChangeTheClaims()
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
@@ -149,10 +171,7 @@ namespace EasyReasy.Auth.Tests
         public async Task Connect_LoopbackRedirectOnAnotherPort_IsAccepted()
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
-            OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync("http://127.0.0.1/callback");
-
-            OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client, redirectUri: "http://127.0.0.1:53682/callback");
-            string code = await server.OAuth.ApproveAsync(authorization, server.SignIn());
+            (_, OAuthTestAuthorization authorization, string code) = await server.ApprovePublicClientAsync("http://127.0.0.1/callback", redirectUri: "http://127.0.0.1:53682/callback");
             OAuthTestTokens tokens = await server.OAuth.RedeemCodeAsync(authorization, code);
 
             Assert.AreEqual("http://127.0.0.1:53682/callback", server.Store.AuthorizationCodes.Single().RedirectUri);

@@ -14,19 +14,14 @@ namespace EasyReasy.Auth
     internal static class OAuthConsentPolicy
     {
         /// <summary>
-        /// The auth type of the application's first-party session tokens (as in EasyReasy.Auth's <c>UserOnly</c> policy).
-        /// </summary>
-        public const string PersonAuthType = "user";
-
-        /// <summary>
-        /// Builds the policy: authenticated, auth type <see cref="PersonAuthType"/>, and no client id claim.
+        /// Builds the policy: authenticated, auth type <see cref="EasyReasyAuthTypes.User"/>, and no client id claim.
         /// </summary>
         /// <returns>The policy.</returns>
         public static AuthorizationPolicy Build()
         {
             return new AuthorizationPolicyBuilder()
                 .RequireAuthenticatedUser()
-                .RequireClaim(EasyReasyClaimTypes.AuthType, PersonAuthType)
+                .RequireClaim(EasyReasyClaimTypes.AuthType, EasyReasyAuthTypes.User)
                 .RequireAssertion(context => !context.User.HasClaim(claim => claim.Type == EasyReasyClaimTypes.ClientId))
                 .Build();
         }

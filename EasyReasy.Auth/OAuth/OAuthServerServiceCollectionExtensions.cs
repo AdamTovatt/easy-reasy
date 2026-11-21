@@ -62,7 +62,7 @@ namespace EasyReasy.Auth
                     UseCookies = false,
                     UseProxy = false,
                     ConnectTimeout = MetadataDocumentFetchTimeout,
-                    ConnectCallback = OAuthPublicAddress.ConnectAsync,
+                    ConnectCallback = PublicNetworkAddress.ConnectAsync,
                 });
             services.AddSingleton<OAuthClientMetadataDocumentFetcher>();
 

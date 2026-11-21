@@ -23,7 +23,8 @@ namespace EasyReasy.Auth
         public const string TenantId = "tenant_id";
 
         /// <summary>
-        /// The authentication type (<c>"auth_type"</c>), such as <c>"user"</c> or <c>"apikey"</c>, which
+        /// The authentication type (<c>"auth_type"</c>), such as <see cref="EasyReasyAuthTypes.User"/> or
+        /// <see cref="EasyReasyAuthTypes.ApiKey"/>, which
         /// <see cref="JwtTokenService"/> writes on every token and the <c>UserOnly</c> and <c>ApiKeyOnly</c> policies require.
         /// </summary>
         public const string AuthType = "auth_type";

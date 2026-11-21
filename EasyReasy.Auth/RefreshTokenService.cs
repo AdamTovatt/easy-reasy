@@ -428,6 +428,17 @@ namespace EasyReasy.Auth
 
             await _store.StoreAsync(newStoredToken, cancellationToken);
 
+            // The consumed token is read again now the new one is stored. A family invalidation that came in after the
+            // consume above (a replay of this token, a logout, a revocation) marked the consumed token too: if it ran
+            // before the store, it shows here; if after, it caught the new token as well. Either way the new token does
+            // not outlive it.
+            StoredRefreshToken? consumedToken = await _store.GetByTokenHashAsync(tokenHash, cancellationToken);
+            if (consumedToken == null || consumedToken.IsInvalidated)
+            {
+                await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
+                return RefreshResult.Failed(RefreshFailureReason.TokenInvalidated, storedToken.Subject, storedToken.FamilyId);
+            }
+
             return RefreshResult.Succeeded(authResponse, newRawToken, storedToken.Subject, storedToken.FamilyId);
         }
 
