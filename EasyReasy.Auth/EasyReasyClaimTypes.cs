@@ -23,9 +23,19 @@ namespace EasyReasy.Auth
         public const string TenantId = "tenant_id";
 
         /// <summary>
-        /// The authentication type (<c>"auth_type"</c>), such as <c>"user"</c> or <c>"apikey"</c>, which
+        /// The authentication type (<c>"auth_type"</c>), such as <see cref="EasyReasyAuthTypes.User"/> or
+        /// <see cref="EasyReasyAuthTypes.ApiKey"/>, which
         /// <see cref="JwtTokenService"/> writes on every token and the <c>UserOnly</c> and <c>ApiKeyOnly</c> policies require.
         /// </summary>
         public const string AuthType = "auth_type";
+
+        /// <summary>
+        /// The OAuth client id (<c>"client_id"</c>, as RFC 9068 names it), on every access token the OAuth authorization
+        /// server issues. The server sets it from the client the refresh token is bound to, so a value supplied in a grant's
+        /// claims is replaced. Read it with <see cref="HttpContextExtensions.GetOAuthClientId"/> to tell a client's
+        /// connection from a first-party session. Nothing stops an application putting it on its own tokens, but such a
+        /// token then reads as a client's, and the consent endpoints refuse it.
+        /// </summary>
+        public const string ClientId = "client_id";
     }
 }

@@ -23,6 +23,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **WebSocket authentication**: Opt-in, per-path acceptance of the token in the `access_token` query string, for the browser `WebSocket` that cannot send an `Authorization` header
 - **Files in a new tab**: Opt-in, per-path acceptance of the token in a host-only, `HttpOnly`, `SameSite=Strict` cookie on `GET` and `HEAD`, set and cleared by the built-in endpoints, so opening a protected file needs the user's own browser session rather than a public link
 - **Testable clock**: One `TimeProvider` registered in DI drives token issuing, refreshing and validation, so tests can mint expired or not-yet-valid tokens
+- **OAuth 2.1 authorization server**: MCP clients and other systems connect once a person approves on your own consent page — authorization code with PKCE, rotating refresh tokens with reuse detection, revocation by token or by grant, discovery, dynamic client registration and client ID metadata documents, over a store you implement (section 17)
 - **Flexible configuration**: Options pattern for JWT settings (issuer, audience, clock skew) and progressive delay tuning
 - **Clear error messages**: Enforces minimum secret length for security
 
@@ -298,9 +299,13 @@ string? issuer = HttpContext.GetClaimValue(EasyReasyClaim.Issuer);
 // The refresh token family id rides on the access token as the "family_id" claim (see Section 9).
 string? familyId = HttpContext.GetRefreshFamilyId();
 string? familyId2 = HttpContext.GetClaimValue(EasyReasyClaim.RefreshFamilyId);
+
+// An OAuth client's token carries its "client_id"; a first-party token has none (see Section 17).
+string? clientId = HttpContext.GetOAuthClientId();
+string? clientId2 = HttpContext.GetClaimValue(EasyReasyClaim.ClientId);
 ```
 
-The claim types the library writes are constants on `EasyReasyClaimTypes` (`RefreshFamilyId`, `TenantId`, `AuthType`), for code that reads a claim by its type or writes one the library reads, such as the tenant claim: `new Claim(EasyReasyClaimTypes.TenantId, tenantId)`.
+The claim types the library writes are constants on `EasyReasyClaimTypes` (`RefreshFamilyId`, `TenantId`, `AuthType`, `ClientId`), for code that reads a claim by its type or writes one the library reads, such as the tenant claim: `new Claim(EasyReasyClaimTypes.TenantId, tenantId)`. The auth types the library's policies require are constants on `EasyReasyAuthTypes`: `User` (`"user"`, what `UserOnly` requires and the only one that can approve an OAuth connection) and `ApiKey` (`"apikey"`, what `ApiKeyOnly` requires).
 
 ### 6. Password Hashing
 
@@ -471,6 +476,7 @@ public class MyAuthService : IAuthRequestValidationService
 - Refresh tokens are 32-byte cryptographic random strings, stored as SHA-256 hashes
 - Each token belongs to a **family** — when a token is used, a new one is issued in the same family (rotation)
 - If a token that was already used gets presented again, the library detects theft and **invalidates the entire family**
+- A refresh that a theft detection, logout or revocation lands in the middle of gives its new token up: after storing the new token it reads the one it consumed again, and if that one's family was invalidated meanwhile, it invalidates the new token too and fails with `TokenInvalidated`. So `InvalidateFamilyAsync` must mark every token of the family, consumed ones included, and commit before it returns
 - Everything is opt-in: you must register the service, enable the endpoint, and inject `IRefreshTokenService` in your validation service
 
 #### Mid-session re-evaluation: `IRefreshClaimsResolver`
@@ -641,6 +647,12 @@ Every authentication event the library surfaces — success or failure — is re
 | Targeted session supersession on re-issue (`RetireFamilyAsync`) | `OnSessionSupersededAsync(httpContext, FamilyRetirementResult)` | ISO 27001 A.9.2.6 | `FamilyId`, `Subject`, IP, time |
 | Verified / declined WebAuthn enrollment (**you invoke this**, see below) | `OnWebAuthnRegistrationAsync(httpContext, WebAuthnRegistrationResult)` | ISO 27001 A.12.4.1 | outcome, `FailureReason`, credential id, IP, time |
 | Verified / declined WebAuthn second factor or passkey sign-in (**you invoke this**, see below) | `OnWebAuthnAuthenticationAsync(httpContext, WebAuthnAuthenticationResult)` | ISO 27001 A.12.4.1 | outcome, `Mode`, `FailureReason`, `SignCounterState`, credential id, IP, time |
+| OAuth client registration, recorded or refused (section 17) | `OnOAuthClientRegistrationAsync(httpContext, OAuthClientRegistrationResult)` | ISO 27001 A.12.4.1 | outcome, `ClientId`, `ClientName`, `FailureCode`, IP, time |
+| OAuth approval, a grant handler's refusal, or a denial | `OnOAuthAuthorizationAsync(httpContext, OAuthAuthorizationResult)` | ISO 27001 A.9.2.2 | `Outcome`, `Client`, `GrantId`, `Subject`, `RefusalDetail`, IP, time |
+| OAuth token request, issued or refused (incl. `CodeReused`, `RefreshTokenReused`) | `OnOAuthTokenAsync(httpContext, OAuthTokenResult)` | ISO 27001 A.12.4.1 | outcome, `GrantType`, `ClientId`, `GrantId`, `Subject`, `FamilyId`, `FailureReason`, IP, time |
+| OAuth revocation by a client | `OnOAuthRevocationAsync(httpContext, OAuthRevocationResult)` | ISO 27001 A.9.2.6 | `ClientId`, `WasKnown`, `GrantId`, `FamilyId`, IP, time |
+
+A client's refresh at `/oauth/token` is reported to `OnOAuthTokenAsync` only, never to `OnRefreshAsync`, so first-party refresh records stay about browser sessions.
 
 ⚠️ **The two WebAuthn hooks are the exception to the sentence above this table.** Half of each ceremony runs in the browser, so this library ships no endpoint for either one and `WebAuthnVerifier` is a pure function that takes neither an `HttpContext` nor a logger — nothing fires these for you. Resolve `IAuthAuditLogger` and call the hook yourself after verifying, as [section 13](#13-webauthn--fido2-second-factor-and-passkey-sign-in) shows. A second factor that was presented and rejected is the record an intrusion is most likely to appear in, and `WebAuthnAuthenticationFailureReason.SignCounterRegressed` in particular is WebAuthn's one signal of a cloned credential — worth alerting on rather than counting. Record `Mode` with it: a declined `Discoverable` result is a first-factor login attempt with no known user, which belongs with failed password logins, not with failed second factors.
 
@@ -708,6 +720,16 @@ public class MyAuditLogger : IAuthAuditLogger
         _logger.LogInformation(
             "auth.session_superseded subject={Subject} family={Family}",
             result.Subject, result.FamilyId);
+        return Task.CompletedTask;
+    }
+
+    public Task OnOAuthTokenAsync(HttpContext ctx, OAuthTokenResult result)
+    {
+        // CodeReused and RefreshTokenReused mean one of two presenters was not the client: alert on them.
+        _logger.LogInformation(
+            "auth.oauth_token {Outcome} grant_type={GrantType} client={Client} grant={Grant} subject={Subject} reason={Reason}",
+            result.Success ? "success" : "failure",
+            result.GrantType, result.ClientId, result.GrantId, result.Subject, result.FailureReason);
         return Task.CompletedTask;
     }
 }
@@ -1451,6 +1473,209 @@ clock.Advance(TimeSpan.FromHours(2));
 - **A lifetime validator of your own opts out.** The library sets its validator in a plain `Configure`, so if you assign `TokenValidationParameters.LifetimeValidator`, or replace `TokenValidationParameters`, in your own `Configure<JwtBearerOptions>` registered after `AddEasyReasyAuth`, yours wins, and lifetime is then checked however yours checks it. One registered before it is overwritten, since the library assigns `TokenValidationParameters` whole.
 - **`ProgressiveDelayMiddleware` keeps the system clock.** It measures failed-attempt delays, not token lifetime.
 
+### 17. OAuth 2.1 Authorization Server (MCP clients and other systems)
+
+Your application can be an OAuth 2.1 authorization server, so an MCP client (Claude Desktop, a claude.ai connector, Claude Code, any client that follows the MCP authorization spec) or another system can connect to it once a person approves. The server covers what the MCP spec asks of one:
+
+- **Authorization code with PKCE**, S256 only, required of every client. No implicit or password grant.
+- **Refresh tokens** rotated on every use, with reuse detection: a refresh token presented twice invalidates its whole family, a rotation under way included. A code presented twice invalidates whatever its first redemption issued.
+- **Token revocation** (RFC 7009), and revocation of a whole grant by your own id for it.
+- **Discovery**: authorization server metadata (RFC 8414), protected resource metadata (RFC 9728), and a 401 that points a client at the latter.
+- **Client registration**: dynamic client registration (RFC 7591) and client ID metadata documents. Registering grants nothing; it records a client.
+
+**Your application owns sign-in and consent.** The authorization endpoint sends the browser to your consent page. The page signs the person in with your own sign-in (second factor included), shows what is connecting, and approves through an endpoint that calls your `IOAuthGrantHandler`. The handler decides whether this person may approve this connection, records the grant, and returns who the tokens are for and what they carry. The tokens are this library's own signed JWTs: the claims your handler returned, plus `client_id` and `family_id`.
+
+⚠️ **A client's access token is a full token of its subject.** It passes `RequireAuthorization()` and every policy its claims satisfy, exactly as a browser session's token with the same claims would. Give the grant only the claims the connection should act with, and guard each endpoint a connection must not reach (account settings, managing connections, anything a person should do themselves) with `HttpContext.GetOAuthClientId() == null` or a policy that checks it. The consent endpoints do this themselves.
+
+#### Setup
+
+```csharp
+builder.Services.AddEasyReasyAuth(jwtSecret, options =>
+{
+    options.Issuer = "my-issuer";
+    options.Audience = "my-api";
+});
+
+builder.Services.AddEasyReasyOAuthServer<MyOAuthStore, MyGrantHandler>(new OAuthServerOptions
+{
+    IssuerUrl = "https://app.example",          // the origin; no path
+    Resource = "https://app.example/mcp",       // what clients connect to
+    ConsentPageUrl = "/connect/approve",        // your page; gets ?request=<id>
+});
+
+WebApplication app = builder.Build();
+app.UseEasyReasyAuth();
+app.AddOAuthServerEndpoints();
+```
+
+`AddEasyReasyOAuthServer` validates the options and throws one `ArgumentException` listing every problem. `AddOAuthServerEndpoints` throws at startup if the server or `AddEasyReasyAuth` is not registered. The store and handler are registered as scoped. `OAuthServerOptions` is a record, so a variant (another environment, a test) is `options with { ... }`.
+
+| Option | Default | Description |
+|---|---|---|
+| `IssuerUrl` | required | The origin the app is served at: an absolute https URL (http only on a local host such as `localhost`) with no path, query or fragment. The `issuer` in the metadata, the base of every endpoint URL it lists, and the `iss` on every authorization response (RFC 9207). Configured, never read from the request. |
+| `Resource` | required | The protected resource: the URL clients connect to (such as the MCP endpoint), or the origin. Same origin as `IssuerUrl`. Its metadata is served at `/.well-known/oauth-protected-resource` plus its path. A client's `resource` must name it or a path under it, or the request is refused with `invalid_target`. |
+| `ConsentPageUrl` | required | Your consent page, an absolute https URL or a path starting with `/`. |
+| `ScopesSupported` | empty | Listed in both metadata documents and the 401's `scope`. Not enforced: requested scopes go to your handler. |
+| `AccessTokenLifetime` | 10 minutes | An access token cannot be revoked, so this is how long a revoked grant's last token keeps working. |
+| `RefreshTokenLifetime` | 30 days | Each refresh issues a new one with a full lifetime, so a connection lapses after this long unused. |
+| `AuthorizationCodeLifetime` | 1 minute | |
+| `AuthorizationRequestLifetime` | 10 minutes | Time for the person to sign in and decide. |
+| `AllowDynamicClientRegistration` | true | When false, `/oauth/register` is not mapped and the metadata lists no `registration_endpoint`. |
+| `AllowClientIdMetadataDocuments` | true | When false, an https client id is unknown and the metadata says `client_id_metadata_document_supported: false`. |
+
+#### Endpoints
+
+| Endpoint | Caller | What it does |
+|---|---|---|
+| `GET /.well-known/oauth-authorization-server` | anonymous | RFC 8414 metadata: endpoints, `response_types_supported: ["code"]`, `code_challenge_methods_supported: ["S256"]`, the grant types, the client authentication methods (`none`, `client_secret_basic`, `client_secret_post`). |
+| `GET /.well-known/oauth-protected-resource{resource path}` | anonymous | RFC 9728 metadata: `resource`, `authorization_servers`, `bearer_methods_supported: ["header"]`. |
+| `POST /oauth/register` | anonymous | RFC 7591. 201 with `client_id` (and `client_secret` for a confidential client), or 400 `invalid_redirect_uri` / `invalid_client_metadata`. |
+| `GET /oauth/authorize` | the browser | Validates the request and redirects to your consent page with `?request=<id>`. |
+| `GET /oauth/authorize/requests/{request}` | a person signed in to your app | `OAuthAuthorizationRequestDetails`: the client, the redirect URI, the requested scopes and resource, and `expiresAt`, when the request can no longer be decided. 404 for an unknown, expired or completed request. |
+| `POST /oauth/authorize/requests/{request}/approve` | a person signed in to your app | Body: your own JSON (at most 16 KiB), handed to your handler. 200 with `OAuthConsentRedirect` (`{ "redirectUri": "..." }`) on approval, 400 for a body that is not JSON or is too large, 403 when your handler refuses, 404 for an unknown, expired or completed request. |
+| `POST /oauth/authorize/requests/{request}/deny` | a person signed in to your app | 200 with the client's redirect carrying `error=access_denied`, or 404. |
+| `POST /oauth/token` | the client | `authorization_code` and `refresh_token`, each with an optional `resource` (RFC 8707) that must be this server's, and for a code the authorization request's. JSON `access_token`, `token_type: "Bearer"`, `expires_in`, `refresh_token`. |
+| `POST /oauth/revoke` | the client | RFC 7009. 200 for any token, known or not; 401 `invalid_client` for a client that does not authenticate; 400 `invalid_request` for a body that is not a form or names no `token`. |
+
+Every response is `Cache-Control: no-store`. The paths are constants on `OAuthServerPaths`. The three request endpoints take your app's own access token, with auth type `user` (`EasyReasyAuthTypes.User`) and no `client_id` claim: a client's token and an API key's are refused with 403, so no connection can approve a connection. The others are anonymous.
+
+**The 401.** Registering the server sets the JWT bearer's challenge, so every 401 your app answers carries `WWW-Authenticate: Bearer resource_metadata="https://app.example/.well-known/oauth-protected-resource/mcp"` (plus `scope="..."` when `ScopesSupported` is set, and the bearer's `error` when a token was rejected). That is how an MCP client finds the server. A later `Configure<JwtBearerOptions>` of your own can change it.
+
+#### The consent page
+
+```javascript
+// The page at ConsentPageUrl, after your own sign-in.
+const requestId = new URLSearchParams(location.search).get("request");
+const auth = { headers: { Authorization: `Bearer ${accessToken}` } };
+
+const details = await (await fetch(`/oauth/authorize/requests/${requestId}`, auth)).json();
+// Show: details.client.clientName (the client's own claim), details.client.metadataDocumentHost when set
+// (in punycode, as fetched), the host of details.redirectUri, and your own choices (which organization, what a system may do).
+
+const approved = await fetch(`/oauth/authorize/requests/${requestId}/approve`, {
+  method: "POST",
+  headers: { ...auth.headers, "Content-Type": "application/json" },
+  body: JSON.stringify({ organizationId: 7 }),        // yours; the library does not read it
+});
+if (approved.ok) {
+  location.assign((await approved.json()).redirectUri); // back to the client with the code
+} else if (approved.status === 403) {
+  // Your handler refused (show (await approved.json()).detail); the request is still pending.
+} else if (approved.status === 404) {
+  // The request expired (after AuthorizationRequestLifetime) or was already decided: ask the person to start again
+  // from the client.
+} else {
+  // 400: your approval body was not JSON or was over 16 KiB.
+}
+```
+
+**What to show.** Only `client.clientId`, and for a metadata document client `client.metadataDocumentHost`, are facts. The host is given in punycode (`xn--pple-43d.com`), so a client id URL written with a look-alike host in another script cannot pass for `apple.com` on your page. `clientName` and `clientUri` are whatever the client registered: show them beside the approving person, never as who the client is. The MCP spec asks the page to show the redirect URI's host clearly.
+
+#### The grant handler
+
+```csharp
+public class MyGrantHandler : IOAuthGrantHandler
+{
+    private readonly IConnectionRepository _connections;
+
+    public MyGrantHandler(IConnectionRepository connections) { _connections = connections; }
+
+    public async Task<OAuthApprovalDecision> ApproveAsync(OAuthApprovalContext context, CancellationToken cancellationToken)
+    {
+        string personId = context.HttpContext.GetUserId()!;
+        ApprovalBody? body = context.ApprovalBody?.Deserialize<ApprovalBody>();   // validate: it is untrusted input
+        if (body == null || !await _connections.MayApproveAsync(personId, body.OrganizationId, cancellationToken))
+        {
+            return OAuthApprovalDecision.Refuse("You can't connect agents to this organization.");
+        }
+
+        Connection connection = await _connections.CreateAsync(
+            personId, body.OrganizationId, context.Client.ClientId, context.Client.ClientName, cancellationToken);
+
+        return OAuthApprovalDecision.Approve(new OAuthGrant
+        {
+            GrantId = connection.Id.ToString(),            // revoke the connection by this id
+            Subject = personId,                            // or a principal of its own for a system
+            AuthType = "user",
+            Claims = [new Claim("organization_id", body.OrganizationId.ToString()), new Claim("connection_id", connection.Id.ToString())],
+            Roles = [],
+        });
+    }
+
+    public async Task<RefreshClaimsDecision> RefreshAsync(OAuthRefreshContext context, CancellationToken cancellationToken)
+    {
+        Connection? connection = await _connections.FindAsync(context.GrantId, cancellationToken);
+        if (connection == null || connection.IsRevoked || !await _connections.IsStillAllowedAsync(connection, cancellationToken))
+        {
+            return RefreshClaimsDecision.Deny();
+        }
+
+        return RefreshClaimsDecision.Allow(context.StoredClaims, context.StoredRoles);
+    }
+}
+```
+
+- **`ApproveAsync`** runs on the approve request, with the signed-in person as `HttpContext.User`. It returns `Approve(grant)` or `Refuse(detail)`. A refusal answers 403 and leaves the request pending, so the person can choose differently or deny. After an approval the request is completed once and the code issued; if that fails (the same request completed concurrently, a store failure) the grant just recorded has no tokens and nothing can use it.
+- **`OAuthGrant.Subject` is yours to choose.** An agent acting for a person carries the person's id. A system that should outlive whoever approved it carries a principal of its own.
+- **`OAuthGrant.GrantId`** is your id for the grant (a connection id). It is stored on the code and on every refresh token issued under it, given to `RefreshAsync`, and is what `IOAuthGrantService.RevokeGrantAsync` takes.
+- **`RefreshAsync`** runs on every refresh, before the refresh token is consumed, as `IRefreshClaimsResolver` does for a first-party session. Re-derive the claims from the grant as it stands, or deny (the person lost access, the connection was revoked, the organization turned connections off). A denial or a throw does not consume the token. It is separate from `IRefreshClaimsResolver`, so a resolver written for browser sessions never runs on a connection.
+- **`client_id` and `family_id` are the server's.** Either claim in what your handler returns is dropped, and the server's value is used.
+
+#### The store
+
+Implement `IOAuthServerStore` over your database. It holds four kinds of row: `OAuthClient`, `OAuthAuthorizationRequest`, `OAuthAuthorizationCode` and `OAuthRefreshToken`. Request ids, codes, refresh tokens and client secrets reach it only as SHA-256 hashes.
+
+- **`CompleteAuthorizationRequestAsync`, `RedeemAuthorizationCodeAsync` and `ConsumeRefreshTokenAsync` must be atomic**, true for the first caller only, as `MarkAsConsumedAsync` is for first-party refresh tokens (section 8): `UPDATE ... WHERE completed_at IS NULL` and a check that one row changed.
+- **Every write is committed when its call returns.** The server orders separate calls: it marks a code invalidated (`InvalidateAuthorizationCodeAsync`, `InvalidateGrantAuthorizationCodesAsync`) before it invalidates refresh tokens, and reads the code, or the refresh token a refresh consumed, again after storing the new refresh token. That order is what keeps a redemption or refresh racing a revocation, or a second presentation of its code or token, from leaving a token alive. Don't batch one call's write into a later call's transaction.
+- **`InvalidateGrantAuthorizationCodesAsync` marks every code of the grant, redeemed or not**; `InvalidateGrantRefreshTokensAsync` and `InvalidateRefreshTokenFamilyAsync` invalidate every refresh token of the grant or family, consumed ones included. `IOAuthGrantService.RevokeGrantAsync` calls them in that order.
+- **Client refresh tokens are kept apart from `IRefreshTokenStore`.** A first-party session policy never reaches a connection: under `ConcurrentSessionPolicy.SingleSession`, a person's new browser login does not end their agent's connection, and approving a connection does not end their browser session. A client's refresh token is never redeemable at `/api/auth/refresh`, and `InvalidateAllSessionsAsync` does not end connections; revoke those by grant.
+- **Rows past their `ExpiresAt`** are never accepted, so deleting them is housekeeping you schedule. `OAuthClient` has no expiry; its `CreatedAt` is there for pruning registrations that never connected.
+
+`InMemoryOAuthServerStore` in EasyReasy.Auth.Testing implements it for tests.
+
+#### Ending a connection
+
+```csharp
+await oauthGrantService.RevokeGrantAsync(connection.Id.ToString());   // IOAuthGrantService, scoped
+```
+
+Every refresh token under the grant stops working at once, and every code of it is refused, a redemption or refresh already under way included. An access token already issued stays valid until it expires (`AccessTokenLifetime`): it is a signed token checked without a lookup. A client revokes its own refresh token at `/oauth/revoke`, which invalidates that token's family.
+
+#### Calling with a client's token
+
+A client's access token is validated by the same JWT bearer as every other token. `HttpContext.GetOAuthClientId()` (or `GetClaimValue(EasyReasyClaim.ClientId)`) returns its `client_id`, and null for a first-party token, so an endpoint can tell a connection from a browser session. `GetRefreshFamilyId()` returns the connection's family id, which names a family in `IOAuthServerStore`, not in `IRefreshTokenStore`: `RetireFamilyAsync` with it does nothing.
+
+#### Clients
+
+- **Dynamic client registration.** `redirect_uris` (1 to 10) must each be an absolute https URL, an http URL on a loopback host (`127.0.0.1`, `[::1]`, `localhost`), or an app's private-use scheme (`com.example.app:/callback`, `cursor://...`); never `javascript:`, `data:`, `file:` or another scheme the browser handles itself, never with a fragment or userinfo. `token_endpoint_auth_method` is `none` (a public client, as MCP clients register), `client_secret_basic` or `client_secret_post` (the names are constants on `OAuthClientAuthenticationMethodNames`); a registration naming none gets `client_secret_basic`, RFC 7591's default, and a secret. `grant_types` and `response_types`, when sent, must include `authorization_code` and `code`; other values are dropped. `client_name` is at most 200 characters. The body is at most 16 KiB. Registration is anonymous: rate limit it ahead of the endpoint if you need to.
+- **Client ID metadata documents.** A `client_id` that is an https URL with a path is fetched at the authorization endpoint, with no redirects followed, no cookies sent, no proxy, a 5-second timeout and a 5 KiB cap, and only from a public address: the connection is refused when the host resolves to a loopback, private, link-local or other special-use address. The document's `client_id` must equal the URL exactly, its `redirect_uris` must hold the request's redirect URI, and it must be public (`token_endpoint_auth_method` absent or `none`; no secret). A usable document is kept for 5 minutes, as the draft recommends, so a client's repeated authorizations fetch it once; a refused one is not kept, so a client fixing its document can retry at once. At most 1,000 are kept at a time, since anyone can name a client id. Nothing is stored: the pending request keeps the name for the consent page. The fetch uses the named client `OAuthServerServiceCollectionExtensions.MetadataDocumentHttpClientName`. The address check runs on the connection itself, so giving that client a proxy or replacing its primary handler removes the guard.
+- **Redirect URI matching** is exact string comparison, except that an http loopback URI matches on any port (RFC 8252 section 7.3).
+
+#### Refusals
+
+The authorization endpoint answers on the page (400, never redirected) while it cannot yet trust where a redirect would go, so it cannot send a browser anywhere: `invalid_request` for a parameter sent more than once, a missing `client_id`, or a redirect URI that is missing or not one the client registered, and `invalid_client` for a client that is unknown or whose metadata document cannot be used. After that, errors go back to the client's redirect URI with its `state` and `iss`: `unsupported_response_type` for anything but `code`; `invalid_request` for a missing or malformed challenge, any method but `S256`, or a `state`, `scope` or `resource` longer than 2,000 characters (then without the `state`); `invalid_target` for another server's resource, or one with a query or fragment.
+
+The token endpoint answers `invalid_client` (401, with a `Basic` challenge when the client tried Basic) for a client that does not authenticate by the method it registered, `unsupported_grant_type` for a grant type other than `authorization_code` and `refresh_token`, `invalid_target` for a `resource` that is not this server's or, for a code, not the authorization request's, and `invalid_grant` for a code or refresh token that is unknown, expired, revoked, already used, or issued to another client or redirect URI, or a verifier that does not match. A code is used up by its first presentation, whatever is wrong with it. A malformed request (not a form, a repeated parameter, a missing one, including `grant_type`) is `invalid_request`.
+
+#### Audit
+
+| Event | Hook |
+|---|---|
+| A registration, recorded or refused | `OnOAuthClientRegistrationAsync(httpContext, OAuthClientRegistrationResult)` |
+| An approval, a handler's refusal, a denial | `OnOAuthAuthorizationAsync(httpContext, OAuthAuthorizationResult)` |
+| Every token request, issued or refused, with `OAuthTokenFailureReason` (`CodeReused` and `RefreshTokenReused` are worth alerting on) | `OnOAuthTokenAsync(httpContext, OAuthTokenResult)` |
+| A client's revocation | `OnOAuthRevocationAsync(httpContext, OAuthRevocationResult)` |
+
+A client's refresh is reported to `OnOAuthTokenAsync` only, never to the first-party `OnRefreshAsync`. No result carries a code, a token or a secret. See [section 10](#10-security-audit-logging-iso-27001-a9--a12).
+
+#### Testing your server
+
+EasyReasy.Auth.Testing's `OAuthTestClient` drives the whole flow over your test host's `HttpClient`, and `InMemoryOAuthServerStore` stands in for your store. See its README.
+
+#### Not covered
+
+Token introspection, revoking an access token, `private_key_jwt`, OpenID Connect (no ID tokens, no `/.well-known/openid-configuration`), and CORS, which is your application's to configure if a browser-based client calls the endpoints.
+
 ## Advanced Configuration
 
 ### Service Registration Options
@@ -1573,6 +1798,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 - **WebAuthn/FIDO2 second factor and passkey sign-in**: Registration and authentication ceremonies verified server-side (attestation `none`, ES256/RS256), with result objects naming the individual check that declined a ceremony and the signature-counter rule platform authenticators need, and usernameless passkey sign-in as a separate mode that verifies the user handle
 - **WebSocket authentication**: `QueryStringTokenPaths` lets listed paths read the token from the `access_token` query string, validated exactly as a header token, with the header taking precedence
 - **Cookie tokens for files in a new tab**: `CookieTokenPaths` lets listed paths read the token from the `__Secure-access_token` cookie on `GET` and `HEAD`, after the header and the query string; the built-in login, refresh and logout endpoints and each provider package's sign-in endpoint set and clear it
+- **OAuth 2.1 authorization server**: `AddEasyReasyOAuthServer` and `AddOAuthServerEndpoints` serve discovery, registration, authorization, token and revocation endpoints for MCP clients, with consent and grants decided by your `IOAuthGrantHandler` and rows kept by your `IOAuthServerStore`; client tokens are the library's own JWTs carrying `client_id`
 - **Claims injection middleware**: Makes user/tenant IDs available in `HttpContext.Items`
 - **Role access**: Retrieve all roles for the current user via `GetRoles()`
 - **Claim access**: Retrieve any claim value by key or enum via `GetClaimValue()`
@@ -1598,10 +1824,33 @@ The progressive delay middleware helps protect your API from brute-force attacks
 4. **Set `TrustedProxyCount`**: If behind reverse proxies, so the middleware sees real client IPs
 5. **Access claims and roles via extension methods**: Use `GetUserId()`, `GetTenantId()`, `GetRoles()`, and `GetClaimValue()` for convenience
 6. **Implement atomic `MarkAsConsumedAsync`**: If using refresh tokens, ensure your store prevents concurrent redemption
+7. **Keep connections out of person-only endpoints**: With the OAuth server, check `GetOAuthClientId()` on endpoints a client's token must not reach
 
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.16.0
+
+Version 5.17.0 adds an OAuth 2.1 authorization server. It is opt-in: nothing changes until you call `AddEasyReasyOAuthServer`. Nothing is removed. For an app that does not register the server, the one change in behaviour is a fix to the refresh race below, which asks one thing of an `IRefreshTokenStore`.
+
+### New: the OAuth 2.1 authorization server
+- **`AddEasyReasyOAuthServer<TStore, THandler>(OAuthServerOptions)`** registers it and **`AddOAuthServerEndpoints()`** maps its endpoints. You implement **`IOAuthServerStore`** (clients, pending requests, codes and refresh tokens, kept apart from `IRefreshTokenStore`) and **`IOAuthGrantHandler`** (approval on your consent page, and the claims on every refresh). **`IOAuthGrantService.RevokeGrantAsync`** ends a connection. See [section 17](#17-oauth-21-authorization-server-mcp-clients-and-other-systems).
+- **`EasyReasyClaimTypes.ClientId`**, **`EasyReasyClaim.ClientId`** and **`HttpContext.GetOAuthClientId()`** name and read the `client_id` claim a client's token carries.
+
+### New: `EasyReasyAuthTypes`
+- **`User` (`"user"`) and `ApiKey` (`"apikey"`)**, the auth types the `UserOnly` and `ApiKeyOnly` policies require, as constants. The values are unchanged.
+
+### Changed: a refresh racing an invalidation gives its new token up
+- **`RefreshTokenService.RefreshAsync` reads the consumed token again after storing the new one.** If theft detection, a logout or a revocation invalidated the family between the two, the new token is invalidated too and the refresh fails with `TokenInvalidated`, where before the new token outlived the invalidation. A refresh nothing else touches behaves as before.
+- **`IRefreshTokenStore.InvalidateFamilyAsync` must mark consumed tokens too**, and commit before it returns, so the read sees it. An implementation that runs `UPDATE ... SET invalidated WHERE family_id = ...`, as section 8 shows, already does. One that skips consumed rows lets the race through as before.
+- **`RefreshResult.Success`** now carries nullability attributes, so after checking it the compiler knows `AuthResponse` and `NewRefreshToken`, or `FailureReason`, are set. A `!` you wrote there is no longer needed.
+
+### New: four audit hooks, all defaulted
+- **`IAuthAuditLogger`** gains `OnOAuthClientRegistrationAsync`, `OnOAuthAuthorizationAsync`, `OnOAuthTokenAsync` and `OnOAuthRevocationAsync`, each a default no-op, so an existing logger compiles and behaves as before. See [section 10](#10-security-audit-logging-iso-27001-a9--a12).
+
+### Changed, with the server registered: the 401 challenge
+- **`AddEasyReasyOAuthServer` sets `JwtBearerOptions.Challenge`**, so every 401 answers `WWW-Authenticate: Bearer resource_metadata="..."`, which is how an MCP client finds the server. An app that set its own challenge keeps it when its `Configure<JwtBearerOptions>` runs after `AddEasyReasyOAuthServer`.
 
 ## Migration from 5.15.0
 
@@ -1914,4 +2163,4 @@ Version 3.0.0 introduces breaking changes:
 
 ---
 
-⚠️ **Security Disclaimer:** This library implements a simple token-based authentication system suitable for internal or low-risk applications. It does not follow full OAuth2/OIDC standards and lacks advanced features like key rotation, token introspection, consent management, and third-party identity federation. For production systems with complex threat models, consider using a mature identity provider such as IdentityServer, OpenIddict, or a cloud-based solution. 
+⚠️ **Security Disclaimer:** This library implements a simple token-based authentication system suitable for internal or low-risk applications. Its OAuth 2.1 authorization server (section 17) covers what MCP clients need, not the whole OAuth ecosystem: there is no OpenID Connect, token introspection or signing-key rotation, and consent is a page and a grant handler you write. For production systems with complex threat models, consider using a mature identity provider such as IdentityServer, OpenIddict, or a cloud-based solution. 

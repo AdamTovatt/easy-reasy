@@ -7,19 +7,19 @@
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <Title>EasyReasy.Auth</Title>
     <Authors>Adam Tovatt</Authors>
-    <Description>A lightweight .NET library for internal JWT authentication and claims handling, with refresh token rotation, password hashing, TOTP primitives, WebAuthn/FIDO2 second-factor and passkey sign-in verification, query-string tokens for WebSocket connections and path-scoped cookie tokens for files opened in a new tab</Description>
+    <Description>A lightweight .NET library for internal JWT authentication and claims handling, with refresh token rotation, password hashing, TOTP primitives, WebAuthn/FIDO2 second-factor and passkey sign-in verification, query-string tokens for WebSocket connections, path-scoped cookie tokens for files opened in a new tab, and an OAuth 2.1 authorization server for MCP clients with app-owned consent</Description>
     <Copyright>MIT</Copyright>
     <PackageProjectUrl>https://github.com/AdamTovatt/easy-reasy</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/AdamTovatt/easy-reasy</RepositoryUrl>
-    <PackageTags>auth;jwt;claims;mfa;totp;webauthn;fido2;passkey;websocket;easyreasy</PackageTags>
+    <PackageTags>auth;jwt;claims;mfa;totp;webauthn;fido2;passkey;websocket;oauth;oauth2;mcp;pkce;easyreasy</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>5.16.0</VersionPrefix>
+    <VersionPrefix>5.17.0</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>IRefreshTokenService.StartSessionAsync starts a session from any sign-in of your own: it creates the refresh token family and issues the first access token the way a refresh issues the next one (same lifetime, clock, expiry format and family_id claim), returning a SessionStartResult with the AuthResponse and the FamilyId. A custom IRefreshTokenService implementation must add it. EasyReasyClaimTypes names every claim type the library writes (RefreshFamilyId, TenantId, AuthType). The WebAuthn options and response types carry System.Text.Json converters, so they nest in an app's own request and response models: options write exactly their ToJson bytes whatever the host's options, a credential binds through the FromJson parser, and one that is present but malformed is a JsonException (400 from model binding). WebAuthn JSON is written with fixed settings of its own and no longer follows JsonSerializerSettings.CurrentOptions; the 64 KiB credential bound counts UTF-8 bytes. See https://github.com/AdamTovatt/easy-reasy/blob/auth-v$(VersionPrefix)/EasyReasy.Auth/README.md#migration-from-5150</PackageReleaseNotes>
+    <PackageReleaseNotes>An OAuth 2.1 authorization server, opt-in: AddEasyReasyOAuthServer and AddOAuthServerEndpoints serve RFC 8414 and RFC 9728 discovery (with a 401 challenge naming the protected resource metadata), dynamic client registration and client ID metadata documents fetched only from public addresses, the authorization code flow with PKCE S256 only, refresh tokens rotated with reuse detection, and RFC 7009 revocation. Your consent page approves through IOAuthGrantHandler, which records the grant and decides the claims at approval and on every refresh; only a person signed in to your app can approve. You implement IOAuthServerStore, kept apart from IRefreshTokenStore, and end a connection with IOAuthGrantService.RevokeGrantAsync. Client tokens are the library's own JWTs carrying client_id (EasyReasyClaimTypes.ClientId, GetOAuthClientId). IAuthAuditLogger gains four defaulted OAuth hooks, and EasyReasyAuthTypes names the "user" and "apikey" auth types. Behaviour change for every app, with or without the server: a refresh that theft detection, a logout or a revocation lands in the middle of now fails with TokenInvalidated and gives its new refresh token up, where before that token outlived the invalidation; this needs IRefreshTokenStore.InvalidateFamilyAsync to mark consumed tokens too. See https://github.com/AdamTovatt/easy-reasy/blob/auth-v$(VersionPrefix)/EasyReasy.Auth/README.md#migration-from-5160</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

@@ -24,14 +24,14 @@ Each library project has a corresponding test project:
 | `EasyReasy` | Core resource management (embedded/file resources) | — |
 | `EasyReasy.ByteShelfProvider` | Remote resource provider via ByteShelf | `EasyReasy` |
 | `EasyReasy.EnvironmentVariables` | Typed environment variable validation & retrieval | — |
-| `EasyReasy.Auth` | JWT auth, claims middleware, password hashing, TOTP/base32/secret-cipher MFA primitives, WebAuthn/FIDO2 second factor and passkey sign-in, query-string tokens for WebSockets, path-scoped cookie tokens for files opened in a new tab (ASP.NET Core) | — |
+| `EasyReasy.Auth` | JWT auth, claims middleware, password hashing, TOTP/base32/secret-cipher MFA primitives, WebAuthn/FIDO2 second factor and passkey sign-in, query-string tokens for WebSockets, path-scoped cookie tokens for files opened in a new tab, an OAuth 2.1 authorization server with app-owned consent and store (ASP.NET Core) | — |
 | `EasyReasy.Auth.Client` | Lightweight HTTP client for Auth servers | — |
 | `EasyReasy.Auth.Google` | Google Sign-In integration for EasyReasy.Auth | `EasyReasy.Auth` |
 | `EasyReasy.Auth.Microsoft` | Microsoft (Entra ID) sign-in through the server-side code flow with PKCE, for EasyReasy.Auth | `EasyReasy.Auth` |
-| `EasyReasy.Auth.Testing` | Software WebAuthn authenticator for consumers' test projects, verified against the real `WebAuthnVerifier`; built on `EasyReasy.Auth`'s public API only, with no `InternalsVisibleTo` | `EasyReasy.Auth` |
+| `EasyReasy.Auth.Testing` | Test helpers for consumers' test projects: a software WebAuthn authenticator verified against the real `WebAuthnVerifier`, and an OAuth test client and in-memory store that drive the OAuth authorization server; built on `EasyReasy.Auth`'s public API only, with no `InternalsVisibleTo` | `EasyReasy.Auth` |
 | `EasyReasy.VectorStorage` | In-memory cosine similarity vector search | — |
 
-`EasyReasy.ByteShelfProvider` depends on `EasyReasy`, and each sign-in provider package (`EasyReasy.Auth.Google`, `EasyReasy.Auth.Microsoft`) and `EasyReasy.Auth.Testing` depend on `EasyReasy.Auth`. All other libraries are fully independent of each other. `EasyReasy.Auth.Tests` uses `EasyReasy.Auth.Testing`'s authenticator for its key, COSE encoding and signatures; `EasyReasy.Auth.Testing.Tests` proves its ceremonies against the real verifier.
+`EasyReasy.ByteShelfProvider` depends on `EasyReasy`, and each sign-in provider package (`EasyReasy.Auth.Google`, `EasyReasy.Auth.Microsoft`) and `EasyReasy.Auth.Testing` depend on `EasyReasy.Auth`. All other libraries are fully independent of each other. `EasyReasy.Auth.Tests` uses `EasyReasy.Auth.Testing`'s authenticator for its key, COSE encoding and signatures, and its OAuth test client and in-memory store to drive the OAuth server; `EasyReasy.Auth.Testing.Tests` proves the authenticator's ceremonies against the real verifier, and the OAuth client and store against a real OAuth server.
 
 ## Architecture
 
