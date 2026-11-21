@@ -101,6 +101,26 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public void GetOAuthClientId_ReturnsClaimValueByMethodAndByEnum_WhenPresent()
+        {
+            List<Claim> claims = new List<Claim> { new Claim("client_id", "client-9") };
+            ClaimsIdentity identity = new ClaimsIdentity(claims, authenticationType: "TestAuth");
+            DefaultHttpContext context = new DefaultHttpContext { User = new ClaimsPrincipal(identity) };
+
+            Assert.AreEqual("client-9", context.GetOAuthClientId());
+            Assert.AreEqual("client-9", context.GetClaimValue(EasyReasyClaim.ClientId));
+        }
+
+        [TestMethod]
+        public void GetOAuthClientId_ReturnsNull_WhenAbsent()
+        {
+            DefaultHttpContext context = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity()) };
+
+            Assert.IsNull(context.GetOAuthClientId());
+            Assert.IsNull(context.GetClaimValue(EasyReasyClaim.ClientId));
+        }
+
+        [TestMethod]
         public void RefuseAuthenticatedCaller_OnFreshResponse_SetsStatus401AndMarksTheRefusal()
         {
             DefaultHttpContext context = CreateAuthenticatedContext();

@@ -38,6 +38,14 @@ namespace EasyReasy.Auth
         public static string? GetRefreshFamilyId(this HttpContext context) => context.GetClaimValue(EasyReasyClaimTypes.RefreshFamilyId);
 
         /// <summary>
+        /// Gets the OAuth client id (claim type <see cref="EasyReasyClaimTypes.ClientId"/>) from the HTTP context: the client
+        /// a request's token was issued to by the OAuth authorization server, or null for a first-party session.
+        /// </summary>
+        /// <param name="context">The HTTP context.</param>
+        /// <returns>The OAuth client id, or null if the token was not issued to an OAuth client.</returns>
+        public static string? GetOAuthClientId(this HttpContext context) => context.GetClaimValue(EasyReasyClaimTypes.ClientId);
+
+        /// <summary>
         /// Gets the user id from the HTTP context, if available.
         /// </summary>
         /// <param name="context">The HTTP context.</param>
@@ -104,6 +112,8 @@ namespace EasyReasy.Auth
                     return context.GetClaimValue(EasyReasyClaimTypes.AuthType);
                 case EasyReasyClaim.RefreshFamilyId:
                     return context.GetClaimValue(EasyReasyClaimTypes.RefreshFamilyId);
+                case EasyReasyClaim.ClientId:
+                    return context.GetClaimValue(EasyReasyClaimTypes.ClientId);
                 case EasyReasyClaim.Issuer:
                     // JWT Issuer is not a claim, but a property on the token. Try to get it from ClaimsPrincipal if available.
                     ClaimsIdentity? jwt = context.User.Identity as ClaimsIdentity;

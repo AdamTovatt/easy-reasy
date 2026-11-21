@@ -109,16 +109,28 @@ namespace EasyReasy.Auth
         }
 
         /// <inheritdoc />
-        public async Task<RefreshTokenCreationResult> CreateRefreshTokenWithFamilyAsync(
+        public Task<RefreshTokenCreationResult> CreateRefreshTokenWithFamilyAsync(
             string subject,
             string authType,
             string? serializedClaims,
             string? serializedRoles,
             CancellationToken cancellationToken = default)
         {
+            return CreateFamilyAsync(Guid.NewGuid().ToString(), subject, authType, serializedClaims, serializedRoles, cancellationToken);
+        }
+
+        // The one creation path. The family id is a parameter so the OAuth server can choose it when it issues a code, and
+        // invalidate whatever that code's first redemption issued if the code is presented again.
+        private async Task<RefreshTokenCreationResult> CreateFamilyAsync(
+            string familyId,
+            string subject,
+            string authType,
+            string? serializedClaims,
+            string? serializedRoles,
+            CancellationToken cancellationToken)
+        {
             string rawToken = GenerateToken();
             string tokenHash = HashToken(rawToken);
-            string familyId = Guid.NewGuid().ToString();
             DateTime now = _timeProvider.GetUtcNow().UtcDateTime;
 
             StoredRefreshToken storedToken = new StoredRefreshToken
@@ -150,7 +162,7 @@ namespace EasyReasy.Auth
         }
 
         /// <inheritdoc />
-        public async Task<SessionStartResult> StartSessionAsync(
+        public Task<SessionStartResult> StartSessionAsync(
             IJwtTokenService jwtTokenService,
             string subject,
             string authType,
@@ -158,6 +170,31 @@ namespace EasyReasy.Auth
             IEnumerable<string> roles,
             CancellationToken cancellationToken = default)
         {
+            return StartSessionWithFamilyAsync(Guid.NewGuid().ToString(), jwtTokenService, subject, authType, claims, roles, cancellationToken);
+        }
+
+        /// <summary>
+        /// <see cref="StartSessionAsync(IJwtTokenService, string, string, IEnumerable{Claim}, IEnumerable{string}, CancellationToken)"/>
+        /// with a family id the caller chose: the OAuth server's, which records it on the authorization code.
+        /// </summary>
+        /// <param name="familyId">The family id to create.</param>
+        /// <param name="jwtTokenService">The JWT token service used to create the first access token.</param>
+        /// <param name="subject">The subject the session is for.</param>
+        /// <param name="authType">The authentication type.</param>
+        /// <param name="claims">The additional claims the session's tokens carry.</param>
+        /// <param name="roles">The roles the session's tokens carry.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
+        /// <returns>The token pair and the family identifier.</returns>
+        internal async Task<SessionStartResult> StartSessionWithFamilyAsync(
+            string familyId,
+            IJwtTokenService jwtTokenService,
+            string subject,
+            string authType,
+            IEnumerable<Claim> claims,
+            IEnumerable<string> roles,
+            CancellationToken cancellationToken)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(familyId);
             ArgumentNullException.ThrowIfNull(jwtTokenService);
             ArgumentException.ThrowIfNullOrWhiteSpace(subject);
             ArgumentException.ThrowIfNullOrWhiteSpace(authType);
@@ -168,7 +205,7 @@ namespace EasyReasy.Auth
             string? serializedClaims = RefreshTokenClaims.SerializeClaims(WithoutFamilyIdClaim(claims));
             string? serializedRoles = RefreshTokenClaims.SerializeRoles(roles);
 
-            RefreshTokenCreationResult family = await CreateRefreshTokenWithFamilyAsync(subject, authType, serializedClaims, serializedRoles, cancellationToken);
+            RefreshTokenCreationResult family = await CreateFamilyAsync(familyId, subject, authType, serializedClaims, serializedRoles, cancellationToken);
 
             // The first token is built from the stored form, exactly what a refresh reads back, so nothing the store
             // does not keep (a claim's value type, say) can make it differ from a refreshed token.
@@ -474,15 +511,12 @@ namespace EasyReasy.Auth
         /// <returns>The lowercase hexadecimal SHA-256 hash.</returns>
         internal static string HashToken(string token)
         {
-            byte[] bytes = Encoding.UTF8.GetBytes(token);
-            byte[] hash = SHA256.HashData(bytes);
-            return Convert.ToHexString(hash).ToLowerInvariant();
+            return SecureToken.Hash(token);
         }
 
         private static string GenerateToken()
         {
-            byte[] tokenBytes = RandomNumberGenerator.GetBytes(32);
-            return Base64UrlEncoding.Encode(tokenBytes);
+            return SecureToken.Generate();
         }
     }
 }

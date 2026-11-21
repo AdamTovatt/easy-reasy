@@ -219,7 +219,7 @@ namespace EasyReasy.Auth
             // a deployment the browser will refuse should fail at construction rather than at its first
             // registration. Loopback is the exception the platform itself makes — a development origin over
             // http is a secure context, which is what lets a dev deployment work at all.
-            if (uri.Scheme == Uri.UriSchemeHttp && !IsLoopbackOrigin(uri))
+            if (!SecureContextUrl.IsSecureContext(uri))
             {
                 return null;
             }
@@ -244,28 +244,6 @@ namespace EasyReasy.Auth
 
             string authority = uri.IsDefaultPort ? host : $"{host}:{uri.Port}";
             return $"{uri.Scheme}://{authority}";
-        }
-
-        /// <summary>
-        /// Whether an origin's host is one the platform treats as a secure context without TLS.
-        /// </summary>
-        /// <remarks>
-        /// The set the secure-contexts specification calls potentially trustworthy by virtue of being
-        /// local: the loopback addresses, and the name <c>localhost</c> along with anything under it.
-        /// <see cref="Uri.IsLoopback"/> covers 127.0.0.0/8, ::1 and <c>localhost</c> itself but not a
-        /// subdomain of it, and browsers do treat <c>app.localhost</c> as trustworthy — so accepting only
-        /// what that property reports would refuse a development origin the browser would have run, which
-        /// is the same mistake as accepting one it would not.
-        /// </remarks>
-        private static bool IsLoopbackOrigin(Uri uri)
-        {
-            if (uri.IsLoopback)
-            {
-                return true;
-            }
-
-            string host = uri.IdnHost.ToLowerInvariant();
-            return host.EndsWith(".localhost", StringComparison.Ordinal);
         }
 
         /// <summary>

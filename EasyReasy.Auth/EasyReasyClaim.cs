@@ -37,5 +37,11 @@ namespace EasyReasy.Auth
         /// <see cref="IRefreshTokenService.RetireFamilyAsync"/>.
         /// </summary>
         RefreshFamilyId,
+
+        /// <summary>
+        /// OAuth client id claim (claim type <see cref="EasyReasyClaimTypes.ClientId"/>), present only on a token the OAuth
+        /// authorization server issued to a client.
+        /// </summary>
+        ClientId,
     }
 }
