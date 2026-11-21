@@ -75,7 +75,7 @@ namespace EasyReasy.Auth.Tests
 
         private StoredRefreshToken StoredRowOf(string rawRefreshToken)
         {
-            return _store.Tokens[RefreshTokenService.HashToken(rawRefreshToken)];
+            return _store.Tokens[SecureToken.Hash(rawRefreshToken)];
         }
 
         [TestMethod]
@@ -239,6 +239,21 @@ namespace EasyReasy.Auth.Tests
 
             Assert.IsTrue(StoredRowOf(first.AuthResponse.RefreshToken!).IsInvalidated);
             Assert.IsFalse(StoredRowOf(second.AuthResponse.RefreshToken!).IsInvalidated);
+        }
+
+        [TestMethod]
+        public async Task StartSessionAsync_WithSingleSessionPolicyAndClaimsThatCannotBeStored_ThrowsAndKeepsTheEarlierSession()
+        {
+            RefreshTokenService service = CreateService(concurrentSessionPolicy: ConcurrentSessionPolicy.SingleSession);
+            JwtTokenService jwtTokenService = CreateJwtTokenService();
+            SessionStartResult earlier = await service.StartSessionAsync(jwtTokenService, "user-1", "user", SignInClaims(), SignInRoles);
+            List<Claim> claimsWithANull = [new Claim("active_org", "org-7"), null!];
+
+            await Assert.ThrowsExceptionAsync<NullReferenceException>(
+                () => service.StartSessionAsync(jwtTokenService, "user-1", "user", claimsWithANull, SignInRoles));
+
+            Assert.IsFalse(StoredRowOf(earlier.AuthResponse.RefreshToken!).IsInvalidated);
+            Assert.AreEqual(1, _store.Tokens.Count);
         }
 
         [DataTestMethod]

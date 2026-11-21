@@ -34,7 +34,7 @@ namespace EasyReasy.Auth.Tests
             Assert.IsFalse(string.IsNullOrEmpty(rawToken));
             Assert.AreEqual(1, _store.Tokens.Count);
 
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             Assert.IsTrue(_store.Tokens.ContainsKey(hash));
 
             StoredRefreshToken stored = _store.Tokens[hash];
@@ -50,8 +50,8 @@ namespace EasyReasy.Auth.Tests
             string token1 = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
             string token2 = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
 
-            string hash1 = RefreshTokenService.HashToken(token1);
-            string hash2 = RefreshTokenService.HashToken(token2);
+            string hash1 = SecureToken.Hash(token1);
+            string hash2 = SecureToken.Hash(token2);
 
             Assert.AreNotEqual(_store.Tokens[hash1].FamilyId, _store.Tokens[hash2].FamilyId);
         }
@@ -66,7 +66,7 @@ namespace EasyReasy.Auth.Tests
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
             DateTime after = DateTime.UtcNow;
 
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             StoredRefreshToken stored = _store.Tokens[hash];
 
             Assert.IsTrue(stored.ExpiresAt >= before.Add(customLifetime));
@@ -80,7 +80,7 @@ namespace EasyReasy.Auth.Tests
             string firstToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
             await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
 
-            string firstHash = RefreshTokenService.HashToken(firstToken);
+            string firstHash = SecureToken.Hash(firstToken);
             Assert.IsFalse(_store.Tokens[firstHash].IsInvalidated);
             Assert.AreEqual(2, _store.Tokens.Count, "both sessions should coexist under AllowMultiple");
         }
@@ -93,8 +93,8 @@ namespace EasyReasy.Auth.Tests
             string firstToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
             string secondToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
 
-            string firstHash = RefreshTokenService.HashToken(firstToken);
-            string secondHash = RefreshTokenService.HashToken(secondToken);
+            string firstHash = SecureToken.Hash(firstToken);
+            string secondHash = SecureToken.Hash(secondToken);
 
             Assert.IsTrue(_store.Tokens[firstHash].IsInvalidated, "The earlier session should have been revoked.");
             Assert.IsFalse(_store.Tokens[secondHash].IsInvalidated, "The newest session must survive its own enforcement.");
@@ -124,7 +124,7 @@ namespace EasyReasy.Auth.Tests
             string otherUserToken = await service.CreateRefreshTokenAsync("user-2", "user", null, null);
             await service.CreateRefreshTokenAsync("user-1", "user", null, null);
 
-            string otherHash = RefreshTokenService.HashToken(otherUserToken);
+            string otherHash = SecureToken.Hash(otherUserToken);
             Assert.IsFalse(_store.Tokens[otherHash].IsInvalidated);
         }
 
@@ -172,7 +172,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RefreshAsync_WithValidToken_ShouldMarkOldTokenAsConsumed()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string oldHash = RefreshTokenService.HashToken(rawToken);
+            string oldHash = SecureToken.Hash(rawToken);
 
             await _service.RefreshAsync(rawToken, _jwtTokenService);
 
@@ -184,12 +184,12 @@ namespace EasyReasy.Auth.Tests
         public async Task RefreshAsync_WithValidToken_ShouldPreserveFamilyId()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string oldHash = RefreshTokenService.HashToken(rawToken);
+            string oldHash = SecureToken.Hash(rawToken);
             string originalFamilyId = _store.Tokens[oldHash].FamilyId;
 
             RefreshResult result = await _service.RefreshAsync(rawToken, _jwtTokenService);
 
-            string newHash = RefreshTokenService.HashToken(result.NewRefreshToken!);
+            string newHash = SecureToken.Hash(result.NewRefreshToken!);
             Assert.AreEqual(originalFamilyId, _store.Tokens[newHash].FamilyId);
         }
 
@@ -209,7 +209,7 @@ namespace EasyReasy.Auth.Tests
             Assert.IsTrue(result.Success);
 
             // The new stored token should preserve the serialized claims and roles
-            string newHash = RefreshTokenService.HashToken(result.NewRefreshToken!);
+            string newHash = SecureToken.Hash(result.NewRefreshToken!);
             StoredRefreshToken newStored = _store.Tokens[newHash];
             Assert.AreEqual(serializedClaims, newStored.SerializedClaims);
             Assert.AreEqual(serializedRoles, newStored.SerializedRoles);
@@ -244,7 +244,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RefreshAsync_WithInvalidatedToken_ShouldReturnTokenInvalidated()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
 
             // Manually invalidate the family
             await _store.InvalidateFamilyAsync(_store.Tokens[hash].FamilyId);
@@ -259,7 +259,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RefreshAsync_WithConsumedToken_ShouldDetectTheftAndInvalidateFamily()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             string familyId = _store.Tokens[hash].FamilyId;
 
             // First refresh — should succeed
@@ -305,22 +305,10 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
-        public void HashToken_ShouldReturnConsistentResults()
-        {
-            string token = "test-token-value";
-
-            string hash1 = RefreshTokenService.HashToken(token);
-            string hash2 = RefreshTokenService.HashToken(token);
-
-            Assert.AreEqual(hash1, hash2);
-            Assert.AreEqual(64, hash1.Length); // SHA-256 produces 32 bytes = 64 hex chars
-        }
-
-        [TestMethod]
         public async Task LogoutAsync_WithValidToken_ShouldInvalidateFamily()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             string familyId = _store.Tokens[hash].FamilyId;
 
             await _service.LogoutAsync(rawToken);
@@ -361,7 +349,7 @@ namespace EasyReasy.Auth.Tests
             await _service.LogoutAsync(rawToken);
             await _service.LogoutAsync(rawToken);
 
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             Assert.IsTrue(_store.Tokens[hash].IsInvalidated);
         }
 
@@ -369,7 +357,7 @@ namespace EasyReasy.Auth.Tests
         public async Task LogoutAsync_AfterRotations_ShouldInvalidateEntireFamily()
         {
             string currentToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string originalHash = RefreshTokenService.HashToken(currentToken);
+            string originalHash = SecureToken.Hash(currentToken);
             string familyId = _store.Tokens[originalHash].FamilyId;
 
             // Rotate a couple of times
@@ -396,7 +384,7 @@ namespace EasyReasy.Auth.Tests
         public async Task LogoutAsync_WithConsumedButNotInvalidatedToken_ShouldInvalidateFamily()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string originalHash = RefreshTokenService.HashToken(rawToken);
+            string originalHash = SecureToken.Hash(rawToken);
             string familyId = _store.Tokens[originalHash].FamilyId;
 
             // Rotate once — the original token is now consumed but the family is not invalidated
@@ -425,7 +413,7 @@ namespace EasyReasy.Auth.Tests
 
             await _service.LogoutAsync(userOneToken);
 
-            string userTwoHash = RefreshTokenService.HashToken(userTwoToken);
+            string userTwoHash = SecureToken.Hash(userTwoToken);
             Assert.IsFalse(_store.Tokens[userTwoHash].IsInvalidated);
         }
 
@@ -439,10 +427,10 @@ namespace EasyReasy.Auth.Tests
 
             await _service.InvalidateAllSessionsAsync("user-1");
 
-            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(userOneTokenA)].IsInvalidated);
-            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(userOneTokenB)].IsInvalidated);
-            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(userOneTokenC)].IsInvalidated);
-            Assert.IsFalse(_store.Tokens[RefreshTokenService.HashToken(userTwoToken)].IsInvalidated);
+            Assert.IsTrue(_store.Tokens[SecureToken.Hash(userOneTokenA)].IsInvalidated);
+            Assert.IsTrue(_store.Tokens[SecureToken.Hash(userOneTokenB)].IsInvalidated);
+            Assert.IsTrue(_store.Tokens[SecureToken.Hash(userOneTokenC)].IsInvalidated);
+            Assert.IsFalse(_store.Tokens[SecureToken.Hash(userTwoToken)].IsInvalidated);
         }
 
         [TestMethod]
@@ -480,7 +468,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RefreshAsync_WithValidToken_ShouldPopulateSubjectAndFamilyIdOnResult()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             string expectedFamilyId = _store.Tokens[hash].FamilyId;
 
             RefreshResult result = await _service.RefreshAsync(rawToken, _jwtTokenService);
@@ -504,7 +492,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RefreshAsync_WithInvalidatedToken_ShouldPopulateSubjectAndFamilyIdOnResult()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             string expectedFamilyId = _store.Tokens[hash].FamilyId;
 
             await _store.InvalidateFamilyAsync(expectedFamilyId);
@@ -521,7 +509,7 @@ namespace EasyReasy.Auth.Tests
         {
             RefreshTokenService shortLivedService = new RefreshTokenService(_store, refreshTokenLifetime: TimeSpan.FromMilliseconds(1));
             string rawToken = await shortLivedService.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             string expectedFamilyId = _store.Tokens[hash].FamilyId;
 
             await Task.Delay(50);
@@ -537,7 +525,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RefreshAsync_WithConsumedToken_ShouldPopulateSubjectAndFamilyIdOnTheftResult()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             string expectedFamilyId = _store.Tokens[hash].FamilyId;
 
             await _service.RefreshAsync(rawToken, _jwtTokenService);
@@ -553,7 +541,7 @@ namespace EasyReasy.Auth.Tests
         public async Task LogoutAsync_WithKnownToken_ShouldReturnKnownResultWithSubjectAndFamilyId()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             string expectedFamilyId = _store.Tokens[hash].FamilyId;
 
             LogoutResult result = await _service.LogoutAsync(rawToken);
@@ -676,7 +664,7 @@ namespace EasyReasy.Auth.Tests
         {
             RefreshTokenCreationResult result = await _service.CreateRefreshTokenWithFamilyAsync("user-1", "user", null, null);
 
-            string hash = RefreshTokenService.HashToken(result.RawToken);
+            string hash = SecureToken.Hash(result.RawToken);
             Assert.IsTrue(_store.Tokens.ContainsKey(hash), "the returned raw token should hash to a stored entry");
             Assert.AreEqual(_store.Tokens[hash].FamilyId, result.FamilyId);
         }
@@ -686,9 +674,9 @@ namespace EasyReasy.Auth.Tests
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
 
-            // The store is keyed by HashToken(rawToken), so a hit proves the legacy method returned the raw
+            // The store is keyed by SecureToken.Hash(rawToken), so a hit proves the legacy method returned the raw
             // token itself (not the hash or the family id, neither of which would hash to this key).
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
             Assert.IsTrue(_store.Tokens.ContainsKey(hash), "the legacy method must return the raw token");
         }
 
@@ -696,7 +684,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RefreshAsync_AfterRefresh_AccessTokenCarriesSingleFamilyIdClaimEqualToFamilyId()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+            string familyId = _store.Tokens[SecureToken.Hash(rawToken)].FamilyId;
 
             RefreshResult result = await _service.RefreshAsync(rawToken, _jwtTokenService);
 
@@ -710,7 +698,7 @@ namespace EasyReasy.Auth.Tests
         public async Task RefreshAsync_AcrossRotation_FamilyIdClaimUnchanged()
         {
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+            string familyId = _store.Tokens[SecureToken.Hash(rawToken)].FamilyId;
 
             RefreshResult first = await _service.RefreshAsync(rawToken, _jwtTokenService);
             RefreshResult second = await _service.RefreshAsync(first.NewRefreshToken!, _jwtTokenService);
@@ -726,7 +714,7 @@ namespace EasyReasy.Auth.Tests
         {
             string? spoofedClaims = RefreshTokenClaims.SerializeClaims(new List<Claim> { new Claim("family_id", "attacker-supplied") });
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", spoofedClaims, null);
-            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+            string familyId = _store.Tokens[SecureToken.Hash(rawToken)].FamilyId;
 
             RefreshResult result = await _service.RefreshAsync(rawToken, _jwtTokenService);
 
@@ -743,11 +731,11 @@ namespace EasyReasy.Auth.Tests
             RefreshTokenService service = new RefreshTokenService(_store, auditLogger: auditLogger);
 
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+            string familyId = _store.Tokens[SecureToken.Hash(rawToken)].FamilyId;
 
             await service.RetireFamilyAsync(familyId, "user-1");
 
-            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(rawToken)].IsInvalidated);
+            Assert.IsTrue(_store.Tokens[SecureToken.Hash(rawToken)].IsInvalidated);
             Assert.AreEqual(1, _store.InvalidatedFamilyIds.Count(id => id == familyId), "InvalidateFamilyAsync should be called exactly once for the family");
             Assert.AreEqual(0, auditLogger.LogoutCalls.Count, "a supersession must not be recorded as a logout");
             Assert.AreEqual(1, auditLogger.SessionSupersededCalls.Count);
@@ -762,13 +750,13 @@ namespace EasyReasy.Auth.Tests
             string otherDeviceToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
             string otherUserToken = await _service.CreateRefreshTokenAsync("user-2", "user", null, null);
 
-            string priorFamilyId = _store.Tokens[RefreshTokenService.HashToken(priorToken)].FamilyId;
+            string priorFamilyId = _store.Tokens[SecureToken.Hash(priorToken)].FamilyId;
 
             await _service.RetireFamilyAsync(priorFamilyId, "user-1");
 
-            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(priorToken)].IsInvalidated);
-            Assert.IsFalse(_store.Tokens[RefreshTokenService.HashToken(otherDeviceToken)].IsInvalidated, "the subject's other device must stay live");
-            Assert.IsFalse(_store.Tokens[RefreshTokenService.HashToken(otherUserToken)].IsInvalidated, "another subject must stay live");
+            Assert.IsTrue(_store.Tokens[SecureToken.Hash(priorToken)].IsInvalidated);
+            Assert.IsFalse(_store.Tokens[SecureToken.Hash(otherDeviceToken)].IsInvalidated, "the subject's other device must stay live");
+            Assert.IsFalse(_store.Tokens[SecureToken.Hash(otherUserToken)].IsInvalidated, "another subject must stay live");
         }
 
         [TestMethod]
@@ -776,11 +764,11 @@ namespace EasyReasy.Auth.Tests
         {
             // The default _service has no audit logger — the hook block must be skipped, not throw.
             string rawToken = await _service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+            string familyId = _store.Tokens[SecureToken.Hash(rawToken)].FamilyId;
 
             await _service.RetireFamilyAsync(familyId, "user-1");
 
-            Assert.IsTrue(_store.Tokens[RefreshTokenService.HashToken(rawToken)].IsInvalidated);
+            Assert.IsTrue(_store.Tokens[SecureToken.Hash(rawToken)].IsInvalidated);
         }
 
         [TestMethod]

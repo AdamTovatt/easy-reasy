@@ -115,7 +115,8 @@ Only the `none` attestation format is written.
 [TestMethod]
 public async Task Connect_AgentForAPerson_CarriesTheOrganization()
 {
-    // Program.cs registered AddEasyReasyOAuthServer<MyOAuthStore, MyGrantHandler>; the test host replaces the store:
+    // Program.cs registered AddEasyReasyOAuthServer<MyOAuthStore, MyGrantHandler> and opened /api/projects to
+    // connections with .AllowOAuthClients(); the test host replaces the store:
     //   services.AddSingleton<IOAuthServerStore>(new InMemoryOAuthServerStore());
     OAuthTestClient oauth = new OAuthTestClient(client);     // a TestServer client: it does not follow redirects
 

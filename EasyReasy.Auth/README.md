@@ -399,6 +399,8 @@ public class MyRefreshTokenStore : IRefreshTokenStore
 }
 ```
 
+The first four members come from `IRefreshTokenRotationStore`, which `IRefreshTokenStore` extends: the operations creating and rotating a family need. The OAuth server's client refresh tokens implement that interface too, so they rotate through the same code.
+
 2. **Register in `Program.cs`:**
 ```csharp
 builder.Services.AddRefreshTokenService<MyRefreshTokenStore>(
@@ -1485,7 +1487,7 @@ Your application can be an OAuth 2.1 authorization server, so an MCP client (Cla
 
 **Your application owns sign-in and consent.** The authorization endpoint sends the browser to your consent page. The page signs the person in with your own sign-in (second factor included), shows what is connecting, and approves through an endpoint that calls your `IOAuthGrantHandler`. The handler decides whether this person may approve this connection, records the grant, and returns who the tokens are for and what they carry. The tokens are this library's own signed JWTs: the claims your handler returned, plus `client_id` and `family_id`.
 
-⚠️ **A client's access token is a full token of its subject.** It passes `RequireAuthorization()` and every policy its claims satisfy, exactly as a browser session's token with the same claims would. Give the grant only the claims the connection should act with, and guard each endpoint a connection must not reach (account settings, managing connections, anything a person should do themselves) with `HttpContext.GetOAuthClientId() == null` or a policy that checks it. The consent endpoints do this themselves.
+**A connection reaches only the endpoints you open to it.** With the server registered, the JWT bearer rejects a client's access token (401 `invalid_token`) at every endpoint that does not carry `[AllowOAuthClients]` (or `.AllowOAuthClients()` on a minimal API endpoint or route group), so an endpoint you forget to think about stays closed to connections. On an endpoint you do open, the token is a full token of its subject: it passes `RequireAuthorization()` and every policy its claims satisfy, as a browser session's token with the same claims would. So give the grant only the claims the connection should act with, and open only the endpoints a connection should reach, never account settings, managing connections, or anything a person should do themselves.
 
 #### Setup
 
@@ -1506,6 +1508,8 @@ builder.Services.AddEasyReasyOAuthServer<MyOAuthStore, MyGrantHandler>(new OAuth
 WebApplication app = builder.Build();
 app.UseEasyReasyAuth();
 app.AddOAuthServerEndpoints();
+
+app.MapGroup("/mcp").RequireAuthorization().AllowOAuthClients();   // what connections may call
 ```
 
 `AddEasyReasyOAuthServer` validates the options and throws one `ArgumentException` listing every problem. `AddOAuthServerEndpoints` throws at startup if the server or `AddEasyReasyAuth` is not registered. The store and handler are registered as scoped. `OAuthServerOptions` is a record, so a variant (another environment, a test) is `options with { ... }`.
@@ -1537,7 +1541,7 @@ app.AddOAuthServerEndpoints();
 | `POST /oauth/token` | the client | `authorization_code` and `refresh_token`, each with an optional `resource` (RFC 8707) that must be this server's, and for a code the authorization request's. JSON `access_token`, `token_type: "Bearer"`, `expires_in`, `refresh_token`. |
 | `POST /oauth/revoke` | the client | RFC 7009. 200 for any token, known or not; 401 `invalid_client` for a client that does not authenticate; 400 `invalid_request` for a body that is not a form or names no `token`. |
 
-Every response is `Cache-Control: no-store`. The paths are constants on `OAuthServerPaths`. The three request endpoints take your app's own access token, with auth type `user` (`EasyReasyAuthTypes.User`) and no `client_id` claim: a client's token and an API key's are refused with 403, so no connection can approve a connection. The others are anonymous.
+Every response is `Cache-Control: no-store`. The paths are constants on `OAuthServerPaths`. The three request endpoints take your app's own access token, with auth type `user` (`EasyReasyAuthTypes.User`) and no `client_id` claim: a client's token is rejected by the bearer (401), since these endpoints are never open to connections, and refused by their policy as well (403); an API key's is refused with 403. So no connection can approve a connection. The others are anonymous.
 
 **The 401.** Registering the server sets the JWT bearer's challenge, so every 401 your app answers carries `WWW-Authenticate: Bearer resource_metadata="https://app.example/.well-known/oauth-protected-resource/mcp"` (plus `scope="..."` when `ScopesSupported` is set, and the bearer's `error` when a token was rejected). That is how an MCP client finds the server. A later `Configure<JwtBearerOptions>` of your own can change it.
 
@@ -1643,7 +1647,16 @@ Every refresh token under the grant stops working at once, and every code of it 
 
 #### Calling with a client's token
 
-A client's access token is validated by the same JWT bearer as every other token. `HttpContext.GetOAuthClientId()` (or `GetClaimValue(EasyReasyClaim.ClientId)`) returns its `client_id`, and null for a first-party token, so an endpoint can tell a connection from a browser session. `GetRefreshFamilyId()` returns the connection's family id, which names a family in `IOAuthServerStore`, not in `IRefreshTokenStore`: `RetireFamilyAsync` with it does nothing.
+A client's access token is validated by the same JWT bearer as every other token. Its audience (`aud`) is `Resource`, as RFC 8707 and the MCP spec ask, not your app's `Audience`. Registering the server gives the bearer an audience check of its own: a token carrying `client_id` is valid only with `Resource` as its audience and only at an endpoint you opened to connections, whether or not your app sets an `Audience` and whether or not it calls `UseEasyReasyAuth`. Every other token keeps your app's audience rule, so a first-party token is not accepted with `Resource` as its audience when `Audience` is set. An audience validator of your own, set in `Configure`, is kept for those other tokens; one replaced in a later `PostConfigure` fails startup.
+
+```csharp
+app.MapGet("/api/projects", ListProjects).RequireAuthorization().AllowOAuthClients();
+
+[AllowOAuthClients]                              // a controller, or one action
+public class ProjectsController : ControllerBase { ... }
+```
+
+Everywhere else the token is invalid: a protected endpoint answers 401 with `WWW-Authenticate: Bearer error="invalid_token"`, and an anonymous one runs as for an anonymous caller. `[AllowOAuthClients]` opens the endpoint and nothing more: its own authorization still applies, so a connection that lacks a role an opened endpoint requires gets 403. The check reads the endpoint the request was routed to, so routing must run before authentication. A minimal-hosting app routes first on its own; one that calls `UseRouting()` after `UseAuthentication()` (or `UseEasyReasyAuth()`) has no endpoint chosen yet, and every connection's token is refused. The consent endpoints are never open to connections. `HttpContext.GetOAuthClientId()` (or `GetClaimValue(EasyReasyClaim.ClientId)`) returns its `client_id`, and null for a first-party token, so an endpoint can tell a connection from a browser session. `GetRefreshFamilyId()` returns the connection's family id, which names a family in `IOAuthServerStore`, not in `IRefreshTokenStore`: `RetireFamilyAsync` with it does nothing.
 
 #### Clients
 
@@ -1824,7 +1837,7 @@ The progressive delay middleware helps protect your API from brute-force attacks
 4. **Set `TrustedProxyCount`**: If behind reverse proxies, so the middleware sees real client IPs
 5. **Access claims and roles via extension methods**: Use `GetUserId()`, `GetTenantId()`, `GetRoles()`, and `GetClaimValue()` for convenience
 6. **Implement atomic `MarkAsConsumedAsync`**: If using refresh tokens, ensure your store prevents concurrent redemption
-7. **Keep connections out of person-only endpoints**: With the OAuth server, check `GetOAuthClientId()` on endpoints a client's token must not reach
+7. **Open only what connections need**: With the OAuth server, a client's token reaches only endpoints marked `[AllowOAuthClients]` or `.AllowOAuthClients()`; mark the API a connection should use, and never account settings, managing connections or anything a person should do themselves
 
 ---
 
@@ -1832,11 +1845,18 @@ For more details, see XML comments in the code or explore the source. This libra
 
 ## Migration from 5.16.0
 
-Version 5.17.0 adds an OAuth 2.1 authorization server. It is opt-in: nothing changes until you call `AddEasyReasyOAuthServer`. Nothing is removed. For an app that does not register the server, the one change in behaviour is a fix to the refresh race below, which asks one thing of an `IRefreshTokenStore`.
+Version 5.17.0 adds an OAuth 2.1 authorization server. It is opt-in: its endpoints, tokens and their confinement exist only once you call `AddEasyReasyOAuthServer`. Nothing is removed. Two changes reach every app: `IRefreshTokenStore` now extends `IRefreshTokenRotationStore`, which breaks only a store that implements its methods explicitly, and a fix to the refresh race, which asks one thing of an `IRefreshTokenStore`. Both are below.
 
 ### New: the OAuth 2.1 authorization server
 - **`AddEasyReasyOAuthServer<TStore, THandler>(OAuthServerOptions)`** registers it and **`AddOAuthServerEndpoints()`** maps its endpoints. You implement **`IOAuthServerStore`** (clients, pending requests, codes and refresh tokens, kept apart from `IRefreshTokenStore`) and **`IOAuthGrantHandler`** (approval on your consent page, and the claims on every refresh). **`IOAuthGrantService.RevokeGrantAsync`** ends a connection. See [section 17](#17-oauth-21-authorization-server-mcp-clients-and-other-systems).
 - **`EasyReasyClaimTypes.ClientId`**, **`EasyReasyClaim.ClientId`** and **`HttpContext.GetOAuthClientId()`** name and read the `client_id` claim a client's token carries.
+- **`[AllowOAuthClients]`** and **`.AllowOAuthClients()`** open an endpoint, or a route group, to connections' tokens, which the bearer rejects everywhere else. A connection's access token carries `Resource` as its audience. Routing must run before authentication, as it does in a minimal-hosting app.
+
+### Changed: `IRefreshTokenStore` extends `IRefreshTokenRotationStore`
+- **`IRefreshTokenRotationStore`** holds the four operations creating and rotating a family need (`StoreAsync`, `GetByTokenHashAsync`, `MarkAsConsumedAsync`, `InvalidateFamilyAsync`), moved out of `IRefreshTokenStore`, which now extends it and keeps `InvalidateAllFamiliesForUserAsync`. The OAuth server rotates a client's refresh tokens over the narrow interface, so it implements every member it is given. A store that implements the methods as public members compiles unchanged; one that implements them explicitly (`Task IRefreshTokenStore.StoreAsync(...)`) names `IRefreshTokenRotationStore` instead.
+
+### Changed, with the server registered: the bearer's audience check
+- **`AddEasyReasyOAuthServer` sets `TokenValidationParameters.AudienceValidator`**, wrapping one you set in `Configure`. A token carrying a `client_id` claim is valid only with `Resource` as its audience, at an endpoint with `[AllowOAuthClients]`; every other token keeps your rule. A token your app minted with a `client_id` claim of its own is held to the connection rule too. Replacing the validator in a later `PostConfigure` fails startup.
 
 ### New: `EasyReasyAuthTypes`
 - **`User` (`"user"`) and `ApiKey` (`"apikey"`)**, the auth types the `UserOnly` and `ApiKeyOnly` policies require, as constants. The values are unchanged.

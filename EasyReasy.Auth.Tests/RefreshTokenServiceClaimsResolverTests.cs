@@ -61,7 +61,7 @@ namespace EasyReasy.Auth.Tests
             RefreshResult result = await service.RefreshAsync(rawToken, _jwtTokenService);
 
             Assert.IsTrue(result.Success);
-            StoredRefreshToken newStored = _store.Tokens[RefreshTokenService.HashToken(result.NewRefreshToken!)];
+            StoredRefreshToken newStored = _store.Tokens[SecureToken.Hash(result.NewRefreshToken!)];
             Assert.AreEqual(serializedClaims, newStored.SerializedClaims);
             Assert.AreEqual(serializedRoles, newStored.SerializedRoles);
         }
@@ -163,7 +163,7 @@ namespace EasyReasy.Auth.Tests
 
             RefreshResult result = await service.RefreshAsync(rawToken, _jwtTokenService);
 
-            StoredRefreshToken newStored = _store.Tokens[RefreshTokenService.HashToken(result.NewRefreshToken!)];
+            StoredRefreshToken newStored = _store.Tokens[SecureToken.Hash(result.NewRefreshToken!)];
             Assert.IsNull(newStored.SerializedClaims);
             Assert.IsNull(newStored.SerializedRoles);
         }
@@ -175,7 +175,7 @@ namespace EasyReasy.Auth.Tests
             RefreshTokenService service = BuildService(resolver);
 
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string expectedFamilyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+            string expectedFamilyId = _store.Tokens[SecureToken.Hash(rawToken)].FamilyId;
 
             RefreshResult result = await service.RefreshAsync(rawToken, _jwtTokenService);
 
@@ -192,7 +192,7 @@ namespace EasyReasy.Auth.Tests
             RefreshTokenService service = BuildService(resolver);
 
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
 
             await service.RefreshAsync(rawToken, _jwtTokenService);
 
@@ -241,7 +241,7 @@ namespace EasyReasy.Auth.Tests
             RefreshTokenService service = BuildService(resolver);
 
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string hash = RefreshTokenService.HashToken(rawToken);
+            string hash = SecureToken.Hash(rawToken);
 
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(
                 () => service.RefreshAsync(rawToken, _jwtTokenService));
@@ -257,7 +257,7 @@ namespace EasyReasy.Auth.Tests
             RefreshTokenService service = BuildService(resolver);
 
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string familyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+            string familyId = _store.Tokens[SecureToken.Hash(rawToken)].FamilyId;
 
             RefreshResult firstResult = await service.RefreshAsync(rawToken, _jwtTokenService);
             Assert.IsTrue(firstResult.Success);
@@ -375,7 +375,7 @@ namespace EasyReasy.Auth.Tests
             RefreshTokenService service = BuildService(resolver, auditLogger);
 
             string rawToken = await service.CreateRefreshTokenAsync("user-1", "user", null, null);
-            string expectedFamilyId = _store.Tokens[RefreshTokenService.HashToken(rawToken)].FamilyId;
+            string expectedFamilyId = _store.Tokens[SecureToken.Hash(rawToken)].FamilyId;
 
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(
                 () => service.RefreshAsync(rawToken, _jwtTokenService));

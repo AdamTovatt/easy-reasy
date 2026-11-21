@@ -1,3 +1,6 @@
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
 namespace EasyReasy.Auth
@@ -8,6 +11,35 @@ namespace EasyReasy.Auth
     /// </summary>
     internal static class OAuthServerClaims
     {
+        /// <summary>
+        /// Whether a principal was authenticated by a connection's token: one carrying a
+        /// <see cref="EasyReasyClaimTypes.ClientId"/> claim. With <see cref="IsConnection(SecurityToken)"/>, the one test of
+        /// it: for the endpoints a connection may reach and the consent endpoints it may never reach.
+        /// </summary>
+        /// <param name="user">The principal.</param>
+        /// <returns>Whether it is a connection.</returns>
+        public static bool IsConnection(ClaimsPrincipal user)
+        {
+            return user.HasClaim(claim => claim.Type == EasyReasyClaimTypes.ClientId);
+        }
+
+        /// <summary>
+        /// Whether a token being validated is a connection's, by the same claim. The bearer hands over a
+        /// <see cref="JsonWebToken"/>, or a <see cref="JwtSecurityToken"/> with the older validators; any other kind is
+        /// taken as a connection's, so a token the check cannot read is held to the stricter rule.
+        /// </summary>
+        /// <param name="token">The token.</param>
+        /// <returns>Whether it is a connection's.</returns>
+        public static bool IsConnection(SecurityToken token)
+        {
+            return token switch
+            {
+                JsonWebToken jsonWebToken => jsonWebToken.TryGetClaim(EasyReasyClaimTypes.ClientId, out _),
+                JwtSecurityToken jwtSecurityToken => jwtSecurityToken.Claims.Any(claim => claim.Type == EasyReasyClaimTypes.ClientId),
+                _ => true,
+            };
+        }
+
         /// <summary>
         /// The claims with the server's own taken out.
         /// </summary>

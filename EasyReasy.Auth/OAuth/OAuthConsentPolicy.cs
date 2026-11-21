@@ -9,7 +9,9 @@ namespace EasyReasy.Auth
     /// A client's own access token is refused, whatever auth type its grant carries, by its
     /// <see cref="EasyReasyClaimTypes.ClientId"/> claim: otherwise a connected client could send itself through
     /// <c>/oauth/authorize</c>, approve with its own token and widen its access, or mint a new grant ahead of a revocation.
-    /// An API key's token is refused by its auth type, since a key acts for no person who could consent.
+    /// An API key's token is refused by its auth type, since a key acts for no person who could consent. The consent
+    /// endpoints never opt in to connections, so the bearer's audience check rejects a client's token before
+    /// this policy runs; the policy refuses it as well, so neither alone keeps a connection out.
     /// </remarks>
     internal static class OAuthConsentPolicy
     {
@@ -22,7 +24,7 @@ namespace EasyReasy.Auth
             return new AuthorizationPolicyBuilder()
                 .RequireAuthenticatedUser()
                 .RequireClaim(EasyReasyClaimTypes.AuthType, EasyReasyAuthTypes.User)
-                .RequireAssertion(context => !context.User.HasClaim(claim => claim.Type == EasyReasyClaimTypes.ClientId))
+                .RequireAssertion(context => !OAuthServerClaims.IsConnection(context.User))
                 .Build();
         }
     }

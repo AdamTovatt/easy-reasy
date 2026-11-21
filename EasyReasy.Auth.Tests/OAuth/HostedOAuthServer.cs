@@ -12,8 +12,10 @@ namespace EasyReasy.Auth.Tests
     /// <summary>
     /// A real <see cref="WebApplication"/> serving the OAuth authorization server over a <see cref="TestServer"/>, with an
     /// in-memory store, a fake grant handler, a recording audit logger, a settable clock and a fake internet for metadata
-    /// documents. It also serves the first-party refresh endpoint, and <c>/api/me</c>, a protected endpoint that echoes the
-    /// caller's claims, so a test can use the tokens it gets.
+    /// documents. It also serves the first-party refresh endpoint, <c>/api/me</c>, a protected endpoint open to connections
+    /// that echoes the caller's claims, so a test can use the tokens it gets, and four more protected endpoints: one
+    /// not opened to connections, one opened by the attribute, one in a route group opened as a whole, and one opened
+    /// but requiring the admin role. <see cref="HostedOAuthServerSetup"/> changes how EasyReasy.Auth is registered and wired.
     /// </summary>
     internal sealed class HostedOAuthServer : IAsyncDisposable
     {
@@ -21,8 +23,14 @@ namespace EasyReasy.Auth.Tests
         public const string Resource = "https://app.example/mcp";
         public const string ConsentPageUrl = "/connect/approve";
         public const string MePath = "/api/me";
+        public const string FirstPartyOnlyPath = "/api/account";
+        public const string AttributeOpenedPath = "/api/opened-by-attribute";
+        public const string OpenedGroupPath = "/api/opened-group";
         public const string DefaultRedirectUri = "https://client.example/callback";
-        private const string Secret = "super_secret_key_12345_12345_12345";
+        public const string Secret = "super_secret_key_12345_12345_12345";
+        public const string JwtIssuer = "test-issuer";
+        public const string Audience = "test-api";
+        public const string OpenedAdminPath = "/api/opened-admin";
 
         private HostedOAuthServer(WebApplication app, HttpClient client, Parts parts)
         {
@@ -36,6 +44,7 @@ namespace EasyReasy.Auth.Tests
             Clock = parts.Clock;
             MetadataDocuments = parts.MetadataDocuments;
             FirstPartyStore = parts.FirstPartyStore;
+            FirstPartyTokens = parts.FirstPartyTokens;
         }
 
         public WebApplication App { get; }
@@ -58,6 +67,12 @@ namespace EasyReasy.Auth.Tests
 
         public FakeRefreshTokenStore FirstPartyStore { get; }
 
+        /// <summary>
+        /// Issues the app's own tokens with the setup's audience, whether or not the app registered an
+        /// <see cref="IJwtTokenService"/>.
+        /// </summary>
+        public JwtTokenService FirstPartyTokens { get; }
+
         public static OAuthServerOptions DefaultOptions()
         {
             return new OAuthServerOptions
@@ -68,20 +83,30 @@ namespace EasyReasy.Auth.Tests
             };
         }
 
-        public static async Task<HostedOAuthServer> StartAsync(OAuthServerOptions? options = null, bool realMetadataDocumentFetch = false)
+        public static async Task<HostedOAuthServer> StartAsync(OAuthServerOptions? options = null, bool realMetadataDocumentFetch = false, HostedOAuthServerSetup? setup = null)
         {
-            Parts parts = new Parts();
+            setup ??= new HostedOAuthServerSetup();
+            Parts parts = new Parts(setup);
             WebApplicationBuilder builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
             builder.Logging.ClearProviders();
 
             builder.Services.AddSingleton<TimeProvider>(parts.Clock);
+            if (setup.OAuthServerRegisteredFirst)
+            {
+                builder.Services.AddEasyReasyOAuthServer<InMemoryOAuthServerStore, FakeOAuthGrantHandler>(options ?? DefaultOptions());
+            }
+
             builder.Services.AddEasyReasyAuth(Secret, authOptions =>
             {
-                authOptions.Issuer = "test-issuer";
-                authOptions.Audience = "test-api";
+                authOptions.Issuer = JwtIssuer;
+                authOptions.Audience = setup.Audience;
+                authOptions.RegisterJwtTokenService = setup.RegisterJwtTokenService;
             });
-            builder.Services.AddEasyReasyOAuthServer<InMemoryOAuthServerStore, FakeOAuthGrantHandler>(options ?? DefaultOptions());
+            if (!setup.OAuthServerRegisteredFirst)
+            {
+                builder.Services.AddEasyReasyOAuthServer<InMemoryOAuthServerStore, FakeOAuthGrantHandler>(options ?? DefaultOptions());
+            }
 
             // The registrations above are the app's types; these instances replace them so a test can see inside.
             builder.Services.AddSingleton<IOAuthServerStore>(parts.Interceptor);
@@ -99,9 +124,28 @@ namespace EasyReasy.Auth.Tests
                 auditLogger: provider.GetService<IAuthAuditLogger>()));
 
             WebApplication app = builder.Build();
-            app.UseEasyReasyAuth(delay => delay.Enabled = false);
+            switch (setup.Pipeline)
+            {
+                case HostedOAuthServerPipeline.UseEasyReasyAuth:
+                    app.UseEasyReasyAuth(delay => delay.Enabled = false);
+                    break;
+                case HostedOAuthServerPipeline.AuthenticationAndAuthorizationByHand:
+                    app.UseAuthentication();
+                    app.UseAuthorization();
+                    break;
+                case HostedOAuthServerPipeline.RoutingAfterAuthentication:
+                    app.UseAuthentication();
+                    app.UseRouting();
+                    app.UseAuthorization();
+                    break;
+            }
+
             app.AddOAuthServerEndpoints();
-            app.AddRefreshEndpoint();
+            if (setup.RegisterJwtTokenService)
+            {
+                app.AddRefreshEndpoint();   // it issues through the registered IJwtTokenService
+            }
+
             app.MapGet(MePath, (HttpContext httpContext) => Results.Json(new Dictionary<string, object?>
             {
                 ["sub"] = httpContext.GetUserId(),
@@ -110,7 +154,11 @@ namespace EasyReasy.Auth.Tests
                 ["family_id"] = httpContext.GetRefreshFamilyId(),
                 ["roles"] = httpContext.GetRoles().ToArray(),
                 ["client_id_claims"] = httpContext.User.Claims.Count(claim => claim.Type == EasyReasyClaimTypes.ClientId),
-            })).RequireAuthorization();
+            })).RequireAuthorization().AllowOAuthClients();
+            app.MapGet(FirstPartyOnlyPath, () => Results.Ok()).RequireAuthorization();
+            app.MapGet(AttributeOpenedPath, [AllowOAuthClients] () => Results.Ok()).RequireAuthorization();
+            app.MapGroup(OpenedGroupPath).AllowOAuthClients().MapGet("/projects", () => Results.Ok()).RequireAuthorization();
+            app.MapGet(OpenedAdminPath, () => Results.Ok()).RequireAuthorization(policy => policy.RequireRole("admin")).AllowOAuthClients();
 
             await app.StartAsync();
             TestServer testServer = (TestServer)app.Services.GetRequiredService<IServer>();
@@ -124,8 +172,7 @@ namespace EasyReasy.Auth.Tests
         /// </summary>
         public string SignIn(string subject = "person-1", string authType = "user")
         {
-            IJwtTokenService tokens = App.Services.GetRequiredService<IJwtTokenService>();
-            return tokens.CreateToken(subject, authType, Array.Empty<Claim>(), ["member"], Clock.GetUtcNow().UtcDateTime.AddMinutes(5));
+            return FirstPartyTokens.CreateToken(subject, authType, Array.Empty<Claim>(), ["member"], Clock.GetUtcNow().UtcDateTime.AddMinutes(5));
         }
 
         /// <summary>
@@ -154,9 +201,17 @@ namespace EasyReasy.Auth.Tests
         /// <summary>
         /// Calls <c>/api/me</c> with a bearer token.
         /// </summary>
-        public async Task<HttpResponseMessage> GetMeAsync(string accessToken)
+        public Task<HttpResponseMessage> GetMeAsync(string accessToken)
         {
-            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, MePath);
+            return GetAsync(MePath, accessToken);
+        }
+
+        /// <summary>
+        /// Calls a path with a bearer token.
+        /// </summary>
+        public async Task<HttpResponseMessage> GetAsync(string path, string accessToken)
+        {
+            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, path);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             return await Client.SendAsync(request);
         }
@@ -204,10 +259,13 @@ namespace EasyReasy.Auth.Tests
 
         private sealed class Parts
         {
-            public Parts()
+            public Parts(HostedOAuthServerSetup setup)
             {
                 Interceptor = new InterceptingOAuthServerStore(Store);
+                FirstPartyTokens = new JwtTokenService(Secret, JwtIssuer, setup.Audience, Clock);
             }
+
+            public JwtTokenService FirstPartyTokens { get; }
 
             public InMemoryOAuthServerStore Store { get; } = new InMemoryOAuthServerStore();
 

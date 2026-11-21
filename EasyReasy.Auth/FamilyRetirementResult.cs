@@ -8,7 +8,7 @@ namespace EasyReasy.Auth
     /// <remarks>
     /// Deliberately distinct from <see cref="SessionRevocationResult"/>, which carries a count of families
     /// revoked by a bulk or single-session operation: this names the one family that was retired. Because
-    /// <see cref="IRefreshTokenStore.InvalidateFamilyAsync"/> reports neither whether the family existed nor
+    /// <see cref="IRefreshTokenRotationStore.InvalidateFamilyAsync"/> reports neither whether the family existed nor
     /// which subject it belonged to, the record means "a retire was requested for this family";
     /// <see cref="Subject"/> is supplied by the caller (from the access token) purely for the audit row.
     /// </remarks>
