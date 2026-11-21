@@ -228,5 +228,37 @@ namespace EasyReasy.Auth
         /// </param>
         /// <param name="result">The retired family id and, when the caller supplied it, the subject.</param>
         Task OnSessionSupersededAsync(HttpContext? httpContext, FamilyRetirementResult result) => Task.CompletedTask;
+
+        /// <summary>
+        /// Invoked when a client registers at the OAuth registration endpoint, recorded or refused. Registration is
+        /// anonymous and grants nothing; the record is of who asked to be known.
+        /// </summary>
+        /// <param name="httpContext">The registration request.</param>
+        /// <param name="result">The new client, or the RFC 7591 error it was refused with.</param>
+        Task OnOAuthClientRegistrationAsync(HttpContext httpContext, OAuthClientRegistrationResult result) => Task.CompletedTask;
+
+        /// <summary>
+        /// Invoked when a signed-in person approves or denies a pending OAuth authorization request, and when
+        /// <see cref="IOAuthGrantHandler.ApproveAsync"/> refuses an approval. The person is <c>httpContext.User</c>.
+        /// </summary>
+        /// <param name="httpContext">The approve or deny request.</param>
+        /// <param name="result">The outcome, the client, and the grant when approved.</param>
+        Task OnOAuthAuthorizationAsync(HttpContext httpContext, OAuthAuthorizationResult result) => Task.CompletedTask;
+
+        /// <summary>
+        /// Invoked for every OAuth token request, issued or refused: a code redeemed, a refresh, and every refusal,
+        /// including a reused code or refresh token (each of which invalidates what it had issued and is worth alerting on).
+        /// A client's refresh is reported here and not to <see cref="OnRefreshAsync"/>, which stays first-party sessions only.
+        /// </summary>
+        /// <param name="httpContext">The token request.</param>
+        /// <param name="result">The outcome, the client, and the grant, subject and family when found.</param>
+        Task OnOAuthTokenAsync(HttpContext httpContext, OAuthTokenResult result) => Task.CompletedTask;
+
+        /// <summary>
+        /// Invoked when an authenticated client revokes a token at the OAuth revocation endpoint.
+        /// </summary>
+        /// <param name="httpContext">The revocation request.</param>
+        /// <param name="result">Whether the token was the client's refresh token, and its grant and family when it was.</param>
+        Task OnOAuthRevocationAsync(HttpContext httpContext, OAuthRevocationResult result) => Task.CompletedTask;
     }
 }

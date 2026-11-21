@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 
 namespace EasyReasy.Auth
 {
@@ -10,8 +9,6 @@ namespace EasyReasy.Auth
     /// </summary>
     public class SecurePasswordResetTokenHandler : IPasswordResetTokenHandler
     {
-        private const int TokenByteLength = 32; // 256 bits
-
         /// <summary>
         /// Generates a cryptographically secure password reset token pair.
         /// The token is a 256-bit random value encoded as base64url.
@@ -20,16 +17,12 @@ namespace EasyReasy.Auth
         /// <returns>A <see cref="PasswordResetToken"/> containing the plaintext token and its hash.</returns>
         public PasswordResetToken GenerateResetToken()
         {
-            byte[] tokenBytes = RandomNumberGenerator.GetBytes(TokenByteLength);
-
-            string token = Base64UrlEncoding.Encode(tokenBytes);
-
-            string tokenHash = HashToken(token);
+            string token = SecureToken.Generate();
 
             return new PasswordResetToken
             {
                 Token = token,
-                TokenHash = tokenHash
+                TokenHash = SecureToken.Hash(token)
             };
         }
 
@@ -47,7 +40,7 @@ namespace EasyReasy.Auth
                 return false;
             }
 
-            byte[] computedHashBytes = HashTokenBytes(token);
+            byte[] computedHashBytes = SecureToken.HashBytes(token);
             byte[] storedHashBytes;
 
             try
@@ -60,27 +53,6 @@ namespace EasyReasy.Auth
             }
 
             return CryptographicOperations.FixedTimeEquals(computedHashBytes, storedHashBytes);
-        }
-
-        /// <summary>
-        /// Computes the SHA-256 hash of a token string and returns the raw hash bytes.
-        /// </summary>
-        /// <param name="token">The token to hash.</param>
-        /// <returns>The SHA-256 hash bytes.</returns>
-        private static byte[] HashTokenBytes(string token)
-        {
-            byte[] bytes = Encoding.UTF8.GetBytes(token);
-            return SHA256.HashData(bytes);
-        }
-
-        /// <summary>
-        /// Computes the SHA-256 hash of a token string.
-        /// </summary>
-        /// <param name="token">The token to hash.</param>
-        /// <returns>The lowercase hexadecimal SHA-256 hash.</returns>
-        private static string HashToken(string token)
-        {
-            return Convert.ToHexString(HashTokenBytes(token)).ToLowerInvariant();
         }
     }
 }
