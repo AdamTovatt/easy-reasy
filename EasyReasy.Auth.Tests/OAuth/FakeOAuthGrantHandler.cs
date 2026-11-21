@@ -25,8 +25,13 @@ namespace EasyReasy.Auth.Tests
 
         public Task<OAuthApprovalDecision> ApproveAsync(OAuthApprovalContext context, CancellationToken cancellationToken)
         {
-            ApprovalCalls.Add(context);
-            ApprovingUserIds.Add(context.HttpContext.GetUserId());
+            // Locked: a test approving one request twice at once calls this from two requests together.
+            lock (ApprovalCalls)
+            {
+                ApprovalCalls.Add(context);
+                ApprovingUserIds.Add(context.HttpContext.GetUserId());
+            }
+
             return Task.FromResult(Approve(context));
         }
 

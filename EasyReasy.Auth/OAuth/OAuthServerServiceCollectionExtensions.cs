@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Net.Http;
@@ -32,12 +30,12 @@ namespace EasyReasy.Auth
         /// </summary>
         /// <remarks>
         /// Call it after <see cref="AuthServiceCollectionExtensions.AddEasyReasyAuth(IServiceCollection, string, Action{EasyReasyAuthOptions}?)"/>:
-        /// the tokens are that registration's JWTs, signed with its secret and issuer and validated by its bearer scheme,
-        /// with <see cref="OAuthServerOptions.Resource"/> as their audience. The bearer accepts a connection's token only with
-        /// that audience and only at an endpoint opened with
+        /// the tokens are JWTs with that registration's issuer, signed with a separate key derived from its secret, with
+        /// <see cref="OAuthServerOptions.Resource"/> as their audience. They are validated by a bearer scheme of their own,
+        /// which only endpoints opened with
         /// <see cref="OAuthClientEndpointConventionBuilderExtensions.AllowOAuthClients{TBuilder}(TBuilder)"/> or
-        /// <see cref="AllowOAuthClientsAttribute"/>. Registers <see cref="TimeProvider.System"/> as the clock unless one is
-        /// registered already.
+        /// <see cref="AllowOAuthClientsAttribute"/> run; the app's own bearer cannot validate one. Registers
+        /// <see cref="TimeProvider.System"/> as the clock unless one is registered already.
         /// </remarks>
         /// <typeparam name="TStore">The application's <see cref="IOAuthServerStore"/>.</typeparam>
         /// <typeparam name="THandler">The application's <see cref="IOAuthGrantHandler"/>.</typeparam>
@@ -89,7 +87,7 @@ namespace EasyReasy.Auth
                 provider.GetRequiredService<IOAuthServerStore>(),
                 provider.GetRequiredService<OAuthClientAuthenticator>(),
                 provider.GetRequiredService<IOAuthGrantHandler>(),
-                provider.GetRequiredService<JwtSigningSettings>().CreateTokenService(settings.Resource, provider.GetRequiredService<TimeProvider>()),
+                provider.GetRequiredService<JwtSigningSettings>().CreateConnectionTokenService(settings.Resource, provider.GetRequiredService<TimeProvider>()),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetService<IAuthAuditLogger>()));
             services.AddScoped(provider => new OAuthRevocationEndpoint(
@@ -97,21 +95,10 @@ namespace EasyReasy.Auth
                 provider.GetRequiredService<OAuthClientAuthenticator>(),
                 provider.GetService<IAuthAuditLogger>()));
 
-            // RFC 9728 section 5.1 and the MCP authorization spec: a 401 names where the resource's metadata is, which is
-            // how an MCP client finds this server. A plain Configure, so a consumer's later Configure can change it.
-            services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-                .Configure(bearerOptions => bearerOptions.Challenge = OAuthMetadataDocuments.BearerChallenge(settings));
-
-            // A connection's access token is issued for the resource (RFC 8707, as the MCP spec requires) and is valid only
-            // there: its audience must be Resource and the endpoint open to connections. The check is the bearer's audience
-            // validator, installed after every Configure and confirmed at startup, so no pipeline wiring or later
-            // PostConfigure can leave it out unnoticed.
-            services.AddHttpContextAccessor();
-            services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-                .PostConfigure<IHttpContextAccessor>((bearerOptions, httpContextAccessor) =>
-                    OAuthConnectionAudienceValidator.Install(bearerOptions, settings.Resource, httpContextAccessor))
-                .Validate(OAuthConnectionAudienceValidator.IsInstalled, $"The OAuth server's audience check is missing from {nameof(JwtBearerOptions)}.{nameof(JwtBearerOptions.TokenValidationParameters)}: a PostConfigure registered after {nameof(AddEasyReasyOAuthServer)} replaced the parameters or their {nameof(Microsoft.IdentityModel.Tokens.TokenValidationParameters.AudienceValidator)}. Set an audience validator of your own in Configure instead; the server's check wraps it.")
-                .ValidateOnStart();
+            // A connection's access token is issued for the resource (RFC 8707, as the MCP spec requires) and validated only
+            // by its own scheme, which AddEasyReasyAuth registers, which reads the resource from these settings, and which
+            // endpoints opened with AllowOAuthClients run. A 401 from either bearer names the resource's metadata.
+            OAuthConnectionBearer.ConfigureChallenges(services, settings);
 
             return services;
         }

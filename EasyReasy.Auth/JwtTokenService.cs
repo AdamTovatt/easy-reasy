@@ -38,20 +38,46 @@ namespace EasyReasy.Auth
         /// test drives both issuing and validation.
         /// </param>
         public JwtTokenService(string secret, string? issuer, string? audience, TimeProvider timeProvider)
+            : this(SigningKeyFromSecret(secret, nameof(secret)), issuer, audience, timeProvider)
         {
+        }
+
+        /// <summary>
+        /// Initializes a service that signs with a key already checked by <see cref="SigningKeyFromSecret"/>, or derived
+        /// from one, as <see cref="JwtSigningSettings"/> makes.
+        /// </summary>
+        /// <param name="key">The HS256 signing key, at least 32 bytes.</param>
+        /// <param name="issuer">The issuer, or null.</param>
+        /// <param name="audience">The audience, or null.</param>
+        /// <param name="timeProvider">The clock.</param>
+        internal JwtTokenService(byte[] key, string? issuer, string? audience, TimeProvider timeProvider)
+        {
+            ArgumentNullException.ThrowIfNull(key);
             ArgumentNullException.ThrowIfNull(timeProvider);
 
-            if (string.IsNullOrEmpty(secret))
-                throw new ArgumentException("JWT secret cannot be null or empty", nameof(secret));
-
-            byte[] secretBytes = Encoding.UTF8.GetBytes(secret);
-            if (secretBytes.Length < 32)
-                throw new ArgumentException($"JWT secret must be at least 32 bytes (256 bits) for HS256. Current length: {secretBytes.Length} bytes", nameof(secret));
-
-            _key = secretBytes;
+            _key = key;
             _issuer = issuer;
             _audience = audience;
             _timeProvider = timeProvider;
+        }
+
+        /// <summary>
+        /// The HS256 key a secret signs with: its UTF-8 bytes, which must be at least 32.
+        /// </summary>
+        /// <param name="secret">The secret.</param>
+        /// <param name="parameterName">The caller's name for the secret, for the exception.</param>
+        /// <returns>The key.</returns>
+        /// <exception cref="ArgumentException">The secret is empty or shorter than 32 bytes.</exception>
+        internal static byte[] SigningKeyFromSecret(string secret, string parameterName)
+        {
+            if (string.IsNullOrEmpty(secret))
+                throw new ArgumentException("JWT secret cannot be null or empty", parameterName);
+
+            byte[] secretBytes = Encoding.UTF8.GetBytes(secret);
+            if (secretBytes.Length < 32)
+                throw new ArgumentException($"JWT secret must be at least 32 bytes (256 bits) for HS256. Current length: {secretBytes.Length} bytes", parameterName);
+
+            return secretBytes;
         }
 
         /// <summary>

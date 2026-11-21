@@ -109,6 +109,17 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        [DataRow("", DisplayName = "empty")]
+        [DataRow("short_secret_31_bytes_long_____", DisplayName = "31 bytes")]
+        public void AddEasyReasyAuth_WithASecretUnder32Bytes_ThrowsWhenCalled(string secret)
+        {
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() =>
+                new ServiceCollection().AddEasyReasyAuth(secret, options => options.RegisterJwtTokenService = false));
+
+            Assert.AreEqual("jwtSecret", exception.ParamName);
+        }
+
+        [TestMethod]
         public void AddEasyReasyAuth_WithNegativeClockSkew_ShouldThrow()
         {
             ServiceCollection services = new ServiceCollection();

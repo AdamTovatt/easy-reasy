@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 
@@ -45,6 +46,7 @@ namespace EasyReasy.Auth.Tests
             CollectionAssert.AreEqual(new[] { "files:read", "files:write" }, context.RequestedScopes.ToArray());
             Assert.AreEqual(HostedOAuthServer.Resource, context.Resource);
             Assert.AreEqual("org-3", context.ApprovalBody!.Value.GetProperty("organization").GetString());
+            Assert.AreEqual(authorization.RequestId, context.RequestId);
         }
 
         [TestMethod]
@@ -228,14 +230,49 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public async Task Approve_DoubleSubmitted_AHandlerKeyedByTheRequestIdRecordsOneGrant()
+        {
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
+            OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync("https://client.example/callback");
+            OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client);
+            ConcurrentDictionary<string, OAuthGrant> grantsByRequest = new ConcurrentDictionary<string, OAuthGrant>();
+            using Barrier bothInTheHandler = new Barrier(2);
+            bool approvalsOverlapped = true;
+            server.Handler.Approve = context =>
+            {
+                OAuthGrant grant = grantsByRequest.GetOrAdd(context.RequestId, _ => new OAuthGrant { GrantId = "grant-" + Guid.NewGuid().ToString("N"), Subject = "person-1", AuthType = "user" });
+                if (!bothInTheHandler.SignalAndWait(TimeSpan.FromSeconds(10)))
+                {
+                    approvalsOverlapped = false;
+                }
+
+                return OAuthApprovalDecision.Approve(grant);
+            };
+            string signIn = server.SignIn();
+            string approvePath = HostedOAuthServer.ApprovePath(authorization);
+
+            HttpResponseMessage[] responses = await Task.WhenAll(server.PostAsync(approvePath, signIn), server.PostAsync(approvePath, signIn));
+            HttpStatusCode[] statuses = responses.Select(response => response.StatusCode).ToArray();
+            foreach (HttpResponseMessage response in responses)
+            {
+                response.Dispose();
+            }
+
+            Assert.IsTrue(approvalsOverlapped, "The two approvals did not overlap in the handler, so the test proved nothing.");
+            CollectionAssert.AreEquivalent(new[] { HttpStatusCode.OK, HttpStatusCode.NotFound }, statuses);
+            Assert.AreEqual(2, server.Handler.ApprovalCalls.Count);
+            Assert.AreEqual(1, grantsByRequest.Count);
+            Assert.AreEqual(grantsByRequest.Values.Single().GrantId, server.Store.AuthorizationCodes.Single().GrantId);
+        }
+
+        [TestMethod]
         public async Task Approve_WithoutTheAppsSignIn_Is401()
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
             OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync("https://client.example/callback");
             OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client);
 
-            using HttpResponseMessage response = await server.Client.PostAsync(
-                OAuthServerPaths.AuthorizationRequestsPrefix + "/" + authorization.RequestId + "/approve", null);
+            using HttpResponseMessage response = await server.Client.PostAsync(HostedOAuthServer.ApprovePath(authorization), null);
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
             Assert.AreEqual(0, server.Handler.ApprovalCalls.Count);
@@ -262,9 +299,7 @@ namespace EasyReasy.Auth.Tests
             OAuthTestRegisteredClient client = await server.OAuth.RegisterAsync("https://client.example/callback?tenant=a");
             OAuthTestAuthorization authorization = await server.OAuth.AuthorizeAsync(client);
 
-            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, OAuthServerPaths.AuthorizationRequestsPrefix + "/" + authorization.RequestId + "/approve");
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", server.SignIn());
-            using HttpResponseMessage response = await server.Client.SendAsync(request);
+            using HttpResponseMessage response = await server.PostAsync(HostedOAuthServer.ApprovePath(authorization), server.SignIn());
             string redirect = OAuthConsentRedirect.FromJson(await response.Content.ReadAsStringAsync()).RedirectUri;
 
             Assert.IsTrue(redirect.StartsWith("https://client.example/callback?tenant=a&code=", StringComparison.Ordinal), redirect);

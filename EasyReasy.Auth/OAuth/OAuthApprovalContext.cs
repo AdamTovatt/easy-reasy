@@ -17,6 +17,15 @@ namespace EasyReasy.Auth
         public required HttpContext HttpContext { get; init; }
 
         /// <summary>
+        /// The pending request's id, the one in the consent page's URL. Approving the same request again, after a double
+        /// submit or a failed completion, gives the same id. Record the grant under it, and when one is already recorded
+        /// for it, return that grant if the same person (<see cref="HttpContext"/>'s user) recorded it and refuse
+        /// otherwise, so a repeated approval is idempotent and never hands one person's grant to another. The id stops
+        /// being approvable once the request is completed or expires.
+        /// </summary>
+        public required string RequestId { get; init; }
+
+        /// <summary>
         /// The client asking to connect.
         /// </summary>
         public required OAuthClientInfo Client { get; init; }
