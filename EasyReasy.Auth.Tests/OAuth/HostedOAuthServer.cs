@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Http;
@@ -13,9 +14,11 @@ namespace EasyReasy.Auth.Tests
     /// A real <see cref="WebApplication"/> serving the OAuth authorization server over a <see cref="TestServer"/>, with an
     /// in-memory store, a fake grant handler, a recording audit logger, a settable clock and a fake internet for metadata
     /// documents. It also serves the first-party refresh endpoint, <c>/api/me</c>, a protected endpoint open to connections
-    /// that echoes the caller's claims, so a test can use the tokens it gets, and four more protected endpoints: one
-    /// not opened to connections, one opened by the attribute, one in a route group opened as a whole, and one opened
-    /// but requiring the admin role. <see cref="HostedOAuthServerSetup"/> changes how EasyReasy.Auth is registered and wired.
+    /// that echoes the caller's claims, so a test can use the tokens it gets, and five more: one protected endpoint not
+    /// opened to connections, one opened by the attribute, one in a route group opened as a whole, one opened but
+    /// requiring the admin role, and one opened with no authorization of its own; and
+    /// <see cref="OpenedConnectionsController"/>, a controller opened as a whole. <see cref="HostedOAuthServerSetup"/>
+    /// changes how EasyReasy.Auth is registered and wired.
     /// </summary>
     internal sealed class HostedOAuthServer : IAsyncDisposable
     {
@@ -31,6 +34,9 @@ namespace EasyReasy.Auth.Tests
         public const string JwtIssuer = "test-issuer";
         public const string Audience = "test-api";
         public const string OpenedAdminPath = "/api/opened-admin";
+        public const string OpenedWithoutPolicyPath = "/api/opened-without-policy";
+        public const string AppBearerChallengeError = "app_sign_in_required";
+        public const string AppBearerForbiddenError = "app_forbidden";
 
         private HostedOAuthServer(WebApplication app, HttpClient client, Parts parts)
         {
@@ -118,6 +124,25 @@ namespace EasyReasy.Auth.Tests
                     .ConfigurePrimaryHttpMessageHandler(() => parts.MetadataDocuments);
             }
 
+            if (setup.AppBearerWritesItsOwnBody)
+            {
+                builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, bearerOptions => bearerOptions.Events = new JwtBearerEvents
+                {
+                    OnChallenge = async context =>
+                    {
+                        context.HandleResponse();
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        await context.Response.WriteAsJsonAsync(new { error = AppBearerChallengeError });
+                    },
+                    OnForbidden = async context =>
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        await context.Response.WriteAsJsonAsync(new { error = AppBearerForbiddenError });
+                    },
+                });
+            }
+
+            builder.Services.AddControllers().AddApplicationPart(typeof(HostedOAuthServer).Assembly);
             builder.Services.AddSingleton<IRefreshTokenStore>(parts.FirstPartyStore);
             builder.Services.AddSingleton<IRefreshTokenService>(provider => new RefreshTokenService(
                 provider.GetRequiredService<IRefreshTokenStore>(),
@@ -159,6 +184,8 @@ namespace EasyReasy.Auth.Tests
             app.MapGet(AttributeOpenedPath, [AllowOAuthClients] () => Results.Ok()).RequireAuthorization();
             app.MapGroup(OpenedGroupPath).AllowOAuthClients().MapGet("/projects", () => Results.Ok()).RequireAuthorization();
             app.MapGet(OpenedAdminPath, () => Results.Ok()).RequireAuthorization(policy => policy.RequireRole("admin")).AllowOAuthClients();
+            app.MapGet(OpenedWithoutPolicyPath, () => Results.Ok()).AllowOAuthClients();
+            app.MapControllers();
 
             await app.StartAsync();
             TestServer testServer = (TestServer)app.Services.GetRequiredService<IServer>();
@@ -197,6 +224,29 @@ namespace EasyReasy.Auth.Tests
 
             return await Client.SendAsync(request);
         }
+
+        /// <summary>
+        /// Posts to a path with a bearer token and no body.
+        /// </summary>
+        public async Task<HttpResponseMessage> PostAsync(string path, string accessToken)
+        {
+            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, path);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            return await Client.SendAsync(request);
+        }
+
+        /// <summary>
+        /// The consent page's approve path for a pending request.
+        /// </summary>
+        public static string ApprovePath(OAuthTestAuthorization authorization)
+        {
+            return OAuthServerPaths.AuthorizationRequestsPrefix + "/" + authorization.RequestId + "/approve";
+        }
+
+        /// <summary>
+        /// The signing settings the host's EasyReasy.Auth registered, for a test that signs a token as the server would.
+        /// </summary>
+        public JwtSigningSettings Signing => App.Services.GetRequiredService<JwtSigningSettings>();
 
         /// <summary>
         /// Calls <c>/api/me</c> with a bearer token.

@@ -16,8 +16,8 @@ namespace EasyReasy.Auth.Tests
         AuthenticationAndAuthorizationByHand,
 
         /// <summary>
-        /// <c>UseAuthentication</c> before an explicit <c>UseRouting</c>, so no endpoint is chosen while the token is
-        /// validated.
+        /// <c>UseAuthentication</c> before an explicit <c>UseRouting</c>, so no endpoint is chosen while the default
+        /// scheme authenticates.
         /// </summary>
         RoutingAfterAuthentication,
     }

@@ -15,9 +15,12 @@ namespace EasyReasy.Auth
         /// </summary>
         /// <remarks>
         /// A refusal leaves the request pending, so the person can choose differently or deny it. After an approval the
-        /// server completes the request (once) and issues the code. If that fails, because the same request was completed
-        /// concurrently or the store failed, the grant just recorded has no code and no tokens, so nothing can use it. Throwing fails the request with a 500
-        /// and leaves it pending.
+        /// server completes the request (once) and issues the code, so two approvals of one request, a double submit say,
+        /// both reach this method and only one gets a code; when completing fails (the store threw), the request stays
+        /// pending and can be approved again. Record the grant under <see cref="OAuthApprovalContext.RequestId"/> and
+        /// return the grant already recorded for it to the same person (refuse anyone else), so every approval of a
+        /// request names one grant and none is left without tokens. Throwing fails the request with a 500 and leaves it
+        /// pending.
         /// </remarks>
         /// <param name="context">The request, the client, and the application's approval body.</param>
         /// <param name="cancellationToken">A token to cancel the operation.</param>

@@ -23,6 +23,12 @@ namespace EasyReasy.Auth.Tests
         public bool OAuthServerRegisteredFirst { get; init; }
 
         /// <summary>
+        /// Whether the app's bearer answers a challenge and a forbid with a JSON body of its own, and no
+        /// <c>WWW-Authenticate</c> header, so the response has started before the connection's scheme is asked.
+        /// </summary>
+        public bool AppBearerWritesItsOwnBody { get; init; }
+
+        /// <summary>
         /// How the pipeline runs authentication.
         /// </summary>
         public HostedOAuthServerPipeline Pipeline { get; init; } = HostedOAuthServerPipeline.UseEasyReasyAuth;

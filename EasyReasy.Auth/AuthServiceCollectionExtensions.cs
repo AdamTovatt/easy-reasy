@@ -1,8 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
 
 namespace EasyReasy.Auth
 {
@@ -43,7 +41,9 @@ namespace EasyReasy.Auth
             configure?.Invoke(options);
             options.Validate();
 
-            byte[] key = Encoding.UTF8.GetBytes(jwtSecret);
+            JwtSigningSettings signing = new JwtSigningSettings(
+                JwtTokenService.SigningKeyFromSecret(jwtSecret, nameof(jwtSecret)), options.Issuer, options.ClockSkew);
+            services.AddSingleton(signing);
 
             // The one clock for issuing, refreshing and validating tokens. TryAdd, so a consumer's own registration
             // wins whether it comes before or after this call.
@@ -56,24 +56,15 @@ namespace EasyReasy.Auth
             })
             .AddJwtBearer();
 
+            // The OAuth connection's scheme, registered here so an endpoint opened to connections runs with or without the
+            // OAuth server; without it, the scheme refuses every token.
+            OAuthConnectionBearer.AddTo(services);
+
             // A plain Configure, like the rest of the parameters, so a consumer who replaces the parameters or the
             // lifetime validator in a later Configure keeps theirs.
             services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
                 .Configure<TimeProvider>((bearerOptions, timeProvider) =>
-                {
-                    bearerOptions.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidateIssuer = options.Issuer != null,
-                        ValidIssuer = options.Issuer,
-                        ValidateAudience = options.Audience != null,
-                        ValidAudience = options.Audience,
-                        ValidateLifetime = true,
-                        LifetimeValidator = TimeProviderLifetimeValidator.Create(timeProvider),
-                        ValidateIssuerSigningKey = true,
-                        IssuerSigningKey = new SymmetricSecurityKey(key),
-                        ClockSkew = options.ClockSkew,
-                    };
-                });
+                    bearerOptions.TokenValidationParameters = signing.CreateFirstPartyValidationParameters(options.Audience, timeProvider));
 
             // One instance, registered whether or not the option is on, so the reader below and the cookie helpers
             // share one prefix list and the helpers decide on/off by asking it IsEnabled.
@@ -106,14 +97,11 @@ namespace EasyReasy.Auth
                     policy.RequireClaim(EasyReasyClaimTypes.AuthType, EasyReasyAuthTypes.User));
             });
 
-            JwtSigningSettings signing = new JwtSigningSettings(jwtSecret, options.Issuer);
-            services.AddSingleton(signing);
-
             // Register JWT token service for dependency injection if requested
             if (options.RegisterJwtTokenService)
             {
                 services.AddSingleton<IJwtTokenService>(
-                    provider => signing.CreateTokenService(options.Audience, provider.GetRequiredService<TimeProvider>()));
+                    provider => signing.CreateFirstPartyTokenService(options.Audience, provider.GetRequiredService<TimeProvider>()));
             }
 
             return services;

@@ -210,6 +210,7 @@ namespace EasyReasy.Auth
             OAuthApprovalDecision decision = await _handler.ApproveAsync(new OAuthApprovalContext
             {
                 HttpContext = httpContext,
+                RequestId = requestId,
                 Client = client,
                 RedirectUri = request.RedirectUri,
                 RequestedScopes = Scopes(request.Scope),
