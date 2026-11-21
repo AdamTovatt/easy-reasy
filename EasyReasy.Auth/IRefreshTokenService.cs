@@ -146,7 +146,7 @@ namespace EasyReasy.Auth
         /// When an <see cref="IAuthAuditLogger"/> is registered and a non-empty <paramref name="familyId"/> is
         /// passed, the retirement is reported through <see cref="IAuthAuditLogger.OnSessionSupersededAsync"/> —
         /// not <see cref="IAuthAuditLogger.OnLogoutAsync"/> — so the event reads as a supersession rather than a
-        /// logout. This is the targeted, audited counterpart to <see cref="IRefreshTokenStore.InvalidateFamilyAsync"/>,
+        /// logout. This is the targeted, audited counterpart to <see cref="IRefreshTokenRotationStore.InvalidateFamilyAsync"/>,
         /// distinct from the global <see cref="ConcurrentSessionPolicy.SingleSession"/> enforcement (which kills
         /// every other session) and from the bulk <see cref="InvalidateAllSessionsAsync"/>.
         /// <para>

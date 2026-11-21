@@ -2,15 +2,15 @@ namespace EasyReasy.Auth
 {
     /// <summary>
     /// Presents one grant's refresh tokens for one client in <see cref="IOAuthServerStore"/> as an
-    /// <see cref="IRefreshTokenStore"/>, so the token endpoint runs <see cref="RefreshTokenService"/>'s rotation and reuse
-    /// detection unchanged. One adapter serves one token request.
+    /// <see cref="IRefreshTokenRotationStore"/>, so the token endpoint runs <see cref="RefreshTokenRotation"/>, the
+    /// rotation and reuse detection first-party sessions use. One adapter serves one token request.
     /// </summary>
     /// <remarks>
     /// The token endpoint knows the client and grant before it builds the adapter: from the code for a redemption, from
     /// the presented refresh token's row for a refresh. A row of another client or grant reads as not found here, so it
     /// is neither rotated nor taken as reuse.
     /// </remarks>
-    internal sealed class OAuthRefreshTokenStoreAdapter : IRefreshTokenStore
+    internal sealed class OAuthRefreshTokenStoreAdapter : IRefreshTokenRotationStore
     {
         private readonly IOAuthServerStore _store;
         private readonly string _clientId;
@@ -86,15 +86,6 @@ namespace EasyReasy.Auth
         public Task InvalidateFamilyAsync(string familyId, CancellationToken cancellationToken = default)
         {
             return _store.InvalidateRefreshTokenFamilyAsync(familyId, cancellationToken);
-        }
-
-        /// <inheritdoc />
-        public Task<int> InvalidateAllFamiliesForUserAsync(string subject, CancellationToken cancellationToken = default)
-        {
-            // Left unsupported rather than given a meaning. The service is built per request by the token
-            // endpoint with ConcurrentSessionPolicy.AllowMultiple and only rotates, so nothing reaches this; a client's
-            // connections end by grant (IOAuthGrantService) or family (revocation), never by subject.
-            throw new NotSupportedException("A client's refresh tokens are revoked by grant or family, not by subject.");
         }
     }
 }

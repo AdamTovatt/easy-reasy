@@ -17,7 +17,7 @@ namespace EasyReasy.Auth.Tests
         [DataRow("GET", "")]
         [DataRow("POST", "/approve")]
         [DataRow("POST", "/deny")]
-        public async Task ConsentEndpoint_WithAClientsAccessToken_Is403AndLeavesTheRequestPending(string method, string action)
+        public async Task ConsentEndpoint_WithAClientsAccessToken_Is401AndLeavesTheRequestPending(string method, string action)
         {
             await using HostedOAuthServer server = await HostedOAuthServer.StartAsync();
             HostedOAuthServer.ConnectedClient connected = await server.ConnectPublicClientAsync();
@@ -25,7 +25,8 @@ namespace EasyReasy.Auth.Tests
 
             using HttpResponseMessage response = await SendAsync(server, new HttpMethod(method), authorization, action, connected.Tokens.AccessToken);
 
-            Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+            // The consent endpoints are never opened to connections, so the bearer rejects the token outright.
+            Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
             Assert.AreEqual(1, server.Handler.ApprovalCalls.Count);
             Assert.AreEqual(1, server.Store.AuthorizationCodes.Count);
             Assert.AreEqual(1, server.Store.AuthorizationRequests.Count(request => request.CompletedAt == null));

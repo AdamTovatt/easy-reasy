@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace EasyReasy.Auth.Tests
 {
@@ -66,6 +68,39 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public void BearerOptions_ALaterPostConfigureReplacesTheAudienceValidator_FailsValidation()
+        {
+            ServiceCollection services = new ServiceCollection();
+            services.AddLogging();
+            services.AddSingleton<TimeProvider>(TimeProvider.System);
+            services.AddEasyReasyAuth(HostedOAuthServer.Secret);
+            services.AddEasyReasyOAuthServer<InMemoryOAuthServerStore, FakeOAuthGrantHandler>(HostedOAuthServer.DefaultOptions());
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, bearerOptions =>
+                bearerOptions.TokenValidationParameters.AudienceValidator = (audiences, token, parameters) => true);
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            OptionsValidationException exception = Assert.ThrowsException<OptionsValidationException>(
+                () => provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>().Get(JwtBearerDefaults.AuthenticationScheme));
+
+            StringAssert.Contains(exception.Message, "audience check");
+        }
+
+        [TestMethod]
+        public void BearerOptions_WithTheServerRegistered_PassValidation()
+        {
+            ServiceCollection services = new ServiceCollection();
+            services.AddLogging();
+            services.AddSingleton<TimeProvider>(TimeProvider.System);
+            services.AddEasyReasyAuth(HostedOAuthServer.Secret);
+            services.AddEasyReasyOAuthServer<InMemoryOAuthServerStore, FakeOAuthGrantHandler>(HostedOAuthServer.DefaultOptions());
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            JwtBearerOptions bearerOptions = provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>().Get(JwtBearerDefaults.AuthenticationScheme);
+
+            Assert.IsNotNull(bearerOptions.TokenValidationParameters.AudienceValidator);
+        }
+
+        [TestMethod]
         public void AddOAuthServerEndpoints_ServerNotRegistered_ThrowsAtStartup()
         {
             WebApplicationBuilder builder = WebApplication.CreateBuilder();
@@ -75,7 +110,7 @@ namespace EasyReasy.Auth.Tests
             InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => app.AddOAuthServerEndpoints());
 
             StringAssert.Contains(exception.Message, "AddEasyReasyOAuthServer");
-            StringAssert.Contains(exception.Message, nameof(IJwtTokenService));
+            StringAssert.Contains(exception.Message, "AddEasyReasyAuth");
         }
     }
 }

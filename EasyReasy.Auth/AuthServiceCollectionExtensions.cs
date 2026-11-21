@@ -106,11 +106,14 @@ namespace EasyReasy.Auth
                     policy.RequireClaim(EasyReasyClaimTypes.AuthType, EasyReasyAuthTypes.User));
             });
 
+            JwtSigningSettings signing = new JwtSigningSettings(jwtSecret, options.Issuer);
+            services.AddSingleton(signing);
+
             // Register JWT token service for dependency injection if requested
             if (options.RegisterJwtTokenService)
             {
                 services.AddSingleton<IJwtTokenService>(
-                    provider => new JwtTokenService(jwtSecret, options.Issuer, options.Audience, provider.GetRequiredService<TimeProvider>()));
+                    provider => signing.CreateTokenService(options.Audience, provider.GetRequiredService<TimeProvider>()));
             }
 
             return services;

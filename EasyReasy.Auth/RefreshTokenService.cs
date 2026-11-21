@@ -12,12 +12,10 @@ namespace EasyReasy.Auth
     public class RefreshTokenService : IRefreshTokenService
     {
         private readonly IRefreshTokenStore _store;
-        private readonly TimeSpan _refreshTokenLifetime;
-        private readonly TimeSpan _accessTokenLifetime;
         private readonly IAuthAuditLogger? _auditLogger;
         private readonly IRefreshClaimsResolver? _claimsResolver;
         private readonly ConcurrentSessionPolicy _concurrentSessionPolicy;
-        private readonly TimeProvider _timeProvider;
+        private readonly RefreshTokenRotation _rotation;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="RefreshTokenService"/> class that reads the system clock.
@@ -86,12 +84,14 @@ namespace EasyReasy.Auth
             TimeProvider timeProvider)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
-            _refreshTokenLifetime = refreshTokenLifetime ?? TimeSpan.FromDays(30);
-            _accessTokenLifetime = accessTokenLifetime ?? TimeSpan.FromHours(1);
             _auditLogger = auditLogger;
             _claimsResolver = claimsResolver;
             _concurrentSessionPolicy = concurrentSessionPolicy;
-            _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+            _rotation = new RefreshTokenRotation(
+                store,
+                refreshTokenLifetime ?? TimeSpan.FromDays(30),
+                accessTokenLifetime ?? TimeSpan.FromHours(1),
+                timeProvider ?? throw new ArgumentNullException(nameof(timeProvider)));
         }
 
         /// <inheritdoc />
@@ -109,60 +109,33 @@ namespace EasyReasy.Auth
         }
 
         /// <inheritdoc />
-        public Task<RefreshTokenCreationResult> CreateRefreshTokenWithFamilyAsync(
+        public async Task<RefreshTokenCreationResult> CreateRefreshTokenWithFamilyAsync(
             string subject,
             string authType,
             string? serializedClaims,
             string? serializedRoles,
             CancellationToken cancellationToken = default)
         {
-            return CreateFamilyAsync(Guid.NewGuid().ToString(), subject, authType, serializedClaims, serializedRoles, cancellationToken);
+            int invalidatedFamilyCount = await EnforceSingleSessionPolicyAsync(subject, cancellationToken);
+            RefreshTokenCreationResult result = await _rotation.CreateFamilyAsync(Guid.NewGuid().ToString(), subject, authType, serializedClaims, serializedRoles, cancellationToken);
+            await ReportConcurrentSessionsRevokedAsync(subject, invalidatedFamilyCount);
+            return result;
         }
 
-        // The one creation path. The family id is a parameter so the OAuth server can choose it when it issues a code, and
-        // invalidate whatever that code's first redemption issued if the code is presented again.
-        private async Task<RefreshTokenCreationResult> CreateFamilyAsync(
-            string familyId,
-            string subject,
-            string authType,
-            string? serializedClaims,
-            string? serializedRoles,
-            CancellationToken cancellationToken)
+        // Fire the audit hook only after the new family is persisted, matching the other hook sites
+        // (OnRefreshAsync / OnLogoutAsync / OnSessionsInvalidatedAsync), which all fire after their
+        // mutation lands. A throwing logger then leaves a stored session rather than a session-less
+        // subject, and the "concurrent sessions revoked" record only fires for a login that completed.
+        private async Task ReportConcurrentSessionsRevokedAsync(string subject, int invalidatedFamilyCount)
         {
-            string rawToken = GenerateToken();
-            string tokenHash = HashToken(rawToken);
-            DateTime now = _timeProvider.GetUtcNow().UtcDateTime;
-
-            StoredRefreshToken storedToken = new StoredRefreshToken
-            {
-                TokenHash = tokenHash,
-                Subject = subject,
-                AuthType = authType,
-                FamilyId = familyId,
-                CreatedAt = now,
-                ExpiresAt = now.Add(_refreshTokenLifetime),
-                SerializedClaims = serializedClaims,
-                SerializedRoles = serializedRoles
-            };
-
-            int invalidatedFamilyCount = await EnforceSingleSessionPolicyAsync(subject, cancellationToken);
-
-            await _store.StoreAsync(storedToken, cancellationToken);
-
-            // Fire the audit hook only after the new family is persisted, matching the other hook sites
-            // (OnRefreshAsync / OnLogoutAsync / OnSessionsInvalidatedAsync), which all fire after their
-            // mutation lands. A throwing logger then leaves a stored session rather than a session-less
-            // subject, and the "concurrent sessions revoked" record only fires for a login that completed.
             if (invalidatedFamilyCount > 0 && _auditLogger != null)
             {
                 await _auditLogger.OnConcurrentSessionsRevokedAsync(new SessionRevocationResult(subject, invalidatedFamilyCount));
             }
-
-            return new RefreshTokenCreationResult { RawToken = rawToken, FamilyId = familyId };
         }
 
         /// <inheritdoc />
-        public Task<SessionStartResult> StartSessionAsync(
+        public async Task<SessionStartResult> StartSessionAsync(
             IJwtTokenService jwtTokenService,
             string subject,
             string authType,
@@ -170,91 +143,20 @@ namespace EasyReasy.Auth
             IEnumerable<string> roles,
             CancellationToken cancellationToken = default)
         {
-            return StartSessionWithFamilyAsync(Guid.NewGuid().ToString(), jwtTokenService, subject, authType, claims, roles, cancellationToken);
-        }
-
-        /// <summary>
-        /// <see cref="StartSessionAsync(IJwtTokenService, string, string, IEnumerable{Claim}, IEnumerable{string}, CancellationToken)"/>
-        /// with a family id the caller chose: the OAuth server's, which records it on the authorization code.
-        /// </summary>
-        /// <param name="familyId">The family id to create.</param>
-        /// <param name="jwtTokenService">The JWT token service used to create the first access token.</param>
-        /// <param name="subject">The subject the session is for.</param>
-        /// <param name="authType">The authentication type.</param>
-        /// <param name="claims">The additional claims the session's tokens carry.</param>
-        /// <param name="roles">The roles the session's tokens carry.</param>
-        /// <param name="cancellationToken">A token to cancel the operation.</param>
-        /// <returns>The token pair and the family identifier.</returns>
-        internal async Task<SessionStartResult> StartSessionWithFamilyAsync(
-            string familyId,
-            IJwtTokenService jwtTokenService,
-            string subject,
-            string authType,
-            IEnumerable<Claim> claims,
-            IEnumerable<string> roles,
-            CancellationToken cancellationToken)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(familyId);
+            // Checked and serialized before the session policy runs, so a bad call never revokes the subject's other
+            // sessions.
             ArgumentNullException.ThrowIfNull(jwtTokenService);
             ArgumentException.ThrowIfNullOrWhiteSpace(subject);
             ArgumentException.ThrowIfNullOrWhiteSpace(authType);
             ArgumentNullException.ThrowIfNull(claims);
             ArgumentNullException.ThrowIfNull(roles);
-
-            // The stored family never holds a family id claim: every token gets the real one from the row's FamilyId.
-            string? serializedClaims = RefreshTokenClaims.SerializeClaims(WithoutFamilyIdClaim(claims));
+            string? serializedClaims = RefreshTokenRotation.SerializeSessionClaims(claims);
             string? serializedRoles = RefreshTokenClaims.SerializeRoles(roles);
 
-            RefreshTokenCreationResult family = await CreateFamilyAsync(familyId, subject, authType, serializedClaims, serializedRoles, cancellationToken);
-
-            // The first token is built from the stored form, exactly what a refresh reads back, so nothing the store
-            // does not keep (a claim's value type, say) can make it differ from a refreshed token.
-            AuthResponse authResponse = IssueAccessToken(
-                jwtTokenService,
-                subject,
-                authType,
-                RefreshTokenClaims.DeserializeClaims(serializedClaims),
-                RefreshTokenClaims.DeserializeRoles(serializedRoles),
-                family.FamilyId,
-                family.RawToken,
-                _timeProvider.GetUtcNow().UtcDateTime);
-
-            return new SessionStartResult { AuthResponse = authResponse, FamilyId = family.FamilyId };
-        }
-
-        /// <summary>
-        /// Issues an access token for a refresh token family and wraps it with the family's raw refresh token. This is
-        /// the one place both a session's first token (<see cref="StartSessionAsync"/>) and every refreshed one
-        /// (<see cref="RefreshAsync"/>) are made, so the two share their lifetime, expiry format and family id claim.
-        /// </summary>
-        /// <remarks>
-        /// The family id rides on the access token as the authoritative <see cref="EasyReasyClaimTypes.RefreshFamilyId"/>
-        /// claim so a re-issue endpoint can name and retire exactly this family. The value always comes from the
-        /// server-side family id (copied onto every rotation's row, so it is stable across the family's lifetime), never
-        /// from the claims passed in, so any such claim among them is stripped and replaced here and cannot be spoofed.
-        /// </remarks>
-        private AuthResponse IssueAccessToken(
-            IJwtTokenService jwtTokenService,
-            string subject,
-            string authType,
-            IEnumerable<Claim> claims,
-            IEnumerable<string> roles,
-            string familyId,
-            string rawRefreshToken,
-            DateTime now)
-        {
-            DateTime expiresAt = now.Add(_accessTokenLifetime);
-
-            List<Claim> accessTokenClaims = WithoutFamilyIdClaim(claims);
-            accessTokenClaims.Add(new Claim(EasyReasyClaimTypes.RefreshFamilyId, familyId));
-
-            string accessToken = jwtTokenService.CreateToken(subject, authType, accessTokenClaims, roles, expiresAt);
-            return new AuthResponse(accessToken, expiresAt.ToString("O"), rawRefreshToken);
-        }
-
-        private static List<Claim> WithoutFamilyIdClaim(IEnumerable<Claim> claims)
-        {
-            return claims.Where(claim => claim.Type != EasyReasyClaimTypes.RefreshFamilyId).ToList();
+            int invalidatedFamilyCount = await EnforceSingleSessionPolicyAsync(subject, cancellationToken);
+            SessionStartResult session = await _rotation.StartSessionAsync(Guid.NewGuid().ToString(), jwtTokenService, subject, authType, serializedClaims, serializedRoles, cancellationToken);
+            await ReportConcurrentSessionsRevokedAsync(subject, invalidatedFamilyCount);
+            return session;
         }
 
         /// <summary>
@@ -281,7 +183,7 @@ namespace EasyReasy.Auth
             RefreshResult result;
             try
             {
-                result = await ComputeRefreshAsync(refreshToken, jwtTokenService, httpContext, cancellationToken);
+                result = await _rotation.RotateAsync(refreshToken, jwtTokenService, _claimsResolver, httpContext, cancellationToken);
             }
             catch
             {
@@ -314,7 +216,7 @@ namespace EasyReasy.Auth
             {
                 string? subject = null;
                 string? familyId = null;
-                StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(HashToken(refreshToken), cancellationToken);
+                StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(SecureToken.Hash(refreshToken), cancellationToken);
                 if (storedToken != null)
                 {
                     subject = storedToken.Subject;
@@ -328,118 +230,6 @@ namespace EasyReasy.Auth
             {
                 // Intentionally swallowed — the outer catch's rethrow is the source of truth.
             }
-        }
-
-        private async Task<RefreshResult> ComputeRefreshAsync(string refreshToken, IJwtTokenService jwtTokenService, HttpContext? httpContext, CancellationToken cancellationToken)
-        {
-            DateTime now = _timeProvider.GetUtcNow().UtcDateTime;
-            string tokenHash = HashToken(refreshToken);
-            StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(tokenHash, cancellationToken);
-
-            if (storedToken == null)
-            {
-                return RefreshResult.Failed(RefreshFailureReason.TokenNotFound);
-            }
-
-            if (storedToken.IsInvalidated)
-            {
-                return RefreshResult.Failed(RefreshFailureReason.TokenInvalidated, storedToken.Subject, storedToken.FamilyId);
-            }
-
-            // Token was already consumed — theft detected.
-            if (storedToken.ConsumedAt != null)
-            {
-                await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
-                return RefreshResult.Failed(RefreshFailureReason.TheftDetected, storedToken.Subject, storedToken.FamilyId);
-            }
-
-            if (storedToken.ExpiresAt <= now)
-            {
-                return RefreshResult.Failed(RefreshFailureReason.TokenExpired, storedToken.Subject, storedToken.FamilyId);
-            }
-
-            // Deserialize once — both the no-resolver branch and the resolver-input branch need these.
-            IReadOnlyList<Claim> claims = RefreshTokenClaims.DeserializeClaims(storedToken.SerializedClaims);
-            IReadOnlyList<string> roles = RefreshTokenClaims.DeserializeRoles(storedToken.SerializedRoles);
-
-            // Invoke the consumer-supplied resolver, if registered. This runs BEFORE the atomic
-            // consume so that a deny or a thrown resolver does not burn the stored refresh
-            // token — a transient failure would otherwise trip theft detection on the legitimate
-            // retry and invalidate the entire session family.
-            if (_claimsResolver != null)
-            {
-                RefreshClaimsContext context = new RefreshClaimsContext(
-                    storedToken.Subject,
-                    storedToken.AuthType,
-                    claims,
-                    roles,
-                    httpContext);
-
-                RefreshClaimsDecision decision = await _claimsResolver.ResolveAsync(context, cancellationToken);
-
-                if (decision.IsDenied)
-                {
-                    return RefreshResult.Failed(RefreshFailureReason.DeniedByResolver, storedToken.Subject, storedToken.FamilyId);
-                }
-
-                claims = decision.Claims;
-                roles = decision.Roles;
-            }
-
-            // Atomically mark old token as consumed — if another request already consumed it, treat as theft.
-            bool consumed = await _store.MarkAsConsumedAsync(tokenHash, now, cancellationToken);
-            if (!consumed)
-            {
-                await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
-                return RefreshResult.Failed(RefreshFailureReason.TheftDetected, storedToken.Subject, storedToken.FamilyId);
-            }
-
-            string newRawToken = GenerateToken();
-            string newTokenHash = HashToken(newRawToken);
-
-            // The family id claim is added to the token only, never to the new row's serialized claims.
-            AuthResponse authResponse = IssueAccessToken(
-                jwtTokenService,
-                storedToken.Subject,
-                storedToken.AuthType,
-                claims,
-                roles,
-                storedToken.FamilyId,
-                newRawToken,
-                now);
-
-            // When the resolver ran, the new row persists the resolved claims/roles so subsequent
-            // refreshes start from there; when no resolver is registered, the original serialized
-            // JSON is reused verbatim.
-            string? newSerializedClaims = _claimsResolver != null ? RefreshTokenClaims.SerializeClaims(claims) : storedToken.SerializedClaims;
-            string? newSerializedRoles = _claimsResolver != null ? RefreshTokenClaims.SerializeRoles(roles) : storedToken.SerializedRoles;
-
-            StoredRefreshToken newStoredToken = new StoredRefreshToken
-            {
-                TokenHash = newTokenHash,
-                Subject = storedToken.Subject,
-                AuthType = storedToken.AuthType,
-                FamilyId = storedToken.FamilyId,
-                CreatedAt = now,
-                ExpiresAt = now.Add(_refreshTokenLifetime),
-                SerializedClaims = newSerializedClaims,
-                SerializedRoles = newSerializedRoles,
-            };
-
-            await _store.StoreAsync(newStoredToken, cancellationToken);
-
-            // The consumed token is read again now the new one is stored. A family invalidation that came in after the
-            // consume above (a replay of this token, a logout, a revocation) marked the consumed token too: if it ran
-            // before the store, it shows here; if after, it caught the new token as well. Either way the new token does
-            // not outlive it.
-            StoredRefreshToken? consumedToken = await _store.GetByTokenHashAsync(tokenHash, cancellationToken);
-            if (consumedToken == null || consumedToken.IsInvalidated)
-            {
-                await _store.InvalidateFamilyAsync(storedToken.FamilyId, cancellationToken);
-                return RefreshResult.Failed(RefreshFailureReason.TokenInvalidated, storedToken.Subject, storedToken.FamilyId);
-            }
-
-            return RefreshResult.Succeeded(authResponse, newRawToken, storedToken.Subject, storedToken.FamilyId);
         }
 
         /// <inheritdoc />
@@ -465,7 +255,7 @@ namespace EasyReasy.Auth
                 return LogoutResult.Unknown();
             }
 
-            string tokenHash = HashToken(refreshToken);
+            string tokenHash = SecureToken.Hash(refreshToken);
             StoredRefreshToken? storedToken = await _store.GetByTokenHashAsync(tokenHash, cancellationToken);
 
             if (storedToken == null)
@@ -513,21 +303,6 @@ namespace EasyReasy.Auth
             {
                 await _auditLogger.OnSessionSupersededAsync(httpContext, new FamilyRetirementResult { FamilyId = familyId, Subject = subject });
             }
-        }
-
-        /// <summary>
-        /// Computes the SHA-256 hash of a raw refresh token.
-        /// </summary>
-        /// <param name="token">The raw refresh token.</param>
-        /// <returns>The lowercase hexadecimal SHA-256 hash.</returns>
-        internal static string HashToken(string token)
-        {
-            return SecureToken.Hash(token);
-        }
-
-        private static string GenerateToken()
-        {
-            return SecureToken.Generate();
         }
     }
 }

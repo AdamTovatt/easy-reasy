@@ -4,8 +4,8 @@ using System.Security.Claims;
 namespace EasyReasy.Auth
 {
     /// <summary>
-    /// The token endpoint: redeeming a code and refreshing. Refreshing runs <see cref="RefreshTokenService"/> over the client's refresh tokens, so rotation and reuse detection
-    /// are the library's one implementation of them.
+    /// The token endpoint: redeeming a code and refreshing. Both run <see cref="RefreshTokenRotation"/> over the client's
+    /// refresh tokens, so a family's creation, rotation and reuse detection are the library's one implementation of them.
     /// </summary>
     internal sealed class OAuthTokenEndpoint
     {
@@ -13,7 +13,7 @@ namespace EasyReasy.Auth
         private readonly IOAuthServerStore _store;
         private readonly OAuthClientAuthenticator _authenticator;
         private readonly IOAuthGrantHandler _handler;
-        private readonly IJwtTokenService _jwtTokenService;
+        private readonly IJwtTokenService _accessTokens;
         private readonly TimeProvider _timeProvider;
         private readonly IAuthAuditLogger? _auditLogger;
 
@@ -24,7 +24,7 @@ namespace EasyReasy.Auth
         /// <param name="store">The application's store.</param>
         /// <param name="authenticator">The client authenticator.</param>
         /// <param name="handler">The application's grant handler.</param>
-        /// <param name="jwtTokenService">The token issuer.</param>
+        /// <param name="accessTokens">The issuer of connection access tokens, whose audience is the resource.</param>
         /// <param name="timeProvider">The clock.</param>
         /// <param name="auditLogger">The audit logger, if registered.</param>
         public OAuthTokenEndpoint(
@@ -32,7 +32,7 @@ namespace EasyReasy.Auth
             IOAuthServerStore store,
             OAuthClientAuthenticator authenticator,
             IOAuthGrantHandler handler,
-            IJwtTokenService jwtTokenService,
+            IJwtTokenService accessTokens,
             TimeProvider timeProvider,
             IAuthAuditLogger? auditLogger = null)
         {
@@ -40,7 +40,7 @@ namespace EasyReasy.Auth
             _store = store;
             _authenticator = authenticator;
             _handler = handler;
-            _jwtTokenService = jwtTokenService;
+            _accessTokens = accessTokens;
             _timeProvider = timeProvider;
             _auditLogger = auditLogger;
         }
@@ -166,13 +166,13 @@ namespace EasyReasy.Auth
             }
 
             OAuthRefreshTokenStoreAdapter adapter = new OAuthRefreshTokenStoreAdapter(_store, clientId, code.GrantId);
-            SessionStartResult session = await CreateRefreshTokenService(adapter, claimsResolver: null).StartSessionWithFamilyAsync(
+            SessionStartResult session = await CreateRotation(adapter).StartSessionAsync(
                 code.FamilyId,
-                _jwtTokenService,
+                _accessTokens,
                 code.Subject,
                 code.AuthType,
-                OAuthServerClaims.WithClientId(RefreshTokenClaims.DeserializeClaims(code.SerializedClaims), clientId),
-                RefreshTokenClaims.DeserializeRoles(code.SerializedRoles),
+                RefreshTokenRotation.SerializeSessionClaims(OAuthServerClaims.WithClientId(RefreshTokenClaims.DeserializeClaims(code.SerializedClaims), clientId)),
+                code.SerializedRoles,
                 cancellationToken);
 
             // The code is read again now the refresh token is stored. A grant revocation or a second presentation that
@@ -199,7 +199,7 @@ namespace EasyReasy.Auth
                 return await RefuseAsync(httpContext, OAuthTokenResult.Failed(OAuthTokenFailureReason.InvalidRequest, OAuthGrantType.RefreshToken, clientId), new OAuthError(OAuthError.InvalidRequest, "refresh_token is required."));
             }
 
-            // The token's row is read here first, so the grant the refresh runs under is known before the service starts,
+            // The token's row is read here first, so the grant the refresh runs under is known before the rotation starts,
             // not learned from inside it. Another client's token reads as unknown, as it does to the adapter.
             OAuthRefreshToken? row = await _store.GetRefreshTokenAsync(SecureToken.Hash(refreshToken), cancellationToken);
             if (row == null || !string.Equals(row.ClientId, clientId, StringComparison.Ordinal))
@@ -209,12 +209,12 @@ namespace EasyReasy.Auth
 
             string grantId = row.GrantId;
             OAuthRefreshTokenStoreAdapter adapter = new OAuthRefreshTokenStoreAdapter(_store, clientId, grantId);
-            RefreshTokenService service = CreateRefreshTokenService(adapter, new OAuthRefreshClaimsResolver(_handler, grantId, clientId, httpContext));
+            OAuthRefreshClaimsResolver claimsResolver = new OAuthRefreshClaimsResolver(_handler, grantId, clientId, httpContext);
 
             RefreshResult result;
             try
             {
-                result = await service.RefreshAsync(refreshToken, _jwtTokenService, httpContext, cancellationToken);
+                result = await CreateRotation(adapter).RotateAsync(refreshToken, _accessTokens, claimsResolver, httpContext, cancellationToken);
             }
             catch
             {
@@ -236,19 +236,11 @@ namespace EasyReasy.Auth
             return TokenResponse(result.AuthResponse);
         }
 
-        // A service per request, over the client's refresh tokens: no audit logger, since a client's refresh is reported
-        // to OnOAuthTokenAsync and never to the first-party OnRefreshAsync, and AllowMultiple, since a client's
-        // connections are never revoked by subject.
-        private RefreshTokenService CreateRefreshTokenService(OAuthRefreshTokenStoreAdapter adapter, IRefreshClaimsResolver? claimsResolver)
+        // The rotation alone, without the first-party service's session policy and audit hooks: a client's refresh is
+        // reported to OnOAuthTokenAsync, and its connections are never revoked by subject.
+        private RefreshTokenRotation CreateRotation(OAuthRefreshTokenStoreAdapter adapter)
         {
-            return new RefreshTokenService(
-                adapter,
-                _settings.RefreshTokenLifetime,
-                _settings.AccessTokenLifetime,
-                auditLogger: null,
-                claimsResolver,
-                ConcurrentSessionPolicy.AllowMultiple,
-                _timeProvider);
+            return new RefreshTokenRotation(adapter, _settings.RefreshTokenLifetime, _settings.AccessTokenLifetime, _timeProvider);
         }
 
         private IResult TokenResponse(AuthResponse authResponse)
