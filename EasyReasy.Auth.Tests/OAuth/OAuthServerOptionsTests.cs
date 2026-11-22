@@ -58,6 +58,29 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public void AddEasyReasyOAuthServer_SweepIntervalAndUnusedClientLifetimeNotPositive_ReportsBoth()
+        {
+            OAuthServerOptions options = HostedOAuthServer.DefaultOptions() with { SweepInterval = TimeSpan.Zero, UnusedClientLifetime = TimeSpan.FromDays(-1) };
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => new ServiceCollection().AddEasyReasyOAuthServer<InMemoryOAuthServerStore, FakeOAuthGrantHandler>(options));
+
+            StringAssert.Contains(exception.Message, nameof(OAuthServerOptions.SweepInterval));
+            StringAssert.Contains(exception.Message, nameof(OAuthServerOptions.UnusedClientLifetime));
+        }
+
+        [TestMethod]
+        public void AddEasyReasyOAuthServer_SweepIntervalOverAPeriodicTimersLongest_IsReportedAtRegistration()
+        {
+            OAuthServerOptions options = HostedOAuthServer.DefaultOptions() with { SweepInterval = TimeSpan.FromDays(50) };
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(
+                () => new ServiceCollection().AddEasyReasyOAuthServer<InMemoryOAuthServerStore, FakeOAuthGrantHandler>(options));
+
+            StringAssert.Contains(exception.Message, "SweepInterval must be at most 49 days");
+        }
+
+        [TestMethod]
         public void AddEasyReasyOAuthServer_LoopbackHttp_IsAccepted()
         {
             OAuthServerOptions options = new OAuthServerOptions { IssuerUrl = "http://localhost:5000", Resource = "http://localhost:5000/mcp", ConsentPageUrl = "http://localhost:5173/consent" };

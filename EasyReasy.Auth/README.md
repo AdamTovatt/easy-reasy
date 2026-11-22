@@ -1507,12 +1507,14 @@ builder.Services.AddEasyReasyOAuthServer<MyOAuthStore, MyGrantHandler>(new OAuth
 
 WebApplication app = builder.Build();
 app.UseEasyReasyAuth();
-app.AddOAuthServerEndpoints();
+OAuthServerEndpoints oauth = app.AddOAuthServerEndpoints();
+oauth.Registration?.RequireRateLimiting("oauth-anonymous");   // your own policy, on one endpoint
+oauth.Authorization.RequireRateLimiting("oauth-anonymous");
 
 app.MapGroup("/mcp").RequireAuthorization().AllowOAuthClients();   // what connections may call
 ```
 
-`AddEasyReasyOAuthServer` validates the options and throws one `ArgumentException` listing every problem. `AddOAuthServerEndpoints` throws at startup if the server or `AddEasyReasyAuth` is not registered. The store and handler are registered as scoped. `OAuthServerOptions` is a record, so a variant (another environment, a test) is `options with { ... }`.
+`AddEasyReasyOAuthServer` validates the options and throws one `ArgumentException` listing every problem. `AddOAuthServerEndpoints` throws at startup if the server or `AddEasyReasyAuth` is not registered. It returns `OAuthServerEndpoints`, one builder per endpoint (`Registration` is null when registration is off), so you can add a rate limiting policy, a filter or a marker your middleware reads to one endpoint without matching its path. The store and handler are registered as scoped. `OAuthServerOptions` is a record, so a variant (another environment, a test) is `options with { ... }`.
 
 | Option | Default | Description |
 |---|---|---|
@@ -1524,6 +1526,8 @@ app.MapGroup("/mcp").RequireAuthorization().AllowOAuthClients();   // what conne
 | `RefreshTokenLifetime` | 30 days | Each refresh issues a new one with a full lifetime, so a connection lapses after this long unused. |
 | `AuthorizationCodeLifetime` | 1 minute | |
 | `AuthorizationRequestLifetime` | 10 minutes | Time for the person to sign in and decide. |
+| `SweepInterval` | 1 hour | How often the server's sweep deletes expired rows through `IOAuthServerStore.DeleteExpiredAsync`; at most 49 days. The first sweep runs one interval after start. |
+| `UnusedClientLifetime` | `RefreshTokenLifetime` | How long after it registered a client may be deleted. The sweep deletes a client registered longer ago than this once nothing of it is live (no authorization under way, code or refresh token), so it is counted from registration, not from last use. A deleted client must register again to reconnect. |
 | `AllowDynamicClientRegistration` | true | When false, `/oauth/register` is not mapped and the metadata lists no `registration_endpoint`. |
 | `AllowClientIdMetadataDocuments` | true | When false, an https client id is unknown and the metadata says `client_id_metadata_document_supported: false`. |
 
@@ -1642,7 +1646,7 @@ Implement `IOAuthServerStore` over your database. It holds four kinds of row: `O
 - **Every write is committed when its call returns.** The server orders separate calls: it marks a code invalidated (`InvalidateAuthorizationCodeAsync`, `InvalidateGrantAuthorizationCodesAsync`) before it invalidates refresh tokens, and reads the code, or the refresh token a refresh consumed, again after storing the new refresh token. That order is what keeps a redemption or refresh racing a revocation, or a second presentation of its code or token, from leaving a token alive. Don't batch one call's write into a later call's transaction.
 - **`InvalidateGrantAuthorizationCodesAsync` marks every code of the grant, redeemed or not**; `InvalidateGrantRefreshTokensAsync` and `InvalidateRefreshTokenFamilyAsync` invalidate every refresh token of the grant or family, consumed ones included. `IOAuthGrantService.RevokeGrantAsync` calls them in that order.
 - **Client refresh tokens are kept apart from `IRefreshTokenStore`.** A first-party session policy never reaches a connection: under `ConcurrentSessionPolicy.SingleSession`, a person's new browser login does not end their agent's connection, and approving a connection does not end their browser session. A client's refresh token is never redeemable at `/api/auth/refresh`, and `InvalidateAllSessionsAsync` does not end connections; revoke those by grant.
-- **Rows past their `ExpiresAt`** are never accepted, so deleting them is housekeeping you schedule. `OAuthClient` has no expiry; its `CreatedAt` is there for pruning registrations that never connected.
+- **`DeleteExpiredAsync(now, clientsRegisteredBefore)` deletes what can never be accepted again**, in one operation. First it deletes every request, code and refresh token whose `ExpiresAt` is at or before `now`, whatever its state. Then it deletes every client registered before `clientsRegisteredBefore` that no remaining request, code or refresh token names. The server runs it every `SweepInterval` in a hosted service of its own, with `now` from its clock and `clientsRegisteredBefore` set to `now` minus `UnusedClientLifetime`. So a client that registered a moment ago is kept until its first authorization, and one in use is kept while any of its rows is unexpired. Once its last refresh token expires, a client registered longer ago than `UnusedClientLifetime` goes in that same sweep: `/authorize` then answers that the `client_id` is not a registered client, and the MCP client must register again to reconnect. Every app instance runs its own sweep, so calls can overlap and must be safe beside one another, as plain `DELETE` statements are. A sweep that lands between `/authorize` reading a client and storing the request can leave a request naming a deleted client; a foreign key refuses that insert and the person starts again. In SQL it is one statement: a `DELETE ... WHERE expires_at <= @now` per table, then the clients' `NOT EXISTS` over what is left. A row at or past its `ExpiresAt` is refused anyway, so deleting it changes one answer only: a consumed refresh token replayed after it expired is refused as unknown rather than as reuse, so its family is not invalidated. It could not be redeemed either way.
 
 `InMemoryOAuthServerStore` in EasyReasy.Auth.Testing implements it for tests.
 
@@ -1669,7 +1673,7 @@ Everywhere else the token is invalid: a protected endpoint answers 401 with `WWW
 
 #### Clients
 
-- **Dynamic client registration.** `redirect_uris` (1 to 10) must each be an absolute https URL, an http URL on a loopback host (`127.0.0.1`, `[::1]`, `localhost`), or an app's private-use scheme (`com.example.app:/callback`, `cursor://...`); never `javascript:`, `data:`, `file:` or another scheme the browser handles itself, never with a fragment or userinfo. `token_endpoint_auth_method` is `none` (a public client, as MCP clients register), `client_secret_basic` or `client_secret_post` (the names are constants on `OAuthClientAuthenticationMethodNames`); a registration naming none gets `client_secret_basic`, RFC 7591's default, and a secret. `grant_types` and `response_types`, when sent, must include `authorization_code` and `code`; other values are dropped. `client_name` is at most 200 characters. The body is at most 16 KiB. Registration is anonymous: rate limit it ahead of the endpoint if you need to.
+- **Dynamic client registration.** `redirect_uris` (1 to 10) must each be an absolute https URL, an http URL on a loopback host (`127.0.0.1`, `[::1]`, `localhost`), or an app's private-use scheme (`com.example.app:/callback`, `cursor://...`); never `javascript:`, `data:`, `file:` or another scheme the browser handles itself, never with a fragment or userinfo. `token_endpoint_auth_method` is `none` (a public client, as MCP clients register), `client_secret_basic` or `client_secret_post` (the names are constants on `OAuthClientAuthenticationMethodNames`); a registration naming none gets `client_secret_basic`, RFC 7591's default, and a secret. `grant_types` and `response_types`, when sent, must include `authorization_code` and `code`; other values are dropped. `client_name` is at most 200 characters. The body is at most 16 KiB. Registration is anonymous: rate limit it with `oauth.Registration?.RequireRateLimiting(...)` on the builder `AddOAuthServerEndpoints` returns if you need to.
 - **Client ID metadata documents.** A `client_id` that is an https URL with a path is fetched at the authorization endpoint, with no redirects followed, no cookies sent, no proxy, a 5-second timeout and a 5 KiB cap, and only from a public address: the connection is refused when the host resolves to a loopback, private, link-local or other special-use address. The document's `client_id` must equal the URL exactly, its `redirect_uris` must hold the request's redirect URI, and it must be public (`token_endpoint_auth_method` absent or `none`; no secret). A usable document is kept for 5 minutes, as the draft recommends, so a client's repeated authorizations fetch it once; a refused one is not kept, so a client fixing its document can retry at once. At most 1,000 are kept at a time, since anyone can name a client id. Nothing is stored: the pending request keeps the name for the consent page. The fetch uses the named client `OAuthServerServiceCollectionExtensions.MetadataDocumentHttpClientName`. The address check runs on the connection itself, so giving that client a proxy or replacing its primary handler removes the guard.
 - **Redirect URI matching** is exact string comparison, except that an http loopback URI matches on any port (RFC 8252 section 7.3).
 
@@ -1851,6 +1855,17 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.17.0
+
+Version 5.18.0 changes two things in the OAuth 2.1 authorization server, and both reach only an app that registers it.
+
+### Changed: `AddOAuthServerEndpoints` returns `OAuthServerEndpoints`
+- **It returns one builder per endpoint instead of the `WebApplication`.** Add your own metadata to one endpoint through its builder: a rate limiting policy, a filter, a marker your middleware reads. You no longer match its path. A call that chained on the old return value (`app.AddOAuthServerEndpoints().Map...`) no longer compiles; call `app.Map...` on its own line instead. `Registration` is null when `AllowDynamicClientRegistration` is off.
+
+### Changed: `IOAuthServerStore.DeleteExpiredAsync`, and the server sweeps
+- **`IOAuthServerStore` gains `DeleteExpiredAsync(now, clientsRegisteredBefore, cancellationToken)`**, which a store must implement. It deletes expired requests, codes and refresh tokens, at `ExpiresAt <= now`, the same rule the server refuses them by. Then it deletes the clients registered before the cutoff that nothing left names. See [the store](#the-store).
+- **The server calls it in a hosted service of its own**, every `SweepInterval` (default 1 hour), with `UnusedClientLifetime` (default `RefreshTokenLifetime`) setting the clients' cutoff. Remove a sweep of your own that deletes these rows. A client-pruning rule of your own now goes in the store method. Clients were kept forever before; now a client registered longer ago than `UnusedClientLifetime` is deleted once its last refresh token expires, and that connection must register again to reconnect. Set `UnusedClientLifetime` longer to keep lapsed clients longer.
 
 ## Migration from 5.16.0
 

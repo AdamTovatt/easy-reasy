@@ -17,9 +17,9 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>1.1.0</VersionPrefix>
+    <VersionPrefix>1.2.0</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>OAuth test helpers for EasyReasy.Auth's OAuth 2.1 authorization server. OAuthTestClient drives an app's OAuth 2.1 authorization server the way an MCP client and the app's consent page do (register, authorize, approve or deny as a signed-in person, redeem, refresh, revoke), throwing OAuthTestFlowException with the OAuth error on any refusal, and InMemoryOAuthServerStore stands in for the app's IOAuthServerStore. Requires EasyReasy.Auth 5.17.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-testing-v$(VersionPrefix)/EasyReasy.Auth.Testing/README.md</PackageReleaseNotes>
+    <PackageReleaseNotes>InMemoryOAuthServerStore implements IOAuthServerStore.DeleteExpiredAsync: it deletes requests, codes and refresh tokens at or past their ExpiresAt, then the clients registered before the cutoff that nothing left names, as the server's sweep asks. Requires EasyReasy.Auth 5.18.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-testing-v$(VersionPrefix)/EasyReasy.Auth.Testing/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

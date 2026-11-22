@@ -24,8 +24,9 @@ namespace EasyReasy.Auth
 
         /// <summary>
         /// Registers the OAuth 2.1 authorization server: the application's store and grant handler (both scoped), the
-        /// server's own services, <see cref="IOAuthGrantService"/>, and the JWT bearer's 401 challenge pointing clients at
-        /// the protected resource metadata. Map the endpoints with
+        /// server's own services, <see cref="IOAuthGrantService"/>, the hosted sweep that deletes expired rows through
+        /// <see cref="IOAuthServerStore.DeleteExpiredAsync"/> every <see cref="OAuthServerOptions.SweepInterval"/>, and
+        /// the JWT bearer's 401 challenge pointing clients at the protected resource metadata. Map the endpoints with
         /// <see cref="OAuthServerApplicationBuilderExtensions.AddOAuthServerEndpoints"/>.
         /// </summary>
         /// <remarks>
@@ -57,6 +58,7 @@ namespace EasyReasy.Auth
             services.AddScoped<IOAuthServerStore, TStore>();
             services.AddScoped<IOAuthGrantHandler, THandler>();
             services.AddScoped<IOAuthGrantService, OAuthGrantService>();
+            services.AddHostedService<OAuthServerSweep>();
 
             services.AddHttpClient(MetadataDocumentHttpClientName, client => client.Timeout = MetadataDocumentFetchTimeout)
                 .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler

@@ -13,8 +13,8 @@ namespace EasyReasy.Auth
     /// its task completes: the server orders separate calls (it marks a code invalidated before it invalidates the
     /// refresh tokens, and checks the code, or the refresh token it consumed, again after storing a new refresh token),
     /// and that order is what keeps a redemption or refresh racing a revocation or a replay from leaving a token alive.
-    /// Rows past their <c>ExpiresAt</c> are never accepted, so deleting them is housekeeping the application schedules
-    /// as it likes.
+    /// Rows past their <c>ExpiresAt</c> are never accepted, and the server deletes them itself through
+    /// <see cref="DeleteExpiredAsync"/>.
     /// </remarks>
     public interface IOAuthServerStore
     {
@@ -136,5 +136,34 @@ namespace EasyReasy.Auth
         /// <param name="grantId">The application's grant id.</param>
         /// <param name="cancellationToken">A token to cancel the operation.</param>
         Task InvalidateGrantRefreshTokensAsync(string grantId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Deletes what the server can never accept again, in one operation: every authorization request, authorization
+        /// code and refresh token whose <c>ExpiresAt</c> is at or before <paramref name="now"/>, whatever its state; then
+        /// every client whose <see cref="OAuthClient.CreatedAt"/> is before <paramref name="clientsRegisteredBefore"/>
+        /// and that no request, code or refresh token left after the first deletion names. The server's sweep calls it
+        /// every <see cref="OAuthServerOptions.SweepInterval"/>.
+        /// </summary>
+        /// <remarks>
+        /// A row at or past its <c>ExpiresAt</c> is refused whatever its state, so deleting it changes no answer but one:
+        /// a consumed refresh token presented again after it expired is refused as unknown rather than as reuse, so its
+        /// family is not invalidated. That token could not be redeemed either way. A client registered before the cutoff
+        /// but still named by a live row (an authorization under way, a code, a refresh token) is kept; one registered
+        /// after it is kept whatever it holds, so a client that registered a moment ago survives until its first
+        /// authorization. A client deleted here is unknown from then on: once every refresh token of a client registered
+        /// before the cutoff has expired, the sweep deletes the client, and the connection must register again to
+        /// reconnect. A sweep that lands
+        /// between the authorization endpoint's read of a client and its storing of the request can leave a request that
+        /// names a deleted client; a store with a foreign key refuses that insert and the person starts again.
+        /// Every app instance runs its own sweep, so calls can overlap: each must be safe beside another, as separate
+        /// <c>DELETE</c> statements are.
+        /// </remarks>
+        /// <param name="now">The UTC time rows are compared with.</param>
+        /// <param name="clientsRegisteredBefore">
+        /// The UTC time before which a client must have registered to be deleted:
+        /// <paramref name="now"/> minus <see cref="OAuthServerOptions.UnusedClientLifetime"/>.
+        /// </param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
+        Task DeleteExpiredAsync(DateTime now, DateTime clientsRegisteredBefore, CancellationToken cancellationToken = default);
     }
 }

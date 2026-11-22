@@ -255,6 +255,34 @@ namespace EasyReasy.Auth.Testing
             return Task.CompletedTask;
         }
 
+        /// <inheritdoc />
+        public Task DeleteExpiredAsync(DateTime now, DateTime clientsRegisteredBefore, CancellationToken cancellationToken = default)
+        {
+            lock (_lock)
+            {
+                RemoveWhere(_requests, request => request.ExpiresAt <= now);
+                RemoveWhere(_codes, code => code.ExpiresAt <= now);
+                RemoveWhere(_refreshTokens, token => token.ExpiresAt <= now);
+
+                HashSet<string> clientsInUse = new HashSet<string>(StringComparer.Ordinal);
+                clientsInUse.UnionWith(_requests.Values.Select(request => request.ClientId));
+                clientsInUse.UnionWith(_codes.Values.Select(code => code.ClientId));
+                clientsInUse.UnionWith(_refreshTokens.Values.Select(token => token.ClientId));
+                RemoveWhere(_clients, client => client.CreatedAt < clientsRegisteredBefore && !clientsInUse.Contains(client.ClientId));
+            }
+
+            return Task.CompletedTask;
+        }
+
+        private static void RemoveWhere<TValue>(Dictionary<string, TValue> rows, Func<TValue, bool> shouldRemove)
+        {
+            List<string> keys = rows.Where(row => shouldRemove(row.Value)).Select(row => row.Key).ToList();
+            foreach (string key in keys)
+            {
+                rows.Remove(key);
+            }
+        }
+
         private static OAuthAuthorizationRequest Copy(OAuthAuthorizationRequest request)
         {
             return new OAuthAuthorizationRequest
