@@ -96,6 +96,10 @@ namespace EasyReasy.Auth.Tests
             WebApplicationBuilder builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
             builder.Logging.ClearProviders();
+            if (setup.LoggerProvider != null)
+            {
+                builder.Logging.AddProvider(setup.LoggerProvider);
+            }
 
             builder.Services.AddSingleton<TimeProvider>(parts.Clock);
             if (setup.OAuthServerRegisteredFirst)

@@ -5,6 +5,12 @@ namespace EasyReasy.Auth
     /// </summary>
     internal sealed class OAuthServerSettings
     {
+        /// <summary>
+        /// The longest <see cref="OAuthServerOptions.SweepInterval"/>: a <see cref="PeriodicTimer"/> refuses a period over
+        /// about 49.7 days, so the bound is the whole days under that.
+        /// </summary>
+        internal static readonly TimeSpan MaxSweepInterval = TimeSpan.FromDays(49);
+
         private readonly string _resourceOrigin;
         private readonly string _resourcePath;
 
@@ -22,6 +28,8 @@ namespace EasyReasy.Auth
             RefreshTokenLifetime = options.RefreshTokenLifetime;
             AuthorizationCodeLifetime = options.AuthorizationCodeLifetime;
             AuthorizationRequestLifetime = options.AuthorizationRequestLifetime;
+            SweepInterval = options.SweepInterval;
+            UnusedClientLifetime = options.UnusedClientLifetime ?? options.RefreshTokenLifetime;
             AllowDynamicClientRegistration = options.AllowDynamicClientRegistration;
             AllowClientIdMetadataDocuments = options.AllowClientIdMetadataDocuments;
         }
@@ -75,6 +83,17 @@ namespace EasyReasy.Auth
         /// How long a pending authorization request can be completed.
         /// </summary>
         public TimeSpan AuthorizationRequestLifetime { get; }
+
+        /// <summary>
+        /// How often the sweep runs.
+        /// </summary>
+        public TimeSpan SweepInterval { get; }
+
+        /// <summary>
+        /// How long after it registered a client with nothing live may be deleted, <see cref="RefreshTokenLifetime"/>
+        /// unless set.
+        /// </summary>
+        public TimeSpan UnusedClientLifetime { get; }
 
         /// <summary>
         /// Whether dynamic client registration is on.
@@ -165,6 +184,16 @@ namespace EasyReasy.Auth
             AddIfNotPositive(errors, options.RefreshTokenLifetime, nameof(OAuthServerOptions.RefreshTokenLifetime));
             AddIfNotPositive(errors, options.AuthorizationCodeLifetime, nameof(OAuthServerOptions.AuthorizationCodeLifetime));
             AddIfNotPositive(errors, options.AuthorizationRequestLifetime, nameof(OAuthServerOptions.AuthorizationRequestLifetime));
+            AddIfNotPositive(errors, options.SweepInterval, nameof(OAuthServerOptions.SweepInterval));
+            if (options.SweepInterval > MaxSweepInterval)
+            {
+                errors.Add($"{nameof(OAuthServerOptions.SweepInterval)} must be at most {MaxSweepInterval.TotalDays} days, a timer's longest period; got {options.SweepInterval}.");
+            }
+
+            if (options.UnusedClientLifetime != null)
+            {
+                AddIfNotPositive(errors, options.UnusedClientLifetime.Value, nameof(OAuthServerOptions.UnusedClientLifetime));
+            }
 
             if (errors.Count > 0 || issuer == null || resource == null)
             {

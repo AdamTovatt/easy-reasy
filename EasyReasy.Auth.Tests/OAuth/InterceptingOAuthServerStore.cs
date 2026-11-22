@@ -3,16 +3,31 @@ namespace EasyReasy.Auth.Tests
     /// <summary>
     /// The server's store in <see cref="HostedOAuthServer"/>: passes every call to an <see cref="InMemoryOAuthServerStore"/>,
     /// and lets a test run something just before the next refresh token is stored, to put another request in the middle
-    /// of a redemption.
+    /// of a redemption, or make the next sweep's delete fail.
     /// </summary>
     internal sealed class InterceptingOAuthServerStore : IOAuthServerStore
     {
         private readonly InMemoryOAuthServerStore _inner;
         private Func<Task>? _beforeNextRefreshTokenStore;
+        private Exception? _nextDeleteExpiredFailure;
+        private int _deleteExpiredCalls;
 
         public InterceptingOAuthServerStore(InMemoryOAuthServerStore inner)
         {
             _inner = inner;
+        }
+
+        /// <summary>
+        /// How many <see cref="DeleteExpiredAsync"/> calls have completed, for a test waiting on the background sweep.
+        /// </summary>
+        public int DeleteExpiredCalls => Volatile.Read(ref _deleteExpiredCalls);
+
+        /// <summary>
+        /// Makes the next <see cref="DeleteExpiredAsync"/> throw <paramref name="failure"/>, deleting nothing.
+        /// </summary>
+        public void FailNextDeleteExpired(Exception failure)
+        {
+            _nextDeleteExpiredFailure = failure;
         }
 
         /// <summary>
@@ -61,5 +76,17 @@ namespace EasyReasy.Auth.Tests
         public Task InvalidateGrantAuthorizationCodesAsync(string grantId, CancellationToken cancellationToken = default) => _inner.InvalidateGrantAuthorizationCodesAsync(grantId, cancellationToken);
 
         public Task InvalidateGrantRefreshTokensAsync(string grantId, CancellationToken cancellationToken = default) => _inner.InvalidateGrantRefreshTokensAsync(grantId, cancellationToken);
+
+        public async Task DeleteExpiredAsync(DateTime now, DateTime clientsRegisteredBefore, CancellationToken cancellationToken = default)
+        {
+            Exception? failure = Interlocked.Exchange(ref _nextDeleteExpiredFailure, null);
+            if (failure != null)
+            {
+                throw failure;
+            }
+
+            await _inner.DeleteExpiredAsync(now, clientsRegisteredBefore, cancellationToken);
+            Interlocked.Increment(ref _deleteExpiredCalls);
+        }
     }
 }

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace EasyReasy.Auth.Tests
 {
     /// <summary>
@@ -27,6 +29,11 @@ namespace EasyReasy.Auth.Tests
         /// <c>WWW-Authenticate</c> header, so the response has started before the connection's scheme is asked.
         /// </summary>
         public bool AppBearerWritesItsOwnBody { get; init; }
+
+        /// <summary>
+        /// A logger provider the host logs to, or null for none.
+        /// </summary>
+        public ILoggerProvider? LoggerProvider { get; init; }
 
         /// <summary>
         /// How the pipeline runs authentication.

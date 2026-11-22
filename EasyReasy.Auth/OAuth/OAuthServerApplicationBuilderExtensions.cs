@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -19,12 +18,15 @@ namespace EasyReasy.Auth
         /// open to connections) nor an API key's (403) can approve a connection. Every response is <c>no-store</c>.
         /// </summary>
         /// <param name="app">The application.</param>
-        /// <returns>The application for chaining.</returns>
+        /// <returns>
+        /// Each mapped endpoint's builder, so the application can add its own metadata to one endpoint (a rate limiting
+        /// policy, say) without matching its path.
+        /// </returns>
         /// <exception cref="InvalidOperationException">
         /// The server, its store, its grant handler or EasyReasy.Auth itself is not registered;
         /// every missing service is reported in one exception.
         /// </exception>
-        public static WebApplication AddOAuthServerEndpoints(this WebApplication app)
+        public static OAuthServerEndpoints AddOAuthServerEndpoints(this WebApplication app)
         {
             ArgumentNullException.ThrowIfNull(app);
             ThrowIfServicesMissing(app.Services);
@@ -34,27 +36,32 @@ namespace EasyReasy.Auth
             // The client-facing endpoints are anonymous: a client authenticates at the token and revocation endpoints by
             // its own credentials, never a bearer token.
             RouteGroupBuilder clientEndpoints = app.MapGroup("").AllowAnonymous();
-            clientEndpoints.MapGet(OAuthServerPaths.AuthorizationServerMetadata, () => OAuthMetadataDocuments.AuthorizationServer(settings));
-            clientEndpoints.MapGet(settings.ProtectedResourceMetadataPath, () => OAuthMetadataDocuments.ProtectedResource(settings));
-            if (settings.AllowDynamicClientRegistration)
+            // The consent endpoints take only the app's own person token, by the consent policy.
+            RouteGroupBuilder consentEndpoints = app.MapGroup(OAuthServerPaths.AuthorizationRequestsPrefix)
+                .RequireAuthorization(OAuthConsentPolicy.Build());
+
+            return new OAuthServerEndpoints
             {
-                clientEndpoints.MapPost(OAuthServerPaths.Register, (OAuthRegistrationEndpoint endpoint, HttpContext httpContext) => endpoint.HandleAsync(httpContext));
-            }
-
-            clientEndpoints.MapGet(OAuthServerPaths.Authorize, (OAuthAuthorizationEndpoint endpoint, HttpContext httpContext) => endpoint.AuthorizeAsync(httpContext));
-            clientEndpoints.MapPost(OAuthServerPaths.Token, (OAuthTokenEndpoint endpoint, HttpContext httpContext) => endpoint.TokenAsync(httpContext));
-            clientEndpoints.MapPost(OAuthServerPaths.Revoke, (OAuthRevocationEndpoint endpoint, HttpContext httpContext) => endpoint.RevokeAsync(httpContext));
-
-            AuthorizationPolicy consentPolicy = OAuthConsentPolicy.Build();
-            string requestRoute = OAuthServerPaths.AuthorizationRequestsPrefix + "/{request}";
-            app.MapGet(requestRoute, (string request, OAuthAuthorizationEndpoint endpoint, HttpContext httpContext) => endpoint.GetRequestAsync(request, httpContext))
-                .RequireAuthorization(consentPolicy);
-            app.MapPost(requestRoute + "/approve", (string request, OAuthAuthorizationEndpoint endpoint, HttpContext httpContext) => endpoint.ApproveAsync(request, httpContext))
-                .RequireAuthorization(consentPolicy);
-            app.MapPost(requestRoute + "/deny", (string request, OAuthAuthorizationEndpoint endpoint, HttpContext httpContext) => endpoint.DenyAsync(request, httpContext))
-                .RequireAuthorization(consentPolicy);
-
-            return app;
+                AuthorizationServerMetadata = clientEndpoints.MapGet(
+                    OAuthServerPaths.AuthorizationServerMetadata, () => OAuthMetadataDocuments.AuthorizationServer(settings)),
+                ProtectedResourceMetadata = clientEndpoints.MapGet(
+                    settings.ProtectedResourceMetadataPath, () => OAuthMetadataDocuments.ProtectedResource(settings)),
+                Registration = settings.AllowDynamicClientRegistration
+                    ? clientEndpoints.MapPost(OAuthServerPaths.Register, (OAuthRegistrationEndpoint endpoint, HttpContext httpContext) => endpoint.HandleAsync(httpContext))
+                    : null,
+                Authorization = clientEndpoints.MapGet(
+                    OAuthServerPaths.Authorize, (OAuthAuthorizationEndpoint endpoint, HttpContext httpContext) => endpoint.AuthorizeAsync(httpContext)),
+                Token = clientEndpoints.MapPost(
+                    OAuthServerPaths.Token, (OAuthTokenEndpoint endpoint, HttpContext httpContext) => endpoint.TokenAsync(httpContext)),
+                Revocation = clientEndpoints.MapPost(
+                    OAuthServerPaths.Revoke, (OAuthRevocationEndpoint endpoint, HttpContext httpContext) => endpoint.RevokeAsync(httpContext)),
+                ConsentRequest = consentEndpoints.MapGet(
+                    "/{request}", (string request, OAuthAuthorizationEndpoint endpoint, HttpContext httpContext) => endpoint.GetRequestAsync(request, httpContext)),
+                ConsentApproval = consentEndpoints.MapPost(
+                    "/{request}/approve", (string request, OAuthAuthorizationEndpoint endpoint, HttpContext httpContext) => endpoint.ApproveAsync(request, httpContext)),
+                ConsentDenial = consentEndpoints.MapPost(
+                    "/{request}/deny", (string request, OAuthAuthorizationEndpoint endpoint, HttpContext httpContext) => endpoint.DenyAsync(request, httpContext)),
+            };
         }
 
         private static void ThrowIfServicesMissing(IServiceProvider services)

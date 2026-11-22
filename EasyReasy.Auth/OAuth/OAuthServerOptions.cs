@@ -64,6 +64,23 @@ namespace EasyReasy.Auth
         public TimeSpan AuthorizationRequestLifetime { get; init; } = TimeSpan.FromMinutes(10);
 
         /// <summary>
+        /// How often the server deletes what it can never accept again, through
+        /// <see cref="IOAuthServerStore.DeleteExpiredAsync"/>: expired requests, codes and refresh tokens, and the clients
+        /// <see cref="UnusedClientLifetime"/> picks. Default 1 hour, at most 49 days (a timer's longest period). The first
+        /// sweep runs one interval after start.
+        /// </summary>
+        public TimeSpan SweepInterval { get; init; } = TimeSpan.FromHours(1);
+
+        /// <summary>
+        /// How long after it registered a client may be deleted: the sweep deletes a client registered longer ago than this
+        /// once nothing of it is live (no authorization under way, code or refresh token), and keeps a younger one
+        /// whatever it holds. Counted from registration, not from last use, so a short value can delete a client whose
+        /// last token expired a moment ago. A deleted client must register again to reconnect. Default null, which is
+        /// <see cref="RefreshTokenLifetime"/>.
+        /// </summary>
+        public TimeSpan? UnusedClientLifetime { get; init; }
+
+        /// <summary>
         /// Whether clients can register themselves at the registration endpoint (RFC 7591). Default true. When false,
         /// the endpoint is not mapped and the metadata lists no <c>registration_endpoint</c>.
         /// </summary>
