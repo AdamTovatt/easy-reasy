@@ -2205,4 +2205,4 @@ Version 3.0.0 introduces breaking changes:
 
 ---
 
-⚠️ **Security Disclaimer:** This library implements a simple token-based authentication system suitable for internal or low-risk applications. Its OAuth 2.1 authorization server (section 17) covers what MCP clients need, not the whole OAuth ecosystem: there is no OpenID Connect, token introspection or signing-key rotation, and consent is a page and a grant handler you write. For production systems with complex threat models, consider using a mature identity provider such as IdentityServer, OpenIddict, or a cloud-based solution. 
+**Scope of the OAuth server:** its OAuth 2.1 authorization server (section 17) covers what MCP clients need, not the whole OAuth ecosystem: there is no OpenID Connect, token introspection or signing-key rotation, and consent is a page and a grant handler you write. 

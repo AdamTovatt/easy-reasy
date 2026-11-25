@@ -46,8 +46,8 @@ namespace EasyReasy.Auth
         public string? Resource { get; init; }
 
         /// <summary>
-        /// The approve request's JSON body, which the application defines (in Ordo: the organization, and for a system
-        /// its grants), or null when the request had no body. The library does not read it; validate it as untrusted
+        /// The approve request's JSON body, which the application defines (for example, which organization a
+        /// connection is for), or null when the request had no body. The library does not read it; validate it as untrusted
         /// input.
         /// </summary>
         public JsonElement? ApprovalBody { get; init; }
