@@ -1,4 +1,3 @@
-using EasyReasy.Auth.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -76,7 +75,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         /// </summary>
         public static void ConfigureFakeIdentityProvider(IServiceCollection services, FakeMicrosoftIdentityProvider identityProvider)
         {
-            services.AddHttpClient(MicrosoftAuthServiceCollectionExtensions.HttpClientName)
+            services.AddHttpClient(OpenIdConnectCodeFlow.HttpClientName)
                 .ConfigurePrimaryHttpMessageHandler(() => identityProvider);
         }
 
@@ -85,7 +84,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             string? requiredAuthenticationContextId = null,
             TimeSpan? maxAuthenticationAge = null,
             string? nonce = null,
-            MicrosoftAuthPrompt? prompt = null,
+            OpenIdConnectPrompt? prompt = null,
             string? loginHint = null,
             string redirectUri = SigningRedirectUri)
         {
@@ -110,20 +109,29 @@ namespace EasyReasy.Auth.Microsoft.Tests
             return new FakeBrowser(Clock);
         }
 
-        public MicrosoftAuthBeginResult Begin(MicrosoftAuthBeginRequest request, FakeBrowser browser)
+        public async Task<OpenIdConnectAuthBeginResult> BeginAsync(MicrosoftAuthBeginRequest request, FakeBrowser browser)
         {
             DefaultHttpContext context = new DefaultHttpContext();
             browser.ApplyTo(context.Request);
-            MicrosoftAuthBeginResult result = Service.Begin(request, context);
-            browser.Absorb(context.Response);
-            return result;
+            try
+            {
+                return await Service.BeginAsync(request, context);
+            }
+            finally
+            {
+                browser.Absorb(context.Response);
+            }
         }
 
-        public async Task<MicrosoftAuthCompletionResult> CompleteAsync(string code, string state, FakeBrowser browser)
+        /// <summary>
+        /// Completes a flow the way its redirect URI page would: posting the code and state with the page's own address,
+        /// the signing redirect URI unless given.
+        /// </summary>
+        public async Task<MicrosoftAuthCompletionResult> CompleteAsync(string code, string state, FakeBrowser browser, string redirectUri = SigningRedirectUri, string? issuer = null)
         {
             DefaultHttpContext context = new DefaultHttpContext();
             browser.ApplyTo(context.Request);
-            MicrosoftAuthCompletionResult result = await Service.CompleteAsync(code, state, context);
+            MicrosoftAuthCompletionResult result = await Service.CompleteAsync(new OpenIdConnectAuthorizationResponse(code, state, issuer, redirectUri), context);
             browser.Absorb(context.Response);
             return result;
         }
@@ -134,9 +142,9 @@ namespace EasyReasy.Auth.Microsoft.Tests
         public async Task<MicrosoftAuthCompletionResult> SignInAsync(MicrosoftAuthBeginRequest request, Action<FakeIdTokenSettings>? customizeToken = null)
         {
             FakeBrowser browser = CreateBrowser();
-            MicrosoftAuthBeginResult begun = Begin(request, browser);
+            OpenIdConnectAuthBeginResult begun = await BeginAsync(request, browser);
             string code = IdentityProvider.IssueCode(begun.AuthorizationUrl, customizeToken);
-            return await CompleteAsync(code, begun.State, browser);
+            return await CompleteAsync(code, begun.State, browser, request.RedirectUri);
         }
 
         public void Dispose()

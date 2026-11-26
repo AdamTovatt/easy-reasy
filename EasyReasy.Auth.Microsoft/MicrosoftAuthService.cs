@@ -1,251 +1,164 @@
+using EasyReasy.Auth.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.WebUtilities;
 using System.Diagnostics;
-using System.Globalization;
-using System.Text.Json.Nodes;
 
 namespace EasyReasy.Auth.Microsoft
 {
     /// <summary>
-    /// The registered <see cref="IMicrosoftAuthService"/>.
+    /// The registered <see cref="IMicrosoftAuthService"/>: the shared OpenID Connect code flow with the app registration
+    /// as a provider per tenant segment, and the Entra rules on top: work and school accounts only, the flow's tenant,
+    /// the allowed tenants, an authentication context through <c>acrs</c>, and the <c>tid</c> plus <c>oid</c> identity.
     /// </summary>
     internal sealed class MicrosoftAuthService : IMicrosoftAuthService
     {
-        private const int FlowIdSize = 16;
-        private const int CodeVerifierSize = 32;
-        private const int GeneratedNonceSize = 32;
-
-        private readonly MicrosoftAuthOptions _options;
-        private readonly MicrosoftAuthority _authority;
-        private readonly MicrosoftAuthStateProtector _stateProtector;
-        private readonly MicrosoftTokenEndpointClient _tokenEndpointClient;
-        private readonly MicrosoftIdTokenValidator _idTokenValidator;
-        private readonly TimeProvider _timeProvider;
-        private readonly HashSet<Guid> _allowedTenantIds;
+        private readonly OpenIdConnectCodeFlow _flow;
+        private readonly MicrosoftProviderResolver _resolver;
+        private readonly IReadOnlySet<Guid> _allowedTenantIds;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MicrosoftAuthService"/> class.
         /// </summary>
-        public MicrosoftAuthService(
-            MicrosoftAuthOptions options,
-            MicrosoftAuthority authority,
-            MicrosoftAuthStateProtector stateProtector,
-            MicrosoftTokenEndpointClient tokenEndpointClient,
-            MicrosoftIdTokenValidator idTokenValidator,
-            TimeProvider timeProvider)
+        /// <param name="flow">The package's own flow, under its own state key.</param>
+        /// <param name="resolver">The app registration as a provider per tenant segment.</param>
+        /// <param name="allowedTenantIds">The tenants whose accounts are accepted, or empty for any work or school
+        /// tenant.</param>
+        public MicrosoftAuthService(OpenIdConnectCodeFlow flow, MicrosoftProviderResolver resolver, IReadOnlySet<Guid> allowedTenantIds)
         {
-            _options = options;
-            _authority = authority;
-            _stateProtector = stateProtector;
-            _tokenEndpointClient = tokenEndpointClient;
-            _idTokenValidator = idTokenValidator;
-            _timeProvider = timeProvider;
-            _allowedTenantIds = (options.AllowedTenantIds ?? []).ToHashSet();
+            _flow = flow;
+            _resolver = resolver;
+            _allowedTenantIds = allowedTenantIds;
         }
 
         /// <inheritdoc />
-        public MicrosoftAuthBeginResult Begin(MicrosoftAuthBeginRequest request, HttpContext httpContext)
+        public async Task<OpenIdConnectAuthBeginResult> BeginAsync(MicrosoftAuthBeginRequest request, HttpContext httpContext, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
             ArgumentNullException.ThrowIfNull(httpContext);
-            ValidateBeginRequest(request);
+            ValidateEntraRules(request);
 
-            string flowId = MicrosoftRandomValue.Create(FlowIdSize);
-            string codeVerifier = MicrosoftRandomValue.Create(CodeVerifierSize);
-            string nonce = request.Nonce ?? MicrosoftRandomValue.Create(GeneratedNonceSize);
-            // max_age is whole seconds, so a fraction is dropped: Microsoft and Complete then apply the same limit.
-            long? maxAgeSeconds = request.MaxAuthenticationAge is TimeSpan maxAge ? (long)maxAge.TotalSeconds : null;
-
-            string bindingCookieHash = MicrosoftBindingCookie.Issue(httpContext, flowId, _options.StateLifetime);
-
-            MicrosoftAuthState state = new MicrosoftAuthState
+            OpenIdConnectAuthBeginRequest flowRequest = new OpenIdConnectAuthBeginRequest
             {
-                FlowId = flowId,
-                BindingCookieHash = bindingCookieHash,
-                CodeVerifier = codeVerifier,
-                Nonce = nonce,
-                RequiredTenantId = request.TenantId,
-                RequiredAuthenticationContextId = request.RequiredAuthenticationContextId,
-                MaxAuthenticationAgeSeconds = maxAgeSeconds,
+                ProviderKey = MicrosoftAuthority.GetTenantSegment(request.TenantId),
                 RedirectUri = request.RedirectUri,
                 CallerBinding = request.CallerBinding,
-                ExpiresAtUnixSeconds = (_timeProvider.GetUtcNow() + _options.StateLifetime).ToUnixTimeSeconds(),
-            };
-            string protectedState = _stateProtector.Protect(state);
-
-            Dictionary<string, string?> parameters = new Dictionary<string, string?>
-            {
-                ["client_id"] = _options.ClientId,
-                ["response_type"] = "code",
-                ["redirect_uri"] = request.RedirectUri,
-                // Never form_post: a cross-site POST would not carry the SameSite=Lax binding cookie.
-                ["response_mode"] = "query",
-                ["scope"] = MicrosoftAuthority.Scope,
-                ["state"] = protectedState,
-                ["nonce"] = nonce,
-                ["code_challenge"] = MicrosoftHash.Sha256(codeVerifier),
-                ["code_challenge_method"] = "S256",
+                Prompt = request.Prompt,
+                Nonce = request.Nonce,
+                LoginHint = request.LoginHint,
+                MaxAuthenticationAge = request.MaxAuthenticationAge,
+                RequiredClaimValues = request.RequiredAuthenticationContextId is string contextId
+                    ? new Dictionary<string, string> { [MicrosoftAuthority.AuthenticationContextClaim] = contextId }
+                    : null,
             };
 
-            if (request.Prompt is MicrosoftAuthPrompt prompt)
-            {
-                parameters["prompt"] = ToParameterValue(prompt);
-            }
-
-            if (request.LoginHint != null)
-            {
-                parameters["login_hint"] = request.LoginHint;
-            }
-
-            if (maxAgeSeconds is long seconds)
-            {
-                parameters["max_age"] = seconds.ToString(CultureInfo.InvariantCulture);
-            }
-
-            if (request.RequiredAuthenticationContextId != null)
-            {
-                parameters["claims"] = CreateAuthenticationContextClaimsRequest(request.RequiredAuthenticationContextId);
-            }
-
-            string authorizationUrl = QueryHelpers.AddQueryString(_authority.GetAuthorizeEndpoint(state.RequiredTenantId), parameters);
-            return new MicrosoftAuthBeginResult(authorizationUrl, protectedState);
+            return await _flow.BeginAsync(flowRequest, _resolver, httpContext, cancellationToken)
+                ?? throw new UnreachableException("Every tenant segment resolves to a provider.");
         }
 
         /// <inheritdoc />
-        public async Task<MicrosoftAuthCompletionResult> CompleteAsync(string code, string state, HttpContext httpContext, CancellationToken cancellationToken = default)
+        public async Task<MicrosoftAuthCompletionResult> CompleteAsync(OpenIdConnectAuthorizationResponse response, HttpContext httpContext, CancellationToken cancellationToken = default)
         {
+            ArgumentNullException.ThrowIfNull(response);
             ArgumentNullException.ThrowIfNull(httpContext);
 
-            MicrosoftAuthState? flow = _stateProtector.Unprotect(state);
-            if (flow == null)
+            OpenIdConnectCodeFlowResult result = await _flow.CompleteAsync(response, _resolver, httpContext, cancellationToken);
+            if (result.UserInfo == null)
             {
-                return MicrosoftAuthCompletionResult.Failed(MicrosoftAuthFailureReason.InvalidState);
+                // The flow sets the identity whenever the token validated, so a result without one is a failure.
+                return MicrosoftAuthCompletionResult.Failed(ToMicrosoftReason(
+                    result.FailureReason ?? throw new UnreachableException("A result without an identity has a reason.")));
             }
 
-            // Read the binding before clearing it, and clear it whatever happens next: the code is single-use, so a
-            // flow that reached Complete cannot be completed again.
-            MicrosoftAuthFailureReason? bindingFailure = MicrosoftBindingCookie.Check(httpContext, flow.FlowId, flow.BindingCookieHash);
-            MicrosoftBindingCookie.Clear(httpContext, flow.FlowId);
-
-            // Expiry first: an expired flow's cookie has expired with it, and the state is the accurate reason.
-            if (_timeProvider.GetUtcNow().ToUnixTimeSeconds() >= flow.ExpiresAtUnixSeconds)
+            MicrosoftUserInfo? userInfo = ReadIdentity(result.UserInfo);
+            if (userInfo == null)
             {
-                return MicrosoftAuthCompletionResult.Failed(MicrosoftAuthFailureReason.ExpiredState);
+                return MicrosoftAuthCompletionResult.Failed(MicrosoftAuthFailureReason.InvalidToken);
             }
 
-            if (bindingFailure is MicrosoftAuthFailureReason failure)
+            // The tenant rules first, so a refused account is reported for its tenant before the flow's other rules.
+            MicrosoftAuthFailureReason? tenantRefusal = CheckTenantRules(userInfo, MicrosoftAuthority.GetRequiredTenantId(result.UserInfo.ProviderKey));
+            if (tenantRefusal is MicrosoftAuthFailureReason tenantReason)
             {
-                return MicrosoftAuthCompletionResult.Failed(failure);
+                return MicrosoftAuthCompletionResult.Refused(tenantReason, userInfo);
             }
 
-            if (string.IsNullOrEmpty(code))
+            if (!result.Success)
             {
-                return MicrosoftAuthCompletionResult.Failed(MicrosoftAuthFailureReason.CodeRedemptionFailed);
+                return MicrosoftAuthCompletionResult.Refused(ToMicrosoftReason(result.FailureReason.Value), userInfo);
             }
 
-            string? idToken = await _tokenEndpointClient.RedeemCodeAsync(flow.RequiredTenantId, code, flow.RedirectUri, flow.CodeVerifier, cancellationToken);
-            if (idToken == null)
-            {
-                return MicrosoftAuthCompletionResult.Failed(MicrosoftAuthFailureReason.CodeRedemptionFailed);
-            }
-
-            MicrosoftIdTokenValidationResult validation = await _idTokenValidator.ValidateAsync(idToken, flow.Nonce, cancellationToken);
-            if (!validation.IsValid)
-            {
-                return MicrosoftAuthCompletionResult.Failed(validation.FailureReason.Value);
-            }
-
-            MicrosoftAuthFailureReason? refusal = CheckFlowRules(validation.UserInfo, flow);
-            if (refusal is MicrosoftAuthFailureReason refusalReason)
-            {
-                return MicrosoftAuthCompletionResult.Refused(refusalReason, validation.UserInfo);
-            }
-
-            return MicrosoftAuthCompletionResult.Succeeded(validation.UserInfo, flow.CallerBinding, idToken);
+            return MicrosoftAuthCompletionResult.Succeeded(userInfo, result.CallerBinding, result.IdToken, result.IdTokenSigningKey);
         }
 
         /// <summary>
-        /// The rules a genuine token must also meet: no personal account, the flow's tenant, the allowed tenants,
-        /// the flow's authentication context and its max authentication age.
+        /// The rules for a genuine account's tenant: no personal account, the flow's tenant, and the allowed tenants.
         /// </summary>
-        private MicrosoftAuthFailureReason? CheckFlowRules(MicrosoftUserInfo userInfo, MicrosoftAuthState flow)
+        private MicrosoftAuthFailureReason? CheckTenantRules(MicrosoftUserInfo userInfo, Guid? requiredTenantId)
         {
-            Guid tenantId = userInfo.TenantId;
-
-            if (tenantId == MicrosoftAuthority.PersonalAccountsTenantId)
+            if (userInfo.TenantId == MicrosoftAuthority.PersonalAccountsTenantId)
             {
                 return MicrosoftAuthFailureReason.PersonalAccount;
             }
 
-            if (flow.RequiredTenantId is Guid requiredTenantId && tenantId != requiredTenantId)
+            if (requiredTenantId is Guid required && userInfo.TenantId != required)
             {
                 return MicrosoftAuthFailureReason.TenantMismatch;
             }
 
-            if (_allowedTenantIds.Count > 0 && !_allowedTenantIds.Contains(tenantId))
+            if (_allowedTenantIds.Count > 0 && !_allowedTenantIds.Contains(userInfo.TenantId))
             {
                 return MicrosoftAuthFailureReason.TenantNotAllowed;
-            }
-
-            if (flow.RequiredAuthenticationContextId != null
-                && !userInfo.AuthenticationContextIds.Contains(flow.RequiredAuthenticationContextId, StringComparer.Ordinal))
-            {
-                return MicrosoftAuthFailureReason.MissingAuthenticationContext;
-            }
-
-            if (flow.MaxAuthenticationAgeSeconds is long maxAgeSeconds)
-            {
-                if (userInfo.AuthenticationTime is not DateTimeOffset authenticationTime)
-                {
-                    return MicrosoftAuthFailureReason.MissingAuthTime;
-                }
-
-                if (_timeProvider.GetUtcNow() - authenticationTime > TimeSpan.FromSeconds(maxAgeSeconds))
-                {
-                    return MicrosoftAuthFailureReason.StaleAuthTime;
-                }
             }
 
             return null;
         }
 
-        private void ValidateBeginRequest(MicrosoftAuthBeginRequest request)
+        /// <summary>
+        /// The Entra identity of a validated token: a GUID <c>tid</c> and a non-blank <c>oid</c>, or null when either is
+        /// missing or malformed.
+        /// </summary>
+        private static MicrosoftUserInfo? ReadIdentity(OpenIdConnectUserInfo token)
+        {
+            if (!Guid.TryParse(FindClaim(token, MicrosoftAuthority.TenantClaim), out Guid tenantId))
+            {
+                return null;
+            }
+
+            string? objectId = FindClaim(token, MicrosoftAuthority.ObjectIdClaim);
+            if (string.IsNullOrWhiteSpace(objectId))
+            {
+                return null;
+            }
+
+            return new MicrosoftUserInfo
+            {
+                TenantId = tenantId,
+                ObjectId = objectId,
+                AuthenticationTime = token.AuthenticationTime,
+                Nonce = token.Nonce,
+                PreferredUsername = FindClaim(token, MicrosoftAuthority.PreferredUsernameClaim),
+                Name = token.Name,
+                AuthenticationMethods = token.AuthenticationMethods,
+                AuthenticationContextIds = token.Claims.Where(claim => claim.Type == MicrosoftAuthority.AuthenticationContextClaim).Select(claim => claim.Value).ToList(),
+            };
+        }
+
+        private static string? FindClaim(OpenIdConnectUserInfo token, string type)
+        {
+            return token.Claims.FirstOrDefault(claim => claim.Type == type)?.Value;
+        }
+
+        private static void ValidateEntraRules(MicrosoftAuthBeginRequest request)
         {
             List<string> errors = new List<string>();
-
-            if (request.RedirectUri == null || !_options.RedirectUris.Contains(request.RedirectUri, StringComparer.Ordinal))
-            {
-                errors.Add($"The redirect URI '{request.RedirectUri}' is not one of {nameof(MicrosoftAuthOptions)}.{nameof(MicrosoftAuthOptions.RedirectUris)}.");
-            }
-
-            if (request.CallerBinding == null)
-            {
-                errors.Add($"{nameof(MicrosoftAuthBeginRequest.CallerBinding)} must not be null.");
-            }
 
             if (request.TenantId == MicrosoftAuthority.PersonalAccountsTenantId)
             {
                 errors.Add("The tenant id is the personal Microsoft accounts tenant, whose accounts are always refused.");
             }
 
-            if (request.Prompt is MicrosoftAuthPrompt prompt && !Enum.IsDefined(prompt))
-            {
-                errors.Add($"{nameof(MicrosoftAuthBeginRequest.Prompt)} {(int)prompt} is not a {nameof(MicrosoftAuthPrompt)} member.");
-            }
-
-            if (request.Nonce != null && string.IsNullOrWhiteSpace(request.Nonce))
-            {
-                errors.Add($"{nameof(MicrosoftAuthBeginRequest.Nonce)} must be null or non-blank.");
-            }
-
             if (request.RequiredAuthenticationContextId != null && string.IsNullOrWhiteSpace(request.RequiredAuthenticationContextId))
             {
                 errors.Add($"{nameof(MicrosoftAuthBeginRequest.RequiredAuthenticationContextId)} must be null or non-blank.");
-            }
-
-            if (request.MaxAuthenticationAge is TimeSpan maxAge && maxAge < TimeSpan.FromSeconds(1))
-            {
-                errors.Add($"{nameof(MicrosoftAuthBeginRequest.MaxAuthenticationAge)} must be at least one second; got {maxAge}.");
             }
 
             if (errors.Count > 0)
@@ -255,35 +168,37 @@ namespace EasyReasy.Auth.Microsoft
         }
 
         /// <summary>
-        /// The OIDC <c>claims</c> request for an authentication context, as Conditional Access expects it.
+        /// The Microsoft name of a reason the shared flow gave. The names are an audit contract, so each keeps its
+        /// Microsoft name: the same name where the check is the same, and the authentication context's own name for the
+        /// required claim it is asked as.
         /// </summary>
-        private static string CreateAuthenticationContextClaimsRequest(string authenticationContextId)
+        /// <exception cref="UnreachableException">A reason only rules this package never sets can give.</exception>
+        internal static MicrosoftAuthFailureReason ToMicrosoftReason(OpenIdConnectAuthFailureReason reason)
         {
-            JsonObject claims = new JsonObject
+            return reason switch
             {
-                ["id_token"] = new JsonObject
-                {
-                    ["acrs"] = new JsonObject
-                    {
-                        ["essential"] = true,
-                        ["value"] = authenticationContextId,
-                    },
-                },
-            };
-
-            return claims.ToJsonString();
-        }
-
-        private static string ToParameterValue(MicrosoftAuthPrompt prompt)
-        {
-            return prompt switch
-            {
-                MicrosoftAuthPrompt.Login => "login",
-                MicrosoftAuthPrompt.None => "none",
-                MicrosoftAuthPrompt.Consent => "consent",
-                MicrosoftAuthPrompt.SelectAccount => "select_account",
-                // ValidateBeginRequest refuses an undefined member before anything is issued.
-                _ => throw new UnreachableException($"Unhandled {nameof(MicrosoftAuthPrompt)} {prompt}."),
+                OpenIdConnectAuthFailureReason.InvalidState => MicrosoftAuthFailureReason.InvalidState,
+                OpenIdConnectAuthFailureReason.ExpiredState => MicrosoftAuthFailureReason.ExpiredState,
+                OpenIdConnectAuthFailureReason.BindingCookieMissing => MicrosoftAuthFailureReason.BindingCookieMissing,
+                OpenIdConnectAuthFailureReason.BindingCookieMismatch => MicrosoftAuthFailureReason.BindingCookieMismatch,
+                OpenIdConnectAuthFailureReason.RedirectUriMismatch => MicrosoftAuthFailureReason.RedirectUriMismatch,
+                OpenIdConnectAuthFailureReason.IssuerParameterMismatch => MicrosoftAuthFailureReason.IssuerParameterMismatch,
+                OpenIdConnectAuthFailureReason.IssuerParameterMissing => MicrosoftAuthFailureReason.IssuerParameterMissing,
+                OpenIdConnectAuthFailureReason.ProviderChanged => MicrosoftAuthFailureReason.ProviderChanged,
+                OpenIdConnectAuthFailureReason.CodeRedemptionFailed => MicrosoftAuthFailureReason.CodeRedemptionFailed,
+                OpenIdConnectAuthFailureReason.InvalidToken => MicrosoftAuthFailureReason.InvalidToken,
+                OpenIdConnectAuthFailureReason.InvalidSignature => MicrosoftAuthFailureReason.InvalidSignature,
+                OpenIdConnectAuthFailureReason.InvalidAudience => MicrosoftAuthFailureReason.InvalidAudience,
+                OpenIdConnectAuthFailureReason.InvalidIssuer => MicrosoftAuthFailureReason.InvalidIssuer,
+                OpenIdConnectAuthFailureReason.TokenExpired => MicrosoftAuthFailureReason.TokenExpired,
+                OpenIdConnectAuthFailureReason.NonceMismatch => MicrosoftAuthFailureReason.NonceMismatch,
+                OpenIdConnectAuthFailureReason.MissingAuthTime => MicrosoftAuthFailureReason.MissingAuthTime,
+                OpenIdConnectAuthFailureReason.StaleAuthTime => MicrosoftAuthFailureReason.StaleAuthTime,
+                OpenIdConnectAuthFailureReason.MissingRequiredClaim
+                    or OpenIdConnectAuthFailureReason.RequiredClaimMismatch => MicrosoftAuthFailureReason.MissingAuthenticationContext,
+                // Every segment resolves; no expected identity, acr or amr rule is set; the caller binding is the sign-in
+                // endpoint's check.
+                _ => throw new UnreachableException($"The shared flow gave {reason}, which no rule of this package can cause."),
             };
         }
     }

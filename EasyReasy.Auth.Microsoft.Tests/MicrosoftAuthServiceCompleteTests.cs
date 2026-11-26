@@ -88,7 +88,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
 
             Assert.AreEqual(
                 $"MicrosoftAuthCompletionResult {{ Success = true, AttemptedSubject = {Subject}, IdToken = [REDACTED] }}",
-                MicrosoftAuthCompletionResult.Succeeded(userInfo, "binding", "header.payload.signature").ToString());
+                MicrosoftAuthCompletionResult.Succeeded(userInfo, "binding", "header.payload.signature", "{\"kty\":\"RSA\"}").ToString());
             Assert.AreEqual(
                 $"MicrosoftAuthCompletionResult {{ Success = false, FailureReason = TenantNotAllowed, AttemptedSubject = {Subject} }}",
                 MicrosoftAuthCompletionResult.Refused(MicrosoftAuthFailureReason.TenantNotAllowed, userInfo).ToString());
@@ -131,7 +131,6 @@ namespace EasyReasy.Auth.Microsoft.Tests
             Dictionary<string, string> form = harness.IdentityProvider.TokenRequests.Single();
             Assert.AreEqual(MicrosoftAuthHarness.SignInRedirectUri, form["redirect_uri"]);
             Assert.AreEqual(FakeMicrosoftIdentityProvider.ClientSecret, form["client_secret"]);
-            Assert.AreEqual("openid profile", form["scope"]);
         }
 
         [TestMethod]
@@ -146,11 +145,64 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
+        public async Task Complete_Success_ReturnsTheKeyTheIdTokenWasVerifiedWith()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+
+            MicrosoftAuthCompletionResult result = await harness.SignInAsync(MicrosoftAuthHarness.CreateRequest());
+
+            Assert.IsTrue(result.Success, result.FailureReason?.ToString());
+            StringAssert.Contains(result.IdTokenSigningKey, "\"kid\":\"published-key\"");
+        }
+
+        [TestMethod]
+        public async Task Complete_ResponseAtAnotherRedirectUriThanItsFlowNamed_IsRefusedAsRedirectUriMismatchWithoutRedeeming()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+            FakeBrowser browser = harness.CreateBrowser();
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
+            string code = harness.IdentityProvider.IssueCode(begun.AuthorizationUrl);
+
+            MicrosoftAuthCompletionResult result = await harness.CompleteAsync(code, begun.State, browser, MicrosoftAuthHarness.SignInRedirectUri);
+
+            Assert.AreEqual(MicrosoftAuthFailureReason.RedirectUriMismatch, result.FailureReason);
+            Assert.AreEqual(0, harness.IdentityProvider.TokenRequests.Count);
+        }
+
+        [TestMethod]
+        public async Task Complete_IssParameterOfAnotherTenantThanTheTokens_IsRefusedAsIssuerParameterMismatch()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+            FakeBrowser browser = harness.CreateBrowser();
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
+            string code = harness.IdentityProvider.IssueCode(begun.AuthorizationUrl);
+
+            MicrosoftAuthCompletionResult result = await harness.CompleteAsync(
+                code, begun.State, browser, issuer: $"{FakeMicrosoftIdentityProvider.Authority}/{FakeMicrosoftIdentityProvider.OtherTenantId}/v2.0");
+
+            Assert.AreEqual(MicrosoftAuthFailureReason.IssuerParameterMismatch, result.FailureReason);
+        }
+
+        [TestMethod]
+        public async Task Complete_IssParameterOfTheTokensTenant_Completes()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+            FakeBrowser browser = harness.CreateBrowser();
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
+            string code = harness.IdentityProvider.IssueCode(begun.AuthorizationUrl);
+
+            MicrosoftAuthCompletionResult result = await harness.CompleteAsync(
+                code, begun.State, browser, issuer: $"{FakeMicrosoftIdentityProvider.Authority}/{FakeMicrosoftIdentityProvider.TenantId}/v2.0");
+
+            Assert.IsTrue(result.Success, result.FailureReason?.ToString());
+        }
+
+        [TestMethod]
         public async Task Complete_ClearsTheFlowsBindingCookie()
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
             Assert.AreEqual(1, browser.Cookies.Count);
 
             await harness.CompleteAsync(harness.IdentityProvider.IssueCode(begun.AuthorizationUrl), begun.State, browser);
@@ -163,7 +215,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
 
             MicrosoftAuthCompletionResult result = await harness.CompleteAsync("unknown-code", begun.State, browser);
 
@@ -176,7 +228,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
             await harness.CompleteAsync(harness.IdentityProvider.IssueCode(begun.AuthorizationUrl), begun.State, browser);
 
             MicrosoftAuthCompletionResult second = await harness.CompleteAsync(harness.IdentityProvider.IssueCode(begun.AuthorizationUrl), begun.State, browser);
@@ -189,14 +241,14 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult signIn = harness.Begin(MicrosoftAuthHarness.CreateRequest(redirectUri: MicrosoftAuthHarness.SignInRedirectUri), browser);
-            MicrosoftAuthBeginResult signing = harness.Begin(MicrosoftAuthHarness.CreateRequest(requiredAuthenticationContextId: "c1"), browser);
+            OpenIdConnectAuthBeginResult signIn = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(redirectUri: MicrosoftAuthHarness.SignInRedirectUri), browser);
+            OpenIdConnectAuthBeginResult signing = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(requiredAuthenticationContextId: "c1"), browser);
             string signInCode = harness.IdentityProvider.IssueCode(signIn.AuthorizationUrl);
             string signingCode = harness.IdentityProvider.IssueCode(signing.AuthorizationUrl);
 
             // Completed in the opposite order to the one they were begun in.
             MicrosoftAuthCompletionResult signingResult = await harness.CompleteAsync(signingCode, signing.State, browser);
-            MicrosoftAuthCompletionResult signInResult = await harness.CompleteAsync(signInCode, signIn.State, browser);
+            MicrosoftAuthCompletionResult signInResult = await harness.CompleteAsync(signInCode, signIn.State, browser, MicrosoftAuthHarness.SignInRedirectUri);
 
             Assert.IsTrue(signingResult.Success, signingResult.FailureReason?.ToString());
             Assert.IsTrue(signInResult.Success, signInResult.FailureReason?.ToString());
@@ -208,7 +260,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
             string code = harness.IdentityProvider.IssueCode(begun.AuthorizationUrl);
             char[] tampered = begun.State.ToCharArray();
             int middle = tampered.Length / 2;
@@ -228,7 +280,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
                 MicrosoftAuthHarness.CreateOptions(stateKey: Enumerable.Repeat((byte)0x5a, 32).ToArray()));
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = otherServer.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await otherServer.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
 
             MicrosoftAuthCompletionResult result = await harness.CompleteAsync("any-code", begun.State, browser);
 
@@ -269,7 +321,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create(MicrosoftAuthHarness.CreateOptions(stateLifetime: TimeSpan.FromMinutes(10)));
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
             string code = harness.IdentityProvider.IssueCode(begun.AuthorizationUrl);
             harness.Clock.Advance(TimeSpan.FromMinutes(10));
 
@@ -284,7 +336,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create(MicrosoftAuthHarness.CreateOptions(stateLifetime: TimeSpan.FromMinutes(10)));
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
             harness.Clock.Advance(TimeSpan.FromMinutes(10) - TimeSpan.FromSeconds(1));
             string code = harness.IdentityProvider.IssueCode(begun.AuthorizationUrl);
 
@@ -297,7 +349,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         public async Task Complete_FromABrowserWithoutTheBindingCookie_IsRefusedAsBindingCookieMissing()
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), harness.CreateBrowser());
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), harness.CreateBrowser());
             string code = harness.IdentityProvider.IssueCode(begun.AuthorizationUrl);
 
             // Login CSRF: the starter's code and state, finished in the victim's browser.
@@ -312,7 +364,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
             string cookieName = browser.Cookies.Keys.Single();
             browser.Set(cookieName, "planted-value");
 
@@ -327,9 +379,9 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult first = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult first = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
             string firstCookie = browser.Cookies.Keys.Single();
-            harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
             string secondCookie = browser.Cookies.Keys.Single(name => name != firstCookie);
             browser.Set(firstCookie, browser.Cookies[secondCookie]);
 
@@ -343,7 +395,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
 
             MicrosoftAuthCompletionResult result = await harness.CompleteAsync("code-microsoft-never-issued", begun.State, browser);
 
@@ -356,7 +408,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
 
             MicrosoftAuthCompletionResult result = await harness.CompleteAsync("", begun.State, browser);
 
@@ -365,14 +417,11 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
-        public async Task Complete_TokenEndpointUnauthorizedForTheClient_IsRefusedAsCodeRedemptionFailed()
+        public async Task Complete_TokenEndpointRefusingTheClientItself_ThrowsAsAConfigurationError()
         {
-            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
-            harness.IdentityProvider.TokenEndpointStatusOverride = HttpStatusCode.Unauthorized;
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create(MicrosoftAuthHarness.CreateOptions(clientSecret: "expired-secret"));
 
-            MicrosoftAuthCompletionResult result = await harness.SignInAsync(MicrosoftAuthHarness.CreateRequest());
-
-            Assert.AreEqual(MicrosoftAuthFailureReason.CodeRedemptionFailed, result.FailureReason);
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => harness.SignInAsync(MicrosoftAuthHarness.CreateRequest()));
         }
 
         [TestMethod]
@@ -403,12 +452,43 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
-        public async Task Complete_SigningKeysUnavailableOnTheFirstFetch_ThrowsInvalidOperationException()
+        public async Task Begin_ConfigurationUnavailable_ThrowsAndSetsNoCookie()
         {
+            // Begin loads the OpenID configuration and the signing keys together, so an outage surfaces there.
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             harness.IdentityProvider.MetadataStatusOverride = HttpStatusCode.ServiceUnavailable;
+            FakeBrowser browser = harness.CreateBrowser();
 
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => harness.SignInAsync(MicrosoftAuthHarness.CreateRequest()));
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser));
+
+            Assert.AreEqual(0, browser.Cookies.Count);
+        }
+
+        [TestMethod]
+        public async Task Complete_ClientIdChangedSinceBegin_IsRefusedAsProviderChanged()
+        {
+            using MicrosoftAuthHarness begun = MicrosoftAuthHarness.Create();
+            using MicrosoftAuthHarness changed = MicrosoftAuthHarness.Create(MicrosoftAuthHarness.CreateOptions(clientId: "another-client-id"));
+            FakeBrowser browser = begun.CreateBrowser();
+            OpenIdConnectAuthBeginResult flow = await begun.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
+            string code = begun.IdentityProvider.IssueCode(flow.AuthorizationUrl);
+
+            MicrosoftAuthCompletionResult result = await changed.CompleteAsync(code, flow.State, browser);
+
+            Assert.AreEqual(MicrosoftAuthFailureReason.ProviderChanged, result.FailureReason);
+        }
+
+        [TestMethod]
+        public async Task Complete_TenantFlowTokenWithoutTid_IsRefusedAsInvalidToken()
+        {
+            // A tenant's flow has that tenant's fixed issuer, so no issuer rule reads the tid; the identity rule does.
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+
+            MicrosoftAuthCompletionResult result = await harness.SignInAsync(
+                MicrosoftAuthHarness.CreateRequest(tenantId: FakeMicrosoftIdentityProvider.Tenant),
+                token => token.Claims.Remove("tid"));
+
+            Assert.AreEqual(MicrosoftAuthFailureReason.InvalidToken, result.FailureReason);
         }
 
         [TestMethod]
@@ -679,16 +759,31 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
-        public async Task Complete_TokenFromAnotherTenantThanTheFlowRequired_IsRefusedAsTenantMismatch()
+        public async Task Complete_TokenFromAnotherTenantsIssuerThanTheFlowRequired_IsRefusedAsInvalidIssuer()
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             string other = FakeMicrosoftIdentityProvider.OtherTenantId;
 
+            // A tenant's flow takes only that tenant's issuer, as its OpenID configuration names it.
             MicrosoftAuthCompletionResult result = await harness.SignInAsync(MicrosoftAuthHarness.CreateRequest(tenantId: FakeMicrosoftIdentityProvider.Tenant), token =>
             {
                 token.Claims["tid"] = other;
                 token.Claims["iss"] = $"{FakeMicrosoftIdentityProvider.Authority}/{other}/v2.0";
             });
+
+            Assert.AreEqual(MicrosoftAuthFailureReason.InvalidIssuer, result.FailureReason);
+            Assert.IsNull(result.AttemptedSubject);
+        }
+
+        [TestMethod]
+        public async Task Complete_TokenOfTheFlowsTenantIssuerWithAnotherTenantsTid_IsRefusedAsTenantMismatch()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+            string other = FakeMicrosoftIdentityProvider.OtherTenantId;
+
+            MicrosoftAuthCompletionResult result = await harness.SignInAsync(
+                MicrosoftAuthHarness.CreateRequest(tenantId: FakeMicrosoftIdentityProvider.Tenant),
+                token => token.Claims["tid"] = other);
 
             Assert.AreEqual(MicrosoftAuthFailureReason.TenantMismatch, result.FailureReason);
             Assert.AreEqual($"{other}:{FakeMicrosoftIdentityProvider.ObjectId}", result.AttemptedSubject);
@@ -713,6 +808,23 @@ namespace EasyReasy.Auth.Microsoft.Tests
 
             MicrosoftAuthCompletionResult result = await harness.SignInAsync(
                 MicrosoftAuthHarness.CreateRequest(requiredAuthenticationContextId: "c1"), token => token.Claims.Remove("acrs"));
+
+            Assert.AreEqual(MicrosoftAuthFailureReason.MissingAuthenticationContext, result.FailureReason);
+        }
+
+        [TestMethod]
+        public async Task Complete_StaleTokenWithoutTheRequiredAuthenticationContext_IsRefusedAsMissingAuthenticationContext()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+            long now = harness.Clock.GetUtcNow().ToUnixTimeSeconds();
+
+            MicrosoftAuthCompletionResult result = await harness.SignInAsync(
+                MicrosoftAuthHarness.CreateRequest(requiredAuthenticationContextId: "c1", maxAuthenticationAge: TimeSpan.FromMinutes(5)),
+                token =>
+                {
+                    token.Claims.Remove("acrs");
+                    token.Claims["auth_time"] = now - 301;
+                });
 
             Assert.AreEqual(MicrosoftAuthFailureReason.MissingAuthenticationContext, result.FailureReason);
         }

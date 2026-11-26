@@ -21,7 +21,10 @@ namespace EasyReasy.Auth.Microsoft.Tests
     [TestClass]
     public class MicrosoftAuthEndpointTests
     {
-        private const string BindingCookiePrefix = "__Host-easyreasy-microsoft-";
+        /// <summary>
+        /// The shared OpenID Connect flow's binding cookie name, which Microsoft flows set too.
+        /// </summary>
+        private const string BindingCookiePrefix = OpenIdConnectCodeFlow.BindingCookieNamePrefix;
 
         [TestMethod]
         public async Task Begin_HandlerSettings_AreWhatMicrosoftIsAskedForAndTheBindingCookieIsSet()
@@ -31,7 +34,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             {
                 RedirectUri = MicrosoftAuthHarness.SignInRedirectUri,
                 TenantId = FakeMicrosoftIdentityProvider.Tenant,
-                Prompt = MicrosoftAuthPrompt.Login,
+                Prompt = OpenIdConnectPrompt.Login,
                 RequiredAuthenticationContextId = "c1",
                 MaxAuthenticationAge = TimeSpan.FromMinutes(5),
             };
@@ -186,6 +189,22 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
+        public async Task SignIn_BodyWithoutRedirectUriFromAnOlderFrontend_IsRefusedAndAuditedAsARedirectUriMismatch()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            await using MicrosoftAuthEndpointHost host = await MicrosoftAuthEndpointHost.StartAsync(auditLogger);
+            FakeBrowser browser = host.CreateBrowser();
+            string authorizationUrl = await host.BeginAsync(browser);
+            string code = host.IdentityProvider.IssueCode(authorizationUrl);
+
+            HttpResponseMessage response = await host.PostSignInBodyAsync(browser, new { code, state = MicrosoftAuthEndpointHost.ReadState(authorizationUrl) });
+
+            Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, MicrosoftAuthFailureReason.RedirectUriMismatch, expectSubject: false);
+            Assert.AreEqual(0, host.Handler.ReceivedUsers.Count);
+        }
+
+        [TestMethod]
         public async Task SignIn_BindingCookieOverwrittenWithAnotherValue_IsRefusedAndAuditedAsAMismatch()
         {
             RecordingAuditLogger auditLogger = new RecordingAuditLogger();
@@ -253,7 +272,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
-        public async Task SignIn_TokenFromAnotherTenantThanTheSettingsName_IsRejectedAndAuditedWithTheAccount()
+        public async Task SignIn_TokenWithAnotherTenantsTidThanTheSettingsName_IsRejectedAndAuditedWithTheAccount()
         {
             RecordingAuditLogger auditLogger = new RecordingAuditLogger();
             await using MicrosoftAuthEndpointHost host = await MicrosoftAuthEndpointHost.StartAsync(auditLogger);
@@ -263,11 +282,8 @@ namespace EasyReasy.Auth.Microsoft.Tests
                 TenantId = FakeMicrosoftIdentityProvider.Tenant,
             };
 
-            HttpResponseMessage response = await host.SignInAsync(host.CreateBrowser(), token =>
-            {
-                token.Claims["tid"] = FakeMicrosoftIdentityProvider.OtherTenantId;
-                token.Claims["iss"] = $"{FakeMicrosoftIdentityProvider.Authority}/{FakeMicrosoftIdentityProvider.OtherTenantId}/v2.0";
-            });
+            // The settings' tenant's issuer, so the token passes the issuer rule and is refused for its tenant.
+            HttpResponseMessage response = await host.SignInAsync(host.CreateBrowser(), token => token.Claims["tid"] = FakeMicrosoftIdentityProvider.OtherTenantId);
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
             ExternalAuthResult audited = AssertAudited(auditLogger, ExternalAuthFailureReason.Rejected, MicrosoftAuthFailureReason.TenantMismatch, expectSubject: true);
@@ -299,12 +315,13 @@ namespace EasyReasy.Auth.Microsoft.Tests
             await using MicrosoftAuthEndpointHost host = await MicrosoftAuthEndpointHost.StartAsync(auditLogger);
             FakeBrowser browser = host.CreateBrowser();
             DefaultHttpContext beginContext = new DefaultHttpContext();
-            MicrosoftAuthBeginResult begun = host.App.Services.GetRequiredService<IMicrosoftAuthService>().Begin(
+            OpenIdConnectAuthBeginResult begun = await host.App.Services.GetRequiredService<IMicrosoftAuthService>().BeginAsync(
                 MicrosoftAuthHarness.CreateRequest(redirectUri: MicrosoftAuthHarness.SigningRedirectUri), beginContext);
             browser.Absorb(beginContext.Response);
             string code = host.IdentityProvider.IssueCode(begun.AuthorizationUrl);
 
-            HttpResponseMessage response = await host.PostSignInAsync(browser, code, begun.State);
+            // Posted with the address it truly landed on, so only the caller binding tells the flows apart.
+            HttpResponseMessage response = await host.PostSignInAsync(browser, code, begun.State, MicrosoftAuthHarness.SigningRedirectUri);
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
             AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, MicrosoftAuthFailureReason.CallerBindingMismatch, expectSubject: true);

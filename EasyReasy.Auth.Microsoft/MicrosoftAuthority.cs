@@ -1,11 +1,11 @@
-using System.Diagnostics.CodeAnalysis;
+using EasyReasy.Auth.OpenIdConnect;
 
 namespace EasyReasy.Auth.Microsoft
 {
     /// <summary>
-    /// The one place the Microsoft identity platform's URL shapes and fixed values are spelled: the authorize and
-    /// token endpoints for a tenant, the metadata document the signing keys come from, the issuer a tenant's ID
-    /// tokens carry, the scopes a flow asks for, and the personal accounts tenant. Registered once, built from
+    /// The one place the Microsoft identity platform's fixed values and issuer shapes are spelled: the tenant segment a
+    /// flow uses, the issuer each segment's tokens carry and where its OpenID configuration is, the scopes a flow asks
+    /// for, the Entra claims read from an ID token, and the personal accounts tenant. Built once from
     /// <see cref="MicrosoftAuthOptions.AuthorityBaseUrl"/>.
     /// </summary>
     internal sealed class MicrosoftAuthority
@@ -17,15 +17,39 @@ namespace EasyReasy.Auth.Microsoft
         public const string OrganizationsSegment = "organizations";
 
         /// <summary>
-        /// The scopes a flow asks for and its code is redeemed for: an ID token and the profile claims, nothing for
-        /// Microsoft Graph. Begin and the token request must send the same value.
+        /// The scopes a flow asks for: an ID token and the profile claims, nothing for Microsoft Graph.
         /// </summary>
         public const string Scope = "openid profile";
+
+        /// <summary>
+        /// The ID token claim naming the account's tenant.
+        /// </summary>
+        public const string TenantClaim = "tid";
+
+        /// <summary>
+        /// The ID token claim naming the account's object id, unique within its tenant.
+        /// </summary>
+        public const string ObjectIdClaim = "oid";
+
+        /// <summary>
+        /// The ID token claim holding the account's sign-in name.
+        /// </summary>
+        public const string PreferredUsernameClaim = "preferred_username";
+
+        /// <summary>
+        /// The ID token claim a Conditional Access authentication context is reported in.
+        /// </summary>
+        public const string AuthenticationContextClaim = "acrs";
 
         /// <summary>
         /// The tenant id every personal Microsoft account (outlook.com, hotmail.com, Xbox) signs in under.
         /// </summary>
         public static readonly Guid PersonalAccountsTenantId = new Guid("9188040d-6c67-4c5b-b112-36a304b66dad");
+
+        /// <summary>
+        /// The format of a tenant id in a segment: lowercase, hyphenated, without braces.
+        /// </summary>
+        private const string TenantIdFormat = "D";
 
         private readonly string _baseUrl;
 
@@ -33,67 +57,73 @@ namespace EasyReasy.Auth.Microsoft
         /// Initializes the authority from a base URL such as <c>https://login.microsoftonline.com</c>.
         /// </summary>
         /// <param name="baseUrl">The base URL, with or without a trailing slash.</param>
+        /// <exception cref="ArgumentException">The base URL is not an absolute https URL (http only on a loopback host)
+        /// without a query or fragment.</exception>
         public MicrosoftAuthority(string baseUrl)
         {
             _baseUrl = baseUrl.TrimEnd('/');
+            OrganizationsIssuer = OpenIdConnectIssuer.TenantTemplate(
+                $"{_baseUrl}/{OpenIdConnectIssuer.TenantIdPlaceholder}/v2.0",
+                TenantClaim,
+                $"{_baseUrl}/{OrganizationsSegment}/v2.0/.well-known/openid-configuration");
         }
 
         /// <summary>
-        /// The OpenID configuration of the <c>organizations</c> segment. Its signing keys are the ones every work
-        /// or school tenant's ID tokens are signed with.
+        /// The issuer for <see cref="OrganizationsSegment"/>: the multi-tenant template, whose tokens carry their own
+        /// tenant's issuer.
         /// </summary>
-        public string MetadataAddress => $"{_baseUrl}/{OrganizationsSegment}/v2.0/.well-known/openid-configuration";
+        public OpenIdConnectIssuer OrganizationsIssuer { get; }
 
         /// <summary>
-        /// The authority segment for a flow: the tenant id in its canonical lowercase hyphenated form, or
-        /// <see cref="OrganizationsSegment"/> when the flow names no tenant.
+        /// The authority segment for a flow, which is also its provider key: the tenant id in its canonical lowercase
+        /// hyphenated form, or <see cref="OrganizationsSegment"/> when the flow names no tenant.
         /// </summary>
         /// <param name="tenantId">The tenant the flow requires, or null.</param>
         /// <returns>The segment.</returns>
-        public static string GetTenantSegment(Guid? tenantId) => tenantId?.ToString("D") ?? OrganizationsSegment;
+        public static string GetTenantSegment(Guid? tenantId) => tenantId?.ToString(TenantIdFormat) ?? OrganizationsSegment;
 
         /// <summary>
-        /// The authorize endpoint for a flow.
+        /// The tenant a segment requires, or null for <see cref="OrganizationsSegment"/>.
         /// </summary>
-        /// <param name="tenantId">The tenant the flow requires, or null.</param>
-        /// <returns>The endpoint URL.</returns>
-        public string GetAuthorizeEndpoint(Guid? tenantId) => $"{_baseUrl}/{GetTenantSegment(tenantId)}/oauth2/v2.0/authorize";
-
-        /// <summary>
-        /// The token endpoint for a flow.
-        /// </summary>
-        /// <param name="tenantId">The tenant the flow requires, or null.</param>
-        /// <returns>The endpoint URL.</returns>
-        public string GetTokenEndpoint(Guid? tenantId) => $"{_baseUrl}/{GetTenantSegment(tenantId)}/oauth2/v2.0/token";
-
-        /// <summary>
-        /// The issuer an ID token from the given tenant carries. A multi-tenant application checks the issuer
-        /// against the token's own <c>tid</c>, since the <c>organizations</c> metadata names only a template.
-        /// </summary>
-        /// <param name="tenantId">The token's <c>tid</c>, exactly as the token carries it.</param>
-        /// <returns>The expected issuer.</returns>
-        public string GetIssuer(string tenantId) => $"{_baseUrl}/{tenantId}/v2.0";
-
-        /// <summary>
-        /// Whether an endpoint address is one this package will talk to or send a browser to: absolute, and https or
-        /// http on a loopback host (a local fake identity provider, or a redirect URI on a developer machine, which
-        /// Microsoft also accepts over http).
-        /// </summary>
-        /// <param name="address">The address to check.</param>
-        /// <param name="uri">The parsed address, when it is allowed.</param>
-        /// <returns><c>true</c> when the address is allowed.</returns>
-        public static bool TryParseAllowedAddress(string? address, [NotNullWhen(true)] out Uri? uri)
+        /// <param name="segment">A segment <see cref="GetTenantSegment"/> returned.</param>
+        /// <returns>The tenant, or null.</returns>
+        /// <exception cref="ArgumentException">The segment is neither.</exception>
+        public static Guid? GetRequiredTenantId(string segment)
         {
-            if (address != null
-                && Uri.TryCreate(address, UriKind.Absolute, out Uri? parsed)
-                && (parsed.Scheme == Uri.UriSchemeHttps || (parsed.Scheme == Uri.UriSchemeHttp && parsed.IsLoopback)))
+            if (segment == OrganizationsSegment)
             {
-                uri = parsed;
-                return true;
+                return null;
             }
 
-            uri = null;
-            return false;
+            return TryReadTenantSegment(segment, out Guid tenantId)
+                ? tenantId
+                : throw new ArgumentException($"'{segment}' is not a tenant segment.", nameof(segment));
+        }
+
+        /// <summary>
+        /// The issuer for a segment: for <see cref="OrganizationsSegment"/>, <see cref="OrganizationsIssuer"/>; for a
+        /// tenant, that tenant's issuer, whose OpenID configuration names that tenant's authorize and token endpoints.
+        /// Null for a segment that is neither.
+        /// </summary>
+        /// <param name="segment">The segment.</param>
+        /// <returns>The issuer, or null.</returns>
+        public OpenIdConnectIssuer? FindIssuer(string segment)
+        {
+            if (segment == OrganizationsSegment)
+            {
+                return OrganizationsIssuer;
+            }
+
+            return TryReadTenantSegment(segment, out Guid _) ? OpenIdConnectIssuer.Fixed($"{_baseUrl}/{segment}/v2.0") : null;
+        }
+
+        /// <summary>
+        /// Reads a tenant segment, accepting only the canonical form <see cref="GetTenantSegment"/> produces, so one
+        /// tenant has one provider key.
+        /// </summary>
+        private static bool TryReadTenantSegment(string segment, out Guid tenantId)
+        {
+            return Guid.TryParseExact(segment, TenantIdFormat, out tenantId) && segment == tenantId.ToString(TenantIdFormat);
         }
     }
 }

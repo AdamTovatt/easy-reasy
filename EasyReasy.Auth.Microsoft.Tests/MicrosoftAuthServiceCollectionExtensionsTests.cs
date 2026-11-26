@@ -34,7 +34,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
-        public void AddEasyReasyMicrosoftAuth_DefaultAuthorityAndLifetime_SendBeginToMicrosoftsCloudWithATenMinuteCookie()
+        public async Task AddEasyReasyMicrosoftAuth_DefaultAuthorityAndLifetime_SendBeginToMicrosoftsCloudWithATenMinuteCookie()
         {
             MicrosoftAuthOptions options = new MicrosoftAuthOptions
             {
@@ -45,10 +45,11 @@ namespace EasyReasy.Auth.Microsoft.Tests
             };
             ServiceCollection services = new ServiceCollection();
             services.AddEasyReasyMicrosoftAuth(options);
+            MicrosoftAuthHarness.ConfigureFakeIdentityProvider(services, new FakeMicrosoftIdentityProvider(new FakeTimeProvider(MicrosoftAuthHarness.StartTime), MicrosoftAuthOptions.DefaultAuthorityBaseUrl));
             using ServiceProvider provider = services.BuildServiceProvider();
             DefaultHttpContext context = new DefaultHttpContext();
 
-            MicrosoftAuthBeginResult result = provider.GetRequiredService<IMicrosoftAuthService>().Begin(
+            OpenIdConnectAuthBeginResult result = await provider.GetRequiredService<IMicrosoftAuthService>().BeginAsync(
                 MicrosoftAuthHarness.CreateRequest(redirectUri: MicrosoftAuthHarness.SignInRedirectUri), context);
 
             StringAssert.StartsWith(result.AuthorizationUrl, "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?");
@@ -62,7 +63,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             byte[] key = Enumerable.Range(100, 32).Select(value => (byte)value).ToArray();
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create(MicrosoftAuthHarness.CreateOptions(stateKey: key));
             FakeBrowser browser = harness.CreateBrowser();
-            MicrosoftAuthBeginResult begun = harness.Begin(MicrosoftAuthHarness.CreateRequest(), browser);
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
 
             Array.Clear(key);
 
@@ -73,13 +74,13 @@ namespace EasyReasy.Auth.Microsoft.Tests
         [TestMethod]
         public void AddEasyReasyMicrosoftAuth_BlankClientId_Throws()
         {
-            AssertRejected(MicrosoftAuthHarness.CreateOptions(clientId: " "), nameof(MicrosoftAuthOptions.ClientId));
+            AssertRejected(MicrosoftAuthHarness.CreateOptions(clientId: " "), "client id");
         }
 
         [TestMethod]
         public void AddEasyReasyMicrosoftAuth_BlankClientSecret_Throws()
         {
-            AssertRejected(MicrosoftAuthHarness.CreateOptions(clientSecret: ""), nameof(MicrosoftAuthOptions.ClientSecret));
+            AssertRejected(MicrosoftAuthHarness.CreateOptions(clientSecret: ""), "client secret");
         }
 
         [TestMethod]
@@ -91,7 +92,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         [TestMethod]
         public void AddEasyReasyMicrosoftAuth_NoRedirectUri_Throws()
         {
-            AssertRejected(MicrosoftAuthHarness.CreateOptions(redirectUris: []), nameof(MicrosoftAuthOptions.RedirectUris));
+            AssertRejected(MicrosoftAuthHarness.CreateOptions(redirectUris: []), "redirect URI");
         }
 
         [TestMethod]
@@ -104,13 +105,14 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
-        public void AddEasyReasyMicrosoftAuth_LoopbackHttpRedirectUri_IsAcceptedAndBegunWith()
+        public async Task AddEasyReasyMicrosoftAuth_LoopbackHttpRedirectUri_IsAcceptedAndBegunWith()
         {
             ServiceCollection services = new ServiceCollection();
             services.AddEasyReasyMicrosoftAuth(MicrosoftAuthHarness.CreateOptions(redirectUris: ["http://localhost:5000/callback"]));
+            MicrosoftAuthHarness.ConfigureFakeIdentityProvider(services, new FakeMicrosoftIdentityProvider(new FakeTimeProvider(MicrosoftAuthHarness.StartTime)));
             using ServiceProvider provider = services.BuildServiceProvider();
 
-            MicrosoftAuthBeginResult result = provider.GetRequiredService<IMicrosoftAuthService>().Begin(
+            OpenIdConnectAuthBeginResult result = await provider.GetRequiredService<IMicrosoftAuthService>().BeginAsync(
                 MicrosoftAuthHarness.CreateRequest(redirectUri: "http://localhost:5000/callback"), new DefaultHttpContext());
 
             StringAssert.Contains(result.AuthorizationUrl, Uri.EscapeDataString("http://localhost:5000/callback"));
@@ -143,9 +145,9 @@ namespace EasyReasy.Auth.Microsoft.Tests
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => new ServiceCollection().AddEasyReasyMicrosoftAuth(
                 MicrosoftAuthHarness.CreateOptions(clientId: "", stateKey: new byte[1], redirectUris: [], stateLifetime: TimeSpan.Zero)));
 
-            StringAssert.Contains(exception.Message, nameof(MicrosoftAuthOptions.ClientId));
+            StringAssert.Contains(exception.Message, "client id");
             StringAssert.Contains(exception.Message, nameof(MicrosoftAuthOptions.StateKey));
-            StringAssert.Contains(exception.Message, nameof(MicrosoftAuthOptions.RedirectUris));
+            StringAssert.Contains(exception.Message, "redirect URI");
             StringAssert.Contains(exception.Message, nameof(MicrosoftAuthOptions.StateLifetime));
         }
 

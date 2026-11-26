@@ -24,6 +24,7 @@
     <Compile Include="..\EasyReasy.Auth.Tests\RecordingAuditLogger.cs" Link="RecordingAuditLogger.cs" />
     <Compile Include="..\EasyReasy.Auth.Tests\ThrowingExternalAuthLogger.cs" Link="ThrowingExternalAuthLogger.cs" />
     <Compile Include="..\EasyReasy.Auth.Tests\InertRefreshTokenService.cs" Link="InertRefreshTokenService.cs" />
+    <Compile Include="..\EasyReasy.Auth.Tests\FakeBrowser.cs" Link="FakeBrowser.cs" />
   </ItemGroup>
 
   <ItemGroup>

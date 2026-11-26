@@ -14,9 +14,9 @@ namespace EasyReasy.Auth.Microsoft.Tests
 {
     /// <summary>
     /// An in-memory stand-in for the Microsoft identity platform, served through an <see cref="HttpMessageHandler"/>
-    /// so no test touches the network. It publishes OpenID configuration and signing keys, and redeems the codes a
-    /// test issues for an authorize URL, enforcing what Microsoft enforces on redemption: the client credentials, the
-    /// redirect URI the flow named and the PKCE verifier for the flow's challenge, once per code.
+    /// so no test touches the network. It publishes each tenant segment's OpenID configuration and the signing keys, and
+    /// redeems the codes a test issues for an authorize URL, enforcing what Microsoft enforces on redemption: the client
+    /// credentials, the redirect URI the flow named and the PKCE verifier for the flow's challenge, once per code.
     /// </summary>
     internal sealed class FakeMicrosoftIdentityProvider : HttpMessageHandler
     {
@@ -39,9 +39,14 @@ namespace EasyReasy.Auth.Microsoft.Tests
         private int _metadataRequestCount;
         private int _keysRequestCount;
 
-        public FakeMicrosoftIdentityProvider(FakeTimeProvider clock)
+        /// <param name="clock">The clock tokens are issued on.</param>
+        /// <param name="baseUrl">The authority it answers as: <see cref="Authority"/>, or Microsoft's own for a test of the
+        /// default.</param>
+        public FakeMicrosoftIdentityProvider(FakeTimeProvider clock, string baseUrl = Authority)
         {
             _clock = clock;
+            BaseUrl = baseUrl;
+            JwksUri = $"{baseUrl}/organizations/discovery/v2.0/keys";
             SigningKey = CreateKey("published-key");
             PublishedKeys = [SigningKey];
         }
@@ -74,7 +79,12 @@ namespace EasyReasy.Auth.Microsoft.Tests
         /// <summary>
         /// The <c>jwks_uri</c> the OpenID configuration names. A test points it elsewhere, for example at http.
         /// </summary>
-        public string JwksUri { get; set; } = $"{Authority}/organizations/discovery/v2.0/keys";
+        public string JwksUri { get; set; }
+
+        /// <summary>
+        /// The authority it answers as.
+        /// </summary>
+        public string BaseUrl { get; }
 
         public int MetadataRequestCount => _metadataRequestCount;
 
@@ -108,7 +118,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             Dictionary<string, object> claims = new Dictionary<string, object>
             {
                 ["aud"] = ClientId,
-                ["iss"] = $"{Authority}/{tenantId}/v2.0",
+                ["iss"] = $"{BaseUrl}/{tenantId}/v2.0",
                 ["tid"] = tenantId,
                 ["oid"] = ObjectId,
                 ["sub"] = "pairwise-subject",
@@ -139,7 +149,8 @@ namespace EasyReasy.Auth.Microsoft.Tests
         {
             string url = request.RequestUri!.GetLeftPart(UriPartial.Path);
 
-            if (request.Method == HttpMethod.Get && url == $"{Authority}/organizations/v2.0/.well-known/openid-configuration")
+            if (request.Method == HttpMethod.Get
+                && TryReadMetadataSegment(url, out string? metadataSegment))
             {
                 Interlocked.Increment(ref _metadataRequestCount);
                 if (MetadataStatusOverride is HttpStatusCode metadataStatus)
@@ -147,11 +158,12 @@ namespace EasyReasy.Auth.Microsoft.Tests
                     return new HttpResponseMessage(metadataStatus);
                 }
 
+                // As Entra: organizations names the issuer template; a tenant names its own issuer and endpoints.
                 return Json(HttpStatusCode.OK, new Dictionary<string, object>
                 {
-                    ["issuer"] = $"{Authority}/{{tenantid}}/v2.0",
-                    ["authorization_endpoint"] = $"{Authority}/organizations/oauth2/v2.0/authorize",
-                    ["token_endpoint"] = $"{Authority}/organizations/oauth2/v2.0/token",
+                    ["issuer"] = metadataSegment == "organizations" ? $"{BaseUrl}/{{tenantid}}/v2.0" : $"{BaseUrl}/{metadataSegment}/v2.0",
+                    ["authorization_endpoint"] = $"{BaseUrl}/{metadataSegment}/oauth2/v2.0/authorize",
+                    ["token_endpoint"] = $"{BaseUrl}/{metadataSegment}/oauth2/v2.0/token",
                     ["jwks_uri"] = JwksUri,
                     ["id_token_signing_alg_values_supported"] = new[] { "RS256" },
                 });
@@ -166,7 +178,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
                 });
             }
 
-            if (request.Method == HttpMethod.Post && url.StartsWith(Authority + "/", StringComparison.Ordinal) && url.EndsWith("/oauth2/v2.0/token", StringComparison.Ordinal))
+            if (request.Method == HttpMethod.Post && url.StartsWith(BaseUrl + "/", StringComparison.Ordinal) && url.EndsWith("/oauth2/v2.0/token", StringComparison.Ordinal))
             {
                 string tenantSegment = new Uri(url).AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries)[0];
                 string body = await request.Content!.ReadAsStringAsync(cancellationToken);
@@ -218,6 +230,29 @@ namespace EasyReasy.Auth.Microsoft.Tests
                 ["access_token"] = "unused-access-token",
                 ["expires_in"] = 3600,
             });
+        }
+
+        /// <summary>
+        /// The tenant segment of an OpenID configuration address: <c>organizations</c> or a tenant id.
+        /// </summary>
+        private bool TryReadMetadataSegment(string url, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? segment)
+        {
+            const string Suffix = "/v2.0/.well-known/openid-configuration";
+            segment = null;
+
+            if (!url.StartsWith(BaseUrl + "/", StringComparison.Ordinal) || !url.EndsWith(Suffix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            string candidate = url[(BaseUrl.Length + 1)..^Suffix.Length];
+            if (candidate != "organizations" && !Guid.TryParseExact(candidate, "D", out Guid _))
+            {
+                return false;
+            }
+
+            segment = candidate;
+            return true;
         }
 
         private static string CreateToken(FakeIdTokenSettings settings)

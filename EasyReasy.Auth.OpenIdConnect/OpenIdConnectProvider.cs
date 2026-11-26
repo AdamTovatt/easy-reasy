@@ -105,14 +105,27 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// </summary>
         public string Scope { get; }
 
-        private static IReadOnlyList<string> FindProblems(
+        /// <summary>
+        /// Every rule the client's values break, one line each, which the constructor throws for. A package that builds
+        /// providers from its own options reports these with its other problems at startup.
+        /// </summary>
+        /// <param name="clientId">The client id.</param>
+        /// <param name="clientSecret">The client secret.</param>
+        /// <param name="redirectUris">The redirect URIs.</param>
+        /// <param name="clientAuthentication">How the client secret is sent.</param>
+        /// <param name="signingAlgorithms">The signing algorithms, or null for RS256 alone.</param>
+        /// <param name="scope">The scopes.</param>
+        /// <returns>The problems, empty when there are none.</returns>
+        public static IReadOnlyList<string> FindProblems(
             string clientId,
             string clientSecret,
             IReadOnlyList<string> redirectUris,
-            OpenIdConnectClientAuthentication clientAuthentication,
-            IReadOnlyList<string> signingAlgorithms,
-            string scope)
+            OpenIdConnectClientAuthentication clientAuthentication = OpenIdConnectClientAuthentication.ClientSecretBasic,
+            IReadOnlyList<string>? signingAlgorithms = null,
+            string scope = DefaultScope)
         {
+            redirectUris ??= [];
+            signingAlgorithms ??= [SecurityAlgorithms.RsaSha256];
             List<string> problems = new List<string>();
 
             if (string.IsNullOrWhiteSpace(clientId))

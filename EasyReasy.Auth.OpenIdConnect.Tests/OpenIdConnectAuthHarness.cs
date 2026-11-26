@@ -289,7 +289,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
         /// </summary>
         public static int CountBindingCookies(FakeBrowser browser)
         {
-            return browser.Cookies.Keys.Count(name => name.StartsWith(OpenIdConnectBindingCookie.NamePrefix, StringComparison.Ordinal));
+            return browser.Cookies.Keys.Count(name => name.StartsWith(OpenIdConnectCodeFlow.BindingCookieNamePrefix, StringComparison.Ordinal));
         }
 
         /// <summary>

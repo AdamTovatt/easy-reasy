@@ -1,3 +1,4 @@
+using EasyReasy.Auth.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
 
 namespace EasyReasy.Auth.Microsoft
@@ -19,9 +20,9 @@ namespace EasyReasy.Auth.Microsoft
         /// depend on it (for example the tenant of the host the request came to).
         /// </summary>
         /// <remarks>
-        /// Settings <see cref="IMicrosoftAuthService.Begin"/> refuses (a redirect URI outside
+        /// Settings <see cref="IMicrosoftAuthService.BeginAsync"/> refuses (a redirect URI outside
         /// <see cref="MicrosoftAuthOptions.RedirectUris"/>, the personal accounts tenant, an undefined
-        /// <see cref="MicrosoftAuthPrompt"/> value, a blank authentication context id, a max age under one second)
+        /// <see cref="OpenIdConnectPrompt"/> value, a blank authentication context id, a max age under one second)
         /// are a configuration error: the begin request fails with its <see cref="ArgumentException"/>.
         /// </remarks>
         /// <param name="httpContext">The begin request.</param>

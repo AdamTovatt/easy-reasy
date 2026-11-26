@@ -1,3 +1,5 @@
+using EasyReasy.Auth.OpenIdConnect;
+
 namespace EasyReasy.Auth.Microsoft
 {
     /// <summary>
@@ -21,7 +23,7 @@ namespace EasyReasy.Auth.Microsoft
         /// <summary>
         /// The <c>prompt</c> to send, or null to send none.
         /// </summary>
-        public MicrosoftAuthPrompt? Prompt { get; init; }
+        public OpenIdConnectPrompt? Prompt { get; init; }
 
         /// <summary>
         /// A Conditional Access authentication context id the sign-in must satisfy, or null. See

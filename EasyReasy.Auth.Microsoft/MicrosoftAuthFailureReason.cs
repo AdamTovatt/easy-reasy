@@ -13,6 +13,11 @@ namespace EasyReasy.Auth.Microsoft
     /// The member names are a stable contract: they are written into audit records that outlive any release, so a
     /// member is never renamed, and a new check gets a new member.
     /// </para>
+    /// <para>
+    /// Its own enum rather than <see cref="OpenIdConnect.OpenIdConnectAuthFailureReason"/>: the Entra rules
+    /// (<see cref="PersonalAccount"/>, <see cref="TenantMismatch"/>, <see cref="TenantNotAllowed"/>) are no generic
+    /// provider's, and the authentication context keeps its own name for the required claim it is asked as.
+    /// </para>
     /// </remarks>
     public enum MicrosoftAuthFailureReason
     {
@@ -38,16 +43,17 @@ namespace EasyReasy.Auth.Microsoft
         BindingCookieMismatch,
 
         /// <summary>
-        /// The code is missing, or Microsoft's token endpoint refused to redeem it (already used, expired, issued
-        /// for another redirect URI or PKCE verifier, or a client credential Microsoft does not accept), or answered
-        /// without an ID token.
+        /// The code is missing, or Microsoft's token endpoint refused to redeem it as <c>invalid_grant</c> or
+        /// <c>invalid_request</c> (already used, expired, or issued for another redirect URI or PKCE verifier), or
+        /// answered without an ID token. A refusal of the client itself, such as an expired secret, is a configuration
+        /// error and throws instead.
         /// </summary>
         CodeRedemptionFailed,
 
         /// <summary>
-        /// The ID token is malformed, not yet valid, has a <c>tid</c> that is not a GUID, lacks an <c>oid</c>, or has
-        /// an <c>auth_time</c> that is not a number. (A token with no <c>tid</c> at all fails the issuer rule first,
-        /// as <see cref="InvalidIssuer"/>.)
+        /// The ID token is malformed, not yet valid, lacks a <c>tid</c> or has one that is not a GUID, lacks an
+        /// <c>oid</c>, or has an <c>auth_time</c> that is not a number. (On a flow that named no tenant, a token with no
+        /// <c>tid</c> fails the issuer rule first, as <see cref="InvalidIssuer"/>.)
         /// </summary>
         InvalidToken,
 
@@ -63,7 +69,9 @@ namespace EasyReasy.Auth.Microsoft
         InvalidAudience,
 
         /// <summary>
-        /// The ID token's issuer is not the one for its own <c>tid</c>.
+        /// The ID token's issuer is not the flow's: on a flow that named no tenant, the issuer of the token's own
+        /// <c>tid</c>; on a flow that named a tenant, that tenant's issuer, so a token issued by another tenant is
+        /// refused here.
         /// </summary>
         InvalidIssuer,
 
@@ -83,7 +91,8 @@ namespace EasyReasy.Auth.Microsoft
         PersonalAccount,
 
         /// <summary>
-        /// The flow named a tenant, and the token is from another one.
+        /// The flow named a tenant, and the token, issued by that tenant, carries another tenant's <c>tid</c>. A token
+        /// issued by another tenant is <see cref="InvalidIssuer"/>.
         /// </summary>
         TenantMismatch,
 
@@ -113,5 +122,27 @@ namespace EasyReasy.Auth.Microsoft
         /// signing) and posted to the sign-in endpoint. Returned by the sign-in endpoint only.
         /// </summary>
         CallerBindingMismatch,
+
+        /// <summary>
+        /// The response arrived at another redirect URI than the one its flow named: possibly another provider's response
+        /// passed off as this flow's (a mix-up). Refused before the code is sent anywhere.
+        /// </summary>
+        RedirectUriMismatch,
+
+        /// <summary>
+        /// The response's <c>iss</c> parameter is not the issuer of the account's tenant.
+        /// </summary>
+        IssuerParameterMismatch,
+
+        /// <summary>
+        /// Microsoft's OpenID configuration says it sends the <c>iss</c> parameter, and the response came without one.
+        /// </summary>
+        IssuerParameterMissing,
+
+        /// <summary>
+        /// <see cref="MicrosoftAuthOptions.ClientId"/> or <see cref="MicrosoftAuthOptions.AuthorityBaseUrl"/> changed
+        /// between the flow's Begin and its completion, as across a restart with new options.
+        /// </summary>
+        ProviderChanged,
     }
 }

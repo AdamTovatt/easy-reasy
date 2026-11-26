@@ -35,8 +35,9 @@ namespace EasyReasy.Auth.Microsoft
         /// <summary>
         /// The redirect URIs a flow may name, each registered on the app registration's Web platform. Each flow
         /// (sign-in, linking an account, a re-check at signing) lands on its own page of the application, which
-        /// knows from its own route where to post the <c>code</c> and <c>state</c>. At least one is required.
-        /// Matching is exact, as Microsoft's is.
+        /// knows from its own route where to post the <c>code</c>, <c>state</c> and <c>iss</c> with its own address as
+        /// the <c>redirectUri</c>; completion refuses a response at another redirect URI than its flow named. At least one
+        /// is required. Matching is exact, as Microsoft's is.
         /// </summary>
         public required IReadOnlyList<string> RedirectUris { get; init; }
 

@@ -1,3 +1,4 @@
+using EasyReasy.Auth.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
 
 namespace EasyReasy.Auth.Microsoft
@@ -51,12 +52,12 @@ namespace EasyReasy.Auth.Microsoft
         /// <param name="httpContext">The begin request, which the binding cookie is set on.</param>
         /// <returns>Where to send the browser.</returns>
         /// <exception cref="ArgumentException">The handler's settings are refused by
-        /// <see cref="IMicrosoftAuthService.Begin"/>.</exception>
+        /// <see cref="IMicrosoftAuthService.BeginAsync"/>.</exception>
         public async Task<MicrosoftSignInBeginResponse> BeginAsync(string? loginHint, HttpContext httpContext)
         {
             MicrosoftSignInSettings settings = await _handler.GetSignInSettingsAsync(httpContext);
 
-            MicrosoftAuthBeginResult begun = _authService.Begin(new MicrosoftAuthBeginRequest
+            OpenIdConnectAuthBeginResult begun = await _authService.BeginAsync(new MicrosoftAuthBeginRequest
             {
                 RedirectUri = settings.RedirectUri,
                 CallerBinding = SignInCallerBinding,
@@ -65,7 +66,7 @@ namespace EasyReasy.Auth.Microsoft
                 LoginHint = string.IsNullOrWhiteSpace(loginHint) || loginHint.Length > MaxLoginHintLength ? null : loginHint,
                 RequiredAuthenticationContextId = settings.RequiredAuthenticationContextId,
                 MaxAuthenticationAge = settings.MaxAuthenticationAge,
-            }, httpContext);
+            }, httpContext, httpContext.RequestAborted);
 
             return new MicrosoftSignInBeginResponse(begun.AuthorizationUrl);
         }
@@ -73,8 +74,7 @@ namespace EasyReasy.Auth.Microsoft
         /// <summary>
         /// Completes a sign-in and delegates the verified identity to the handler.
         /// </summary>
-        /// <param name="code">The authorization code from the redirect.</param>
-        /// <param name="state">The <c>state</c> from the redirect.</param>
+        /// <param name="response">What Microsoft's redirect brought back, as the redirect URI page posted it.</param>
         /// <param name="jwtTokenService">The JWT token service for creating access tokens.</param>
         /// <param name="refreshTokenService">The refresh token service, or null if not configured.</param>
         /// <param name="httpContext">The sign-in request, whose binding cookie is checked and cleared.</param>
@@ -84,15 +84,15 @@ namespace EasyReasy.Auth.Microsoft
         /// handler that returns null gives <see cref="ExternalAuthFailureReason.Rejected"/> with no detail.
         /// </returns>
         /// <exception cref="HttpRequestException">Microsoft's token endpoint could not be reached or failed.</exception>
-        /// <exception cref="InvalidOperationException">Microsoft's signing keys could not be retrieved.</exception>
+        /// <exception cref="InvalidOperationException">Microsoft's OpenID configuration or signing keys could not be
+        /// retrieved, or its token endpoint refused the client itself.</exception>
         public async Task<ExternalAuthResult> AuthenticateAsync(
-            string code,
-            string state,
+            OpenIdConnectAuthorizationResponse response,
             IJwtTokenService jwtTokenService,
             IRefreshTokenService? refreshTokenService,
             HttpContext httpContext)
         {
-            MicrosoftAuthCompletionResult completion = await _authService.CompleteAsync(code, state, httpContext, httpContext.RequestAborted);
+            MicrosoftAuthCompletionResult completion = await _authService.CompleteAsync(response, httpContext, httpContext.RequestAborted);
 
             if (!completion.Success)
             {
@@ -134,6 +134,10 @@ namespace EasyReasy.Auth.Microsoft
                     or MicrosoftAuthFailureReason.ExpiredState
                     or MicrosoftAuthFailureReason.BindingCookieMissing
                     or MicrosoftAuthFailureReason.BindingCookieMismatch
+                    or MicrosoftAuthFailureReason.RedirectUriMismatch
+                    or MicrosoftAuthFailureReason.IssuerParameterMismatch
+                    or MicrosoftAuthFailureReason.IssuerParameterMissing
+                    or MicrosoftAuthFailureReason.ProviderChanged
                     or MicrosoftAuthFailureReason.CodeRedemptionFailed
                     or MicrosoftAuthFailureReason.InvalidToken
                     or MicrosoftAuthFailureReason.InvalidSignature

@@ -17,9 +17,9 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>1.0.1</VersionPrefix>
+    <VersionPrefix>2.0.0-preview.1</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>Documentation only: the IMicrosoftAuthHandler sample starts the session with EasyReasy.Auth's IRefreshTokenService.StartSessionAsync, which issues the first access token the way a refresh does, instead of creating the token and the refresh token by hand. The package's behaviour is unchanged. Requires EasyReasy.Auth 5.16.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-microsoft-v$(VersionPrefix)/EasyReasy.Auth.Microsoft/README.md#3-implement-imicrosoftauthhandler</PackageReleaseNotes>
+    <PackageReleaseNotes>Rebuilt on EasyReasy.Auth.OpenIdConnect's shared code flow, keeping the Entra rules and the tid plus oid identity. Breaking: Begin is BeginAsync and returns OpenIdConnectAuthBeginResult; CompleteAsync and POST /api/auth/microsoft take an OpenIdConnectAuthorizationResponse, which adds the iss parameter and the redirectUri the response arrived at, and a response at another redirect URI than its flow named is refused; prompts are OpenIdConnectPrompt; HttpClientName is OpenIdConnectCodeFlow.HttpClientName; four failure reasons are added. Behaviour: Begin fetches Microsoft's OpenID configuration, so it calls the network and throws while Microsoft is unreachable; a refusal of the client itself (invalid_client, such as an expired secret) throws instead of returning CodeRedemptionFailed; on a flow that named a tenant, a token issued by another tenant is InvalidIssuer with no account, where it was TenantMismatch with the account. A preview until a security review. Requires EasyReasy.Auth 5.19.0 and EasyReasy.Auth.OpenIdConnect 1.0.0-preview.1. See https://github.com/AdamTovatt/easy-reasy/blob/auth-microsoft-v$(VersionPrefix)/EasyReasy.Auth.Microsoft/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -35,13 +35,13 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <!-- The same version EasyReasy.Auth references, so the IdentityModel family resolves at one version
-         (IdentityModelVersionAlignmentTests, linked into the test project, fails if they drift apart). -->
-    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.1" />
+    <!-- No IdentityModel reference of its own: EasyReasy.Auth brings the whole family at one version, which
+         IdentityModelVersionAlignmentTests, linked into the test project, guards. -->
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\EasyReasy.Auth\EasyReasy.Auth.csproj" />
+    <ProjectReference Include="..\EasyReasy.Auth.OpenIdConnect\EasyReasy.Auth.OpenIdConnect.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -27,9 +27,17 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// </summary>
         public const string HttpClientName = "EasyReasy.Auth.OpenIdConnect";
 
-        private const int FlowIdSize = 16;
-        private const int CodeVerifierSize = 32;
-        private const int GeneratedNonceSize = 32;
+        /// <summary>
+        /// The name prefix of the binding cookie every flow of this engine sets, a provider package's included, so one
+        /// browser holds at most <see cref="FlowBindingCookie.MaxPendingFlows"/> of them across every OpenID Connect
+        /// provider.
+        /// </summary>
+        public const string BindingCookieNamePrefix = "__Host-easyreasy-oidc-";
+
+        /// <summary>
+        /// The binding cookie every flow of this engine sets.
+        /// </summary>
+        private static readonly FlowBindingCookie BindingCookie = new FlowBindingCookie(BindingCookieNamePrefix);
 
         /// <summary>
         /// The claims the request's max age, acr and amr rules ask for, which a required claim may not name.
@@ -114,18 +122,17 @@ namespace EasyReasy.Auth.OpenIdConnect
 
             OpenIdConnectConfiguration configuration = await _discovery.GetAsync(provider, cancellationToken);
 
-            string flowId = OpenIdConnectRandomValue.Create(FlowIdSize);
-            string codeVerifier = OpenIdConnectRandomValue.Create(CodeVerifierSize);
-            string nonce = request.Nonce ?? OpenIdConnectRandomValue.Create(GeneratedNonceSize);
+            string codeVerifier = SecureToken.Generate();
+            string nonce = request.Nonce ?? SecureToken.Generate();
             // max_age is whole seconds, so a fraction is dropped: the provider and completion then apply the same limit.
             long? maxAgeSeconds = request.MaxAuthenticationAge is TimeSpan maxAge ? (long)maxAge.TotalSeconds : null;
 
-            string bindingCookieHash = OpenIdConnectBindingCookie.Issue(httpContext, flowId, _stateLifetime);
+            FlowBinding binding = BindingCookie.Issue(httpContext, _stateLifetime);
 
             OpenIdConnectState state = new OpenIdConnectState
             {
-                FlowId = flowId,
-                BindingCookieHash = bindingCookieHash,
+                FlowId = binding.FlowId,
+                BindingCookieHash = binding.ValueHash,
                 CodeVerifier = codeVerifier,
                 Nonce = nonce,
                 ProviderKey = request.ProviderKey,
@@ -153,7 +160,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 ["scope"] = provider.Scope,
                 ["state"] = protectedState,
                 ["nonce"] = nonce,
-                ["code_challenge"] = OpenIdConnectHash.Sha256(codeVerifier),
+                ["code_challenge"] = OAuthPkce.CreateS256Challenge(codeVerifier),
                 ["code_challenge_method"] = "S256",
             };
 
@@ -216,8 +223,9 @@ namespace EasyReasy.Auth.OpenIdConnect
 
             // Read the binding before clearing it, and clear it whatever happens next: the code is single-use, so a flow
             // that reached completion cannot be completed again.
-            OpenIdConnectAuthFailureReason? bindingFailure = OpenIdConnectBindingCookie.Check(httpContext, flow.FlowId, flow.BindingCookieHash);
-            OpenIdConnectBindingCookie.Clear(httpContext, flow.FlowId);
+            FlowBinding binding = new FlowBinding(flow.FlowId, flow.BindingCookieHash);
+            FlowBindingCookieCheck bindingCheck = BindingCookie.Check(httpContext, binding);
+            BindingCookie.Clear(httpContext, binding);
 
             // Expiry first: an expired flow's cookie has expired with it, and the state is the accurate reason.
             if (_timeProvider.GetUtcNow().ToUnixTimeSeconds() >= flow.ExpiresAtUnixSeconds)
@@ -225,9 +233,11 @@ namespace EasyReasy.Auth.OpenIdConnect
                 return OpenIdConnectCodeFlowResult.Failed(OpenIdConnectAuthFailureReason.ExpiredState);
             }
 
-            if (bindingFailure is OpenIdConnectAuthFailureReason failure)
+            if (bindingCheck != FlowBindingCookieCheck.Matches)
             {
-                return OpenIdConnectCodeFlowResult.Failed(failure);
+                return OpenIdConnectCodeFlowResult.Failed(bindingCheck == FlowBindingCookieCheck.Missing
+                    ? OpenIdConnectAuthFailureReason.BindingCookieMissing
+                    : OpenIdConnectAuthFailureReason.BindingCookieMismatch);
             }
 
             // Before anything goes to a provider: a response at another redirect URI may come from another provider, and
@@ -297,8 +307,10 @@ namespace EasyReasy.Auth.OpenIdConnect
         }
 
         /// <summary>
-        /// The rules a genuine token must also meet: the flow's expected identity, its max authentication age, its
-        /// accepted <c>acr</c> and <c>amr</c> values, and its required claim values.
+        /// The rules a genuine token must also meet, the first broken one reported: the flow's expected identity, its
+        /// accepted <c>acr</c> and <c>amr</c> values, its required claim values, and last its max authentication age, so
+        /// a token that is both stale and of the wrong kind is reported for its kind, as Microsoft's authentication
+        /// context always was.
         /// </summary>
         private OpenIdConnectAuthFailureReason? CheckFlowRules(OpenIdConnectUserInfo userInfo, OpenIdConnectState flow)
         {
@@ -308,19 +320,6 @@ namespace EasyReasy.Auth.OpenIdConnect
                 && userInfo.Identity != new OpenIdConnectIdentity(flow.ExpectedIssuer, flow.ExpectedSubject))
             {
                 return OpenIdConnectAuthFailureReason.IdentityMismatch;
-            }
-
-            if (flow.MaxAuthenticationAgeSeconds is long maxAgeSeconds)
-            {
-                if (userInfo.AuthenticationTime is not DateTimeOffset authenticationTime)
-                {
-                    return OpenIdConnectAuthFailureReason.MissingAuthTime;
-                }
-
-                if (_timeProvider.GetUtcNow() - authenticationTime > TimeSpan.FromSeconds(maxAgeSeconds))
-                {
-                    return OpenIdConnectAuthFailureReason.StaleAuthTime;
-                }
             }
 
             if (flow.AcceptedAcrValues != null)
@@ -361,6 +360,19 @@ namespace EasyReasy.Auth.OpenIdConnect
                 if (!values.Contains(required.Value, StringComparer.Ordinal))
                 {
                     return OpenIdConnectAuthFailureReason.RequiredClaimMismatch;
+                }
+            }
+
+            if (flow.MaxAuthenticationAgeSeconds is long maxAgeSeconds)
+            {
+                if (userInfo.AuthenticationTime is not DateTimeOffset authenticationTime)
+                {
+                    return OpenIdConnectAuthFailureReason.MissingAuthTime;
+                }
+
+                if (_timeProvider.GetUtcNow() - authenticationTime > TimeSpan.FromSeconds(maxAgeSeconds))
+                {
+                    return OpenIdConnectAuthFailureReason.StaleAuthTime;
                 }
             }
 
