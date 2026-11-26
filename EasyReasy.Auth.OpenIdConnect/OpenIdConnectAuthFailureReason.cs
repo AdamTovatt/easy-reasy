@@ -142,6 +142,17 @@ namespace EasyReasy.Auth.OpenIdConnect
         AmrNotAccepted,
 
         /// <summary>
+        /// The flow named required claim values, and the token lacks one of those claims.
+        /// </summary>
+        MissingRequiredClaim,
+
+        /// <summary>
+        /// The flow named required claim values, and one of the token's claims neither equals its value nor, as an array,
+        /// holds it.
+        /// </summary>
+        RequiredClaimMismatch,
+
+        /// <summary>
         /// The <c>state</c> was begun by another flow of the application (linking an account, a re-check at signing) and
         /// posted to the sign-in endpoint. Returned by the sign-in endpoint only.
         /// </summary>

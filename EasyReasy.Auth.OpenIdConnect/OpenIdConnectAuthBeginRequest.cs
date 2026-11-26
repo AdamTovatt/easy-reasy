@@ -87,9 +87,20 @@ namespace EasyReasy.Auth.OpenIdConnect
         public IReadOnlyList<string>? AcceptedAmrValues { get; init; }
 
         /// <summary>
+        /// Further ID token claims the flow requires, each with the one value it must have, or null for none: for example
+        /// Microsoft Entra ID's <c>acrs</c> with an authentication context id. Begin asks for each as an essential claim
+        /// with its value; completion refuses a token without the claim
+        /// (<see cref="OpenIdConnectAuthFailureReason.MissingRequiredClaim"/>) or whose claim neither equals the value nor,
+        /// as an array, holds it (<see cref="OpenIdConnectAuthFailureReason.RequiredClaimMismatch"/>). Matching is exact.
+        /// Names must not be blank or one of <c>auth_time</c>, <c>acr</c> and <c>amr</c>, which the rules above ask for;
+        /// values must not be blank.
+        /// </summary>
+        public IReadOnlyDictionary<string, string>? RequiredClaimValues { get; init; }
+
+        /// <summary>
         /// The account the person must sign in as, or null for anyone: for a re-check of a signed-in user, their linked
-        /// identity. Its issuer must be one the provider can issue as (the provider's issuer, or with a
-        /// <see cref="OpenIdConnectProvider.TenantClaim"/> the issuer of one tenant); Begin throws otherwise, since no
+        /// identity. Its issuer must be one the provider can issue as (the provider's issuer, or for an
+        /// <see cref="OpenIdConnectIssuer.TenantTemplate"/> the issuer of one tenant); Begin throws otherwise, since no
         /// sign-in could pass. Completion refuses any other account, issuer and subject compared together, as
         /// <see cref="OpenIdConnectAuthFailureReason.IdentityMismatch"/>.
         /// </summary>

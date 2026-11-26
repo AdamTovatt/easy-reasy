@@ -57,7 +57,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         public async Task<OpenIdConnectConfiguration> FetchAsync(OpenIdConnectProvider provider, CancellationToken cancellationToken)
         {
             GetManager(provider).RequestRefresh();
-            string address = provider.ResolvedMetadataAddress;
+            string address = provider.Issuer.MetadataAddress;
 
             OpenIdConnectConfiguration configuration;
             try
@@ -69,7 +69,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 throw new InvalidOperationException($"The OpenID configuration could not be retrieved from '{address}'.", exception);
             }
 
-            ConfigurationValidationResult check = new DocumentValidator(provider.Issuer).Validate(configuration);
+            ConfigurationValidationResult check = new DocumentValidator(provider.Issuer.Value).Validate(configuration);
             if (!check.Succeeded)
             {
                 throw new InvalidOperationException($"The OpenID configuration at '{address}' cannot be used: {check.ErrorMessage}");
@@ -81,7 +81,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         private IConfigurationManager<OpenIdConnectConfiguration> GetManager(OpenIdConnectProvider provider)
         {
             return _managers.GetOrAdd(
-                new CacheKey(provider.ResolvedMetadataAddress, provider.Issuer),
+                new CacheKey(provider.Issuer.MetadataAddress, provider.Issuer.Value),
                 key => new ConfigurationManager<OpenIdConnectConfiguration>(
                     key.MetadataAddress,
                     _configurationRetriever,

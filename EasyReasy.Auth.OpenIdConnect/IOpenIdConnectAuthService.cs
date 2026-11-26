@@ -5,7 +5,8 @@ namespace EasyReasy.Auth.OpenIdConnect
     /// <summary>
     /// The two steps of an OpenID Connect sign-in through the authorization code flow with PKCE, with the providers the
     /// application's <see cref="IOpenIdConnectProviderResolver"/> supplies. Registered by
-    /// <c>AddEasyReasyOpenIdConnectAuth</c>. The package's own sign-in endpoints use it, and so can an application's
+    /// <c>AddEasyReasyOpenIdConnectAuth</c> as a scoped service, so the resolver may be scoped too (for example reading
+    /// a database). The package's own sign-in endpoints use it, and so can an application's
     /// authenticated endpoints that link an account or re-check who someone is at a sensitive moment.
     /// </summary>
     public interface IOpenIdConnectAuthService
@@ -16,18 +17,19 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// </summary>
         /// <param name="request">What the flow asks of the provider and what its completion will check.</param>
         /// <param name="httpContext">The request from the browser that will complete the flow; the binding cookie is set
-        /// on its response, and the resolver is taken from its services.</param>
+        /// on its response.</param>
         /// <param name="cancellationToken">Cancels resolving the provider and fetching its discovery document.</param>
-        /// <returns>The authorize URL to send the browser to, and the <c>state</c>.</returns>
+        /// <returns>The authorize URL to send the browser to, and the <c>state</c>; or null when the provider key is blank
+        /// or resolves to no provider (no cookie is set), so a key the browser chose cannot fail the request.</returns>
         /// <exception cref="ArgumentException">
-        /// The provider key resolves to no provider, or the request or the provider is invalid: a redirect URI that is not
-        /// the provider's, a null caller binding, an undefined prompt, a max authentication age under one second, a blank
-        /// nonce, an empty or blank accepted value, or an expected identity at another issuer. Every problem is reported
+        /// The request is invalid for the provider: a redirect URI that is not the provider's, a null caller binding, an
+        /// undefined prompt, a max authentication age under one second, a blank nonce, an empty or blank accepted value, a
+        /// required claim that is blank or reserved, or an expected identity at another issuer. Every problem is reported
         /// in one exception, and no cookie is set.
         /// </exception>
-        /// <exception cref="InvalidOperationException">No <see cref="IOpenIdConnectProviderResolver"/> is registered, or
-        /// the provider's discovery document could not be retrieved or is not one it may use.</exception>
-        Task<OpenIdConnectAuthBeginResult> BeginAsync(OpenIdConnectAuthBeginRequest request, HttpContext httpContext, CancellationToken cancellationToken = default);
+        /// <exception cref="InvalidOperationException">The provider's discovery document could not be retrieved or is not
+        /// one it may use.</exception>
+        Task<OpenIdConnectAuthBeginResult?> BeginAsync(OpenIdConnectAuthBeginRequest request, HttpContext httpContext, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Completes a flow from what the provider's redirect brought back: checks the state, the browser binding and the
@@ -43,9 +45,8 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// <exception cref="HttpRequestException">The provider's token endpoint could not be reached, or answered with an
         /// unsuccessful status other than 400 or 401 (a server error, or a 429 throttle). An outage is not a refusal, so
         /// it is not reported as one.</exception>
-        /// <exception cref="InvalidOperationException">No <see cref="IOpenIdConnectProviderResolver"/> is registered, the
-        /// resolved provider is invalid, its discovery document or keys could not be retrieved, or its token endpoint
-        /// refused the client itself (such as <c>invalid_client</c> for an expired secret).</exception>
+        /// <exception cref="InvalidOperationException">The provider's discovery document or keys could not be retrieved,
+        /// or its token endpoint refused the client itself (such as <c>invalid_client</c> for an expired secret).</exception>
         Task<OpenIdConnectAuthCompletionResult> CompleteAsync(OpenIdConnectAuthorizationResponse response, HttpContext httpContext, CancellationToken cancellationToken = default);
     }
 }

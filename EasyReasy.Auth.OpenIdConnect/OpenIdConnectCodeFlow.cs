@@ -32,7 +32,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         private const int GeneratedNonceSize = 32;
 
         /// <summary>
-        /// The claims the request's own rules ask for, which a package's further essential claims may not name.
+        /// The claims the request's max age, acr and amr rules ask for, which a required claim may not name.
         /// </summary>
         private static readonly IReadOnlySet<string> ReservedClaimRequests = new HashSet<string>(StringComparer.Ordinal) { "auth_time", "acr", "amr" };
 
@@ -74,33 +74,43 @@ namespace EasyReasy.Auth.OpenIdConnect
         }
 
         /// <summary>
-        /// Begins a flow with a provider: builds its authorize URL and the encrypted <c>state</c>, and binds the flow to the
-        /// browser by setting a short-lived cookie on <paramref name="httpContext"/>'s response.
+        /// Begins a flow: resolves the provider the request names, builds its authorize URL and the encrypted
+        /// <c>state</c>, and binds the flow to the browser by setting a short-lived cookie on
+        /// <paramref name="httpContext"/>'s response.
         /// </summary>
-        /// <param name="provider">The provider <see cref="OpenIdConnectAuthBeginRequest.ProviderKey"/> names, as the
-        /// caller resolved it.</param>
         /// <param name="request">What the flow asks of the provider and what its completion will check.</param>
+        /// <param name="resolver">Resolves <see cref="OpenIdConnectAuthBeginRequest.ProviderKey"/>; completion resolves the
+        /// same key again.</param>
         /// <param name="httpContext">The request from the browser that will complete the flow.</param>
-        /// <param name="essentialIdTokenClaimValues">Further claims to ask for as essential, each with the one value it
-        /// must have, beside the ones the request's rules ask for (for example Microsoft's <c>acrs</c>), or null. Asked for
-        /// only, never checked: a package checks them in the completed identity's claims.</param>
-        /// <param name="cancellationToken">Cancels fetching the provider's discovery document.</param>
-        /// <returns>The authorize URL to send the browser to, and the <c>state</c>.</returns>
-        /// <exception cref="ArgumentException">The provider or the request is invalid, every problem reported at once. No
+        /// <param name="cancellationToken">Cancels resolving the provider and fetching its discovery document.</param>
+        /// <returns>The authorize URL to send the browser to, and the <c>state</c>; or null when the provider key is blank
+        /// or resolves to no provider, which may be the browser's doing (no cookie is set).</returns>
+        /// <exception cref="ArgumentException">The request is invalid for the provider, every problem reported at once. No
         /// cookie is set.</exception>
         /// <exception cref="InvalidOperationException">The provider's discovery document could not be retrieved or is not
         /// one it may use.</exception>
-        public async Task<OpenIdConnectAuthBeginResult> BeginAsync(
-            OpenIdConnectProvider provider,
+        public async Task<OpenIdConnectAuthBeginResult?> BeginAsync(
             OpenIdConnectAuthBeginRequest request,
+            IOpenIdConnectProviderResolver resolver,
             HttpContext httpContext,
-            IReadOnlyDictionary<string, string>? essentialIdTokenClaimValues = null,
             CancellationToken cancellationToken = default)
         {
-            ArgumentNullException.ThrowIfNull(provider);
             ArgumentNullException.ThrowIfNull(request);
+            ArgumentNullException.ThrowIfNull(resolver);
             ArgumentNullException.ThrowIfNull(httpContext);
-            ValidateBegin(provider, request, essentialIdTokenClaimValues);
+
+            if (string.IsNullOrWhiteSpace(request.ProviderKey))
+            {
+                return null;
+            }
+
+            OpenIdConnectProvider? provider = await resolver.FindProviderAsync(request.ProviderKey, cancellationToken);
+            if (provider == null)
+            {
+                return null;
+            }
+
+            ValidateBegin(provider, request);
 
             OpenIdConnectConfiguration configuration = await _discovery.GetAsync(provider, cancellationToken);
 
@@ -119,7 +129,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 CodeVerifier = codeVerifier,
                 Nonce = nonce,
                 ProviderKey = request.ProviderKey,
-                Issuer = provider.Issuer,
+                Issuer = provider.Issuer.Value,
                 ClientId = provider.ClientId,
                 RedirectUri = request.RedirectUri,
                 CallerBinding = request.CallerBinding,
@@ -127,6 +137,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 MaxAuthenticationAgeSeconds = maxAgeSeconds,
                 AcceptedAcrValues = request.AcceptedAcrValues?.ToList(),
                 AcceptedAmrValues = request.AcceptedAmrValues?.ToList(),
+                RequiredClaimValues = request.RequiredClaimValues?.ToDictionary(StringComparer.Ordinal),
                 ExpectedIssuer = request.ExpectedIdentity?.Issuer,
                 ExpectedSubject = request.ExpectedIdentity?.Subject,
             };
@@ -161,7 +172,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 parameters["max_age"] = seconds.ToString(CultureInfo.InvariantCulture);
             }
 
-            if (CreateClaimsRequest(request, essentialIdTokenClaimValues) is string claims)
+            if (CreateClaimsRequest(request) is string claims)
             {
                 parameters["claims"] = claims;
             }
@@ -184,8 +195,8 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// <exception cref="HttpRequestException">The provider's token endpoint could not be reached, or answered with an
         /// unsuccessful status other than 400 or 401 (a server error, or a 429 throttle). An outage is not a refusal, so it
         /// is not reported as one.</exception>
-        /// <exception cref="InvalidOperationException">The resolved provider is invalid, its discovery document or keys
-        /// could not be retrieved or are not ones it may use, or its token endpoint refused the client itself (an error
+        /// <exception cref="InvalidOperationException">The provider's discovery document or keys could not be retrieved
+        /// or are not ones it may use, or its token endpoint refused the client itself (an error
         /// other than <c>invalid_grant</c> or <c>invalid_request</c>, such as <c>invalid_client</c>).</exception>
         public async Task<OpenIdConnectCodeFlowResult> CompleteAsync(
             OpenIdConnectAuthorizationResponse response,
@@ -237,20 +248,16 @@ namespace EasyReasy.Auth.OpenIdConnect
                 return OpenIdConnectCodeFlowResult.Failed(OpenIdConnectAuthFailureReason.UnknownProvider);
             }
 
-            IReadOnlyList<string> providerProblems = provider.FindProblems();
-            if (providerProblems.Count > 0)
-            {
-                throw new InvalidOperationException($"The provider '{flow.ProviderKey}' is invalid:\n{string.Join("\n", providerProblems)}");
-            }
-
-            if (!string.Equals(provider.Issuer, flow.Issuer, StringComparison.Ordinal)
+            // A template's metadata address and tenant claim are not compared: only provider package code builds a
+            // template, never a resolver's runtime data, and a fixed issuer's metadata address follows from its value.
+            if (!string.Equals(provider.Issuer.Value, flow.Issuer, StringComparison.Ordinal)
                 || !string.Equals(provider.ClientId, flow.ClientId, StringComparison.Ordinal))
             {
                 return OpenIdConnectCodeFlowResult.Failed(OpenIdConnectAuthFailureReason.ProviderChanged);
             }
 
             OpenIdConnectConfiguration configuration = await _discovery.GetAsync(provider, cancellationToken);
-            bool isTemplate = provider.TenantClaim != null;
+            bool isTemplate = provider.Issuer.IsTemplate;
 
             // RFC 9207. A template issuer is known only from the token, so its iss is compared once the token validated.
             if (response.Issuer == null && configuration.AuthorizationResponseIssParameterSupported)
@@ -258,7 +265,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 return OpenIdConnectCodeFlowResult.Failed(OpenIdConnectAuthFailureReason.IssuerParameterMissing);
             }
 
-            if (response.Issuer != null && !isTemplate && !string.Equals(response.Issuer, provider.Issuer, StringComparison.Ordinal))
+            if (response.Issuer != null && !isTemplate && !string.Equals(response.Issuer, provider.Issuer.Value, StringComparison.Ordinal))
             {
                 return OpenIdConnectCodeFlowResult.Failed(OpenIdConnectAuthFailureReason.IssuerParameterMismatch);
             }
@@ -290,8 +297,8 @@ namespace EasyReasy.Auth.OpenIdConnect
         }
 
         /// <summary>
-        /// The rules a genuine token must also meet: the flow's expected identity, its max authentication age, and its
-        /// accepted <c>acr</c> and <c>amr</c> values.
+        /// The rules a genuine token must also meet: the flow's expected identity, its max authentication age, its
+        /// accepted <c>acr</c> and <c>amr</c> values, and its required claim values.
         /// </summary>
         private OpenIdConnectAuthFailureReason? CheckFlowRules(OpenIdConnectUserInfo userInfo, OpenIdConnectState flow)
         {
@@ -342,23 +349,29 @@ namespace EasyReasy.Auth.OpenIdConnect
                 }
             }
 
+            foreach (KeyValuePair<string, string> required in flow.RequiredClaimValues ?? new Dictionary<string, string>())
+            {
+                // The token's claims hold an array claim as one claim per element, so "equals or, as an array, holds".
+                List<string> values = userInfo.Claims.Where(claim => claim.Type == required.Key).Select(claim => claim.Value).ToList();
+                if (values.Count == 0)
+                {
+                    return OpenIdConnectAuthFailureReason.MissingRequiredClaim;
+                }
+
+                if (!values.Contains(required.Value, StringComparer.Ordinal))
+                {
+                    return OpenIdConnectAuthFailureReason.RequiredClaimMismatch;
+                }
+            }
+
             return null;
         }
 
-        private static void ValidateBegin(
-            OpenIdConnectProvider provider,
-            OpenIdConnectAuthBeginRequest request,
-            IReadOnlyDictionary<string, string>? essentialIdTokenClaimValues)
+        private static void ValidateBegin(OpenIdConnectProvider provider, OpenIdConnectAuthBeginRequest request)
         {
-            List<string> errors = provider.FindProblems().Select(problem => $"The provider: {problem}").ToList();
-            bool providerIsValid = errors.Count == 0;
+            List<string> errors = new List<string>();
 
-            if (string.IsNullOrWhiteSpace(request.ProviderKey))
-            {
-                errors.Add($"{nameof(OpenIdConnectAuthBeginRequest.ProviderKey)} must not be blank.");
-            }
-
-            if (request.RedirectUri == null || provider.RedirectUris?.Contains(request.RedirectUri, StringComparer.Ordinal) != true)
+            if (request.RedirectUri == null || !provider.RedirectUris.Contains(request.RedirectUri, StringComparer.Ordinal))
             {
                 errors.Add($"The redirect URI '{request.RedirectUri}' is not one of the provider's {nameof(OpenIdConnectProvider.RedirectUris)}.");
             }
@@ -386,19 +399,16 @@ namespace EasyReasy.Auth.OpenIdConnect
             AddValueListErrors(errors, request.AcceptedAcrValues, nameof(OpenIdConnectAuthBeginRequest.AcceptedAcrValues));
             AddValueListErrors(errors, request.AcceptedAmrValues, nameof(OpenIdConnectAuthBeginRequest.AcceptedAmrValues));
 
-            // Only the provider's own problems are reported when it has some: CanIssueAs needs a well-formed issuer.
-            if (request.ExpectedIdentity is OpenIdConnectIdentity expected
-                && providerIsValid
-                && !provider.CanIssueAs(expected.Issuer))
+            if (request.ExpectedIdentity is OpenIdConnectIdentity expected && !provider.Issuer.CanIssueAs(expected.Issuer))
             {
                 errors.Add($"{nameof(OpenIdConnectAuthBeginRequest.ExpectedIdentity)}'s issuer '{expected.Issuer}' cannot be the provider's issuer '{provider.Issuer}', so no sign-in could pass.");
             }
 
-            foreach (KeyValuePair<string, string> claim in essentialIdTokenClaimValues ?? new Dictionary<string, string>())
+            foreach (KeyValuePair<string, string> claim in request.RequiredClaimValues ?? new Dictionary<string, string>())
             {
                 if (string.IsNullOrWhiteSpace(claim.Key) || ReservedClaimRequests.Contains(claim.Key) || string.IsNullOrWhiteSpace(claim.Value))
                 {
-                    errors.Add($"The essential claim '{claim.Key}' = '{claim.Value}' must have a non-blank name and value, and not be one of {string.Join(", ", ReservedClaimRequests)}, which the request's rules ask for.");
+                    errors.Add($"The required claim '{claim.Key}' = '{claim.Value}' must have a non-blank name and value, and not be one of {string.Join(", ", ReservedClaimRequests)}, which the request's other rules ask for.");
                 }
             }
 
@@ -418,9 +428,9 @@ namespace EasyReasy.Auth.OpenIdConnect
 
         /// <summary>
         /// The OIDC <c>claims</c> request for the flow's rules: <c>auth_time</c> for a max age, <c>acr</c> with the
-        /// accepted values, <c>amr</c>, and a package's further essential claims. Null when there is nothing to ask for.
+        /// accepted values, <c>amr</c>, and each required claim with its value. Null when there is nothing to ask for.
         /// </summary>
-        private static string? CreateClaimsRequest(OpenIdConnectAuthBeginRequest request, IReadOnlyDictionary<string, string>? essentialIdTokenClaimValues)
+        private static string? CreateClaimsRequest(OpenIdConnectAuthBeginRequest request)
         {
             JsonObject idTokenClaims = new JsonObject();
 
@@ -443,7 +453,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 idTokenClaims["amr"] = new JsonObject { ["essential"] = true };
             }
 
-            foreach (KeyValuePair<string, string> claim in essentialIdTokenClaimValues ?? new Dictionary<string, string>())
+            foreach (KeyValuePair<string, string> claim in request.RequiredClaimValues ?? new Dictionary<string, string>())
             {
                 idTokenClaims[claim.Key] = new JsonObject { ["essential"] = true, ["value"] = claim.Value };
             }

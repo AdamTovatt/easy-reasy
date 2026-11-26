@@ -5,11 +5,12 @@ namespace EasyReasy.Auth.OpenIdConnect
     /// customer's id), so a provider can be added or changed without a restart. Registered by the application.
     /// </summary>
     /// <remarks>
-    /// Called when a flow begins and again when it completes, since the client secret is never put in the <c>state</c>.
-    /// Resolved from the request's services, so it may be scoped (for example reading a database). Each call should
-    /// return the provider as configured now: a flow refuses completion as
-    /// <see cref="OpenIdConnectAuthFailureReason.ProviderChanged"/> when the issuer or client id changed after it began.
-    /// The discovery document and keys are cached per metadata address and issuer, so resolving does not refetch them.
+    /// Called when a flow begins and again when it completes, since the client secret is never put in the <c>state</c>,
+    /// and never with a blank key. <see cref="IOpenIdConnectAuthService"/> is scoped, so the resolver may be scoped too
+    /// (for example reading a database). Each call should return the provider as configured now: a flow refuses
+    /// completion as <see cref="OpenIdConnectAuthFailureReason.ProviderChanged"/> when the issuer or client id changed
+    /// after it began. The discovery document and keys are cached per metadata address and issuer, so resolving does not
+    /// refetch them.
     /// </remarks>
     public interface IOpenIdConnectProviderResolver
     {
