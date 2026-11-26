@@ -19,7 +19,7 @@
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
     <VersionPrefix>5.19.0</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>Adds FlowBindingCookie, the cookie that binds a browser-redirect sign-in flow to the browser that began it, as a public helper for sign-in packages: Issue sets a __Host- prefixed, HttpOnly, Secure, SameSite=Lax cookie for a new flow and returns the flow id and value hash for its state, keeping at most five pending flows per prefix; Check says whether the completing browser sent it (Matches, Missing or Mismatch); Clear expires it. Makes SecureToken (a 256-bit random value, and the hash it is stored under) and OAuthPkce (S256, now with CreateS256Challenge for a client) public, for sign-in packages. Nothing existing changes.</PackageReleaseNotes>
+    <PackageReleaseNotes>Adds FlowBindingCookie, the cookie that binds a browser-redirect sign-in flow to the browser that began it, as a public helper for sign-in packages: Issue sets a __Host- prefixed, HttpOnly, Secure, SameSite=Lax cookie for a new flow and returns the flow id and value hash for its state, keeping at most five pending flows per prefix; Check says whether the completing browser sent it (Matches, Missing or Mismatch); Clear expires it. Adds JsonSealer, which seals a value's JSON with its own AES-256-GCM key as base64url text, for what a flow carries through the browser, such as an OAuth state. Makes SecureToken (a 256-bit random value, and the hash it is stored under) and OAuthPkce (S256, now with CreateS256Challenge for a client) public, for sign-in packages. Nothing existing changes.</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

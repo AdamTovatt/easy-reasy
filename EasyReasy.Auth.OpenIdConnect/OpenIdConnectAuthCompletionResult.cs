@@ -4,26 +4,25 @@ using System.Text.Json.Serialization;
 namespace EasyReasy.Auth.OpenIdConnect
 {
     /// <summary>
-    /// The outcome of <see cref="IOpenIdConnectAuthService.CompleteAsync"/>: the validated identity, the caller binding
-    /// from Begin and the ID token it was read from, or the reason the flow was refused.
+    /// The outcome of <see cref="IOpenIdConnectAuthService.CompleteAsync"/>: the validated identity and the ID token it
+    /// was read from, or the reason the flow was refused.
     /// </summary>
     /// <remarks>
-    /// An application that keeps its own audit of each sign-in writes it from this result: the caller binding, the
-    /// account and, in <see cref="UserInfo"/>, <c>auth_time</c>, <c>acr</c> and <c>amr</c>, with any required claims in
-    /// its <see cref="OpenIdConnectUserInfo.Claims"/>.
+    /// An application that keeps its own audit of each sign-in writes it from this result, with the caller binding it
+    /// passed to <see cref="IOpenIdConnectAuthService.CompleteAsync"/>: the account and, in <see cref="UserInfo"/>,
+    /// <c>auth_time</c>, <c>acr</c> and <c>amr</c>, with any required claims in its
+    /// <see cref="OpenIdConnectUserInfo.Claims"/>.
     /// </remarks>
     public sealed class OpenIdConnectAuthCompletionResult
     {
         private OpenIdConnectAuthCompletionResult(
             OpenIdConnectUserInfo? userInfo,
-            string? callerBinding,
             string? idToken,
             string? idTokenSigningKey,
             OpenIdConnectAuthFailureReason? failureReason,
             OpenIdConnectIdentity? attemptedIdentity)
         {
             UserInfo = userInfo;
-            CallerBinding = callerBinding;
             IdToken = idToken;
             IdTokenSigningKey = idTokenSigningKey;
             FailureReason = failureReason;
@@ -33,7 +32,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// <summary>
         /// Whether every check passed.
         /// </summary>
-        [MemberNotNullWhen(true, nameof(UserInfo), nameof(CallerBinding), nameof(IdToken), nameof(IdTokenSigningKey), nameof(AttemptedIdentity))]
+        [MemberNotNullWhen(true, nameof(UserInfo), nameof(IdToken), nameof(IdTokenSigningKey), nameof(AttemptedIdentity))]
         [MemberNotNullWhen(false, nameof(FailureReason))]
         public bool Success => FailureReason == null;
 
@@ -43,15 +42,6 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// </summary>
         [JsonIgnore]
         public OpenIdConnectUserInfo? UserInfo { get; }
-
-        /// <summary>
-        /// The <see cref="OpenIdConnectAuthBeginRequest.CallerBinding"/> the flow was begun with. Only populated when
-        /// <see cref="Success"/> is true. Compare it with what the completing endpoint expects before acting on the
-        /// identity. The application's own value, which may name a user or a record, so it is left out of
-        /// <see cref="ToString"/> and of JSON serialization.
-        /// </summary>
-        [JsonIgnore]
-        public string? CallerBinding { get; }
 
         /// <summary>
         /// The raw ID token <see cref="UserInfo"/> was read from, exactly as the provider's token endpoint returned it and
@@ -87,24 +77,24 @@ namespace EasyReasy.Auth.OpenIdConnect
 
         /// <summary>
         /// The account, for an audit record: populated on success, and on a refusal of a genuine token (its identity,
-        /// sign-in time, <c>acr</c> or <c>amr</c>). Null when the state, the cookie, the response, the provider, the code or
-        /// the token failed, because no trustworthy account is known then.
+        /// sign-in time, <c>acr</c> or <c>amr</c>). Null when the state, the cookie, the caller binding, the response, the
+        /// provider, the code or the token failed, because no trustworthy account is known then.
         /// </summary>
         public OpenIdConnectIdentity? AttemptedIdentity { get; }
 
-        internal static OpenIdConnectAuthCompletionResult Succeeded(OpenIdConnectUserInfo userInfo, string callerBinding, string idToken, string idTokenSigningKey)
+        internal static OpenIdConnectAuthCompletionResult Succeeded(OpenIdConnectUserInfo userInfo, string idToken, string idTokenSigningKey)
         {
-            return new OpenIdConnectAuthCompletionResult(userInfo, callerBinding, idToken, idTokenSigningKey, null, userInfo.Identity);
+            return new OpenIdConnectAuthCompletionResult(userInfo, idToken, idTokenSigningKey, null, userInfo.Identity);
         }
 
         internal static OpenIdConnectAuthCompletionResult Refused(OpenIdConnectAuthFailureReason reason, OpenIdConnectIdentity attemptedIdentity)
         {
-            return new OpenIdConnectAuthCompletionResult(null, null, null, null, reason, attemptedIdentity);
+            return new OpenIdConnectAuthCompletionResult(null, null, null, reason, attemptedIdentity);
         }
 
         internal static OpenIdConnectAuthCompletionResult Failed(OpenIdConnectAuthFailureReason reason)
         {
-            return new OpenIdConnectAuthCompletionResult(null, null, null, null, reason, null);
+            return new OpenIdConnectAuthCompletionResult(null, null, null, reason, null);
         }
 
         /// <summary>
@@ -115,7 +105,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         {
             if (result.Success)
             {
-                return Succeeded(result.UserInfo, result.CallerBinding, result.IdToken, result.IdTokenSigningKey);
+                return Succeeded(result.UserInfo, result.IdToken, result.IdTokenSigningKey);
             }
 
             return result.UserInfo != null
@@ -124,8 +114,8 @@ namespace EasyReasy.Auth.OpenIdConnect
         }
 
         /// <summary>
-        /// Describes the outcome without the caller binding or the identity's details, and with the ID token as
-        /// <c>[REDACTED]</c>, so the result is safe to log. JSON serialization leaves out the same three.
+        /// Describes the outcome without the identity's details, and with the ID token as <c>[REDACTED]</c>, so the result
+        /// is safe to log. JSON serialization leaves out the same, and the signing key.
         /// </summary>
         /// <returns>The outcome, the failure reason and the account when they are known.</returns>
         public override string ToString()

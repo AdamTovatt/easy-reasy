@@ -118,8 +118,9 @@ namespace EasyReasy.Auth.Microsoft
         StaleAuthTime,
 
         /// <summary>
-        /// The <c>state</c> was begun by another flow of the application (linking an account, a re-check at
-        /// signing) and posted to the sign-in endpoint. Returned by the sign-in endpoint only.
+        /// The <c>state</c> was begun with another caller binding than the completing endpoint expects: by another flow
+        /// of the application (linking an account, a re-check at signing) with other rules, and posted to this one.
+        /// Refused before the code is redeemed.
         /// </summary>
         CallerBindingMismatch,
 

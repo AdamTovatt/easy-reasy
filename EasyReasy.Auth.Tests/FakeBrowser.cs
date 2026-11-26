@@ -19,6 +19,21 @@ namespace EasyReasy.Auth.Tests
         }
 
         /// <summary>
+        /// A second browser holding the same cookies with the same expiries, as someone who copied this browser's
+        /// cookies would; from then on each keeps its own.
+        /// </summary>
+        public FakeBrowser Clone()
+        {
+            FakeBrowser clone = new FakeBrowser(_clock);
+            foreach (KeyValuePair<string, StoredCookie> cookie in _cookies)
+            {
+                clone._cookies[cookie.Key] = cookie.Value;
+            }
+
+            return clone;
+        }
+
+        /// <summary>
         /// The cookies the browser would send now, by name.
         /// </summary>
         public IReadOnlyDictionary<string, string> Cookies => _cookies

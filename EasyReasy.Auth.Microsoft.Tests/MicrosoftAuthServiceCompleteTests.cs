@@ -12,7 +12,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         private const string Subject = FakeMicrosoftIdentityProvider.TenantId + ":" + FakeMicrosoftIdentityProvider.ObjectId;
 
         [TestMethod]
-        public async Task Complete_ValidFlow_ReturnsTheIdentityAndTheCallerBinding()
+        public async Task Complete_ValidFlow_ReturnsTheIdentity()
         {
             using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
             DateTimeOffset signedInAt = harness.Clock.GetUtcNow();
@@ -20,7 +20,6 @@ namespace EasyReasy.Auth.Microsoft.Tests
             MicrosoftAuthCompletionResult result = await harness.SignInAsync(MicrosoftAuthHarness.CreateRequest(nonce: "record-hash"));
 
             Assert.IsTrue(result.Success, result.FailureReason?.ToString());
-            Assert.AreEqual(MicrosoftAuthHarness.CallerBinding, result.CallerBinding);
             Assert.AreEqual(Subject, result.AttemptedSubject);
             Assert.IsNull(result.FailureReason);
             Assert.AreEqual(FakeMicrosoftIdentityProvider.Tenant, result.UserInfo.TenantId);
@@ -68,7 +67,6 @@ namespace EasyReasy.Auth.Microsoft.Tests
 
             Assert.IsTrue(result.Success, result.FailureReason?.ToString());
             Assert.IsFalse(text.Contains(result.IdToken, StringComparison.Ordinal), text);
-            Assert.IsFalse(text.Contains(result.CallerBinding, StringComparison.Ordinal), text);
             Assert.IsFalse(text.Contains(result.UserInfo.PreferredUsername!, StringComparison.Ordinal), text);
             Assert.IsFalse(text.Contains(result.UserInfo.Name!, StringComparison.Ordinal), text);
             StringAssert.Contains(text, result.AttemptedSubject);
@@ -88,7 +86,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
 
             Assert.AreEqual(
                 $"MicrosoftAuthCompletionResult {{ Success = true, AttemptedSubject = {Subject}, IdToken = [REDACTED] }}",
-                MicrosoftAuthCompletionResult.Succeeded(userInfo, "binding", "header.payload.signature", "{\"kty\":\"RSA\"}").ToString());
+                MicrosoftAuthCompletionResult.Succeeded(userInfo, "header.payload.signature", "{\"kty\":\"RSA\"}").ToString());
             Assert.AreEqual(
                 $"MicrosoftAuthCompletionResult {{ Success = false, FailureReason = TenantNotAllowed, AttemptedSubject = {Subject} }}",
                 MicrosoftAuthCompletionResult.Refused(MicrosoftAuthFailureReason.TenantNotAllowed, userInfo).ToString());
@@ -465,6 +463,25 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
+        public async Task Complete_FlowBegunWithAnotherCallerBinding_IsRefusedAsCallerBindingMismatchBeforeAnyRedemption()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+            FakeBrowser browser = harness.CreateBrowser();
+            OpenIdConnectAuthBeginResult flow = await harness.BeginAsync(MicrosoftAuthHarness.CreateRequest(), browser);
+            string code = harness.IdentityProvider.IssueCode(flow.AuthorizationUrl);
+
+            string anotherRecordsBinding = "user-7:record-10";
+
+            MicrosoftAuthCompletionResult result = await harness.CompleteAsync(code, flow.State, browser, expectedCallerBinding: anotherRecordsBinding);
+
+            Assert.AreNotEqual(MicrosoftAuthHarness.CallerBinding, anotherRecordsBinding);
+            Assert.AreEqual(MicrosoftAuthFailureReason.CallerBindingMismatch, result.FailureReason);
+            Assert.IsNull(result.AttemptedSubject);
+            Assert.AreEqual(0, harness.IdentityProvider.TokenRequests.Count);
+            Assert.AreEqual(0, browser.Cookies.Count);
+        }
+
+        [TestMethod]
         public async Task Complete_ClientIdChangedSinceBegin_IsRefusedAsProviderChanged()
         {
             using MicrosoftAuthHarness begun = MicrosoftAuthHarness.Create();
@@ -709,7 +726,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             Assert.AreEqual(MicrosoftAuthFailureReason.PersonalAccount, result.FailureReason);
             Assert.AreEqual($"{personal}:{FakeMicrosoftIdentityProvider.ObjectId}", result.AttemptedSubject);
             Assert.IsNull(result.UserInfo);
-            Assert.IsNull(result.CallerBinding);
+            Assert.IsNull(result.IdToken);
         }
 
         [TestMethod]

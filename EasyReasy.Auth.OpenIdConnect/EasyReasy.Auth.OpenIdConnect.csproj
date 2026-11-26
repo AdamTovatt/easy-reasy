@@ -17,9 +17,10 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>1.0.0-preview.1</VersionPrefix>
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <VersionSuffix>preview.1</VersionSuffix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>First preview: sign-in with any OpenID Connect provider through the server-side authorization code flow with PKCE, and the shared flow EasyReasy.Auth.Microsoft is built on. A preview until a security review by someone who did not write it. Requires EasyReasy.Auth 5.19.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-openidconnect-v$(VersionPrefix)/EasyReasy.Auth.OpenIdConnect/README.md</PackageReleaseNotes>
+    <PackageReleaseNotes>First preview: sign-in with any OpenID Connect provider through the server-side authorization code flow with PKCE, and the shared flow EasyReasy.Auth.Microsoft is built on. A preview until a security review by someone who did not write it. Requires EasyReasy.Auth 5.19.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-openidconnect-v$(VersionPrefix)-$(VersionSuffix)/EasyReasy.Auth.OpenIdConnect/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

@@ -19,8 +19,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
         public const string TenantsKey = "tenants";
         public const string CallerBinding = "user-7:record-9";
 
-        private readonly ServiceProvider _services;
-        private readonly IServiceScope _scope;
+        private readonly OpenIdConnectServiceDriver _driver;
 
         private OpenIdConnectAuthHarness(
             ServiceProvider services,
@@ -31,16 +30,13 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
             FakeOpenIdConnectIssuer other,
             FakeOpenIdConnectIssuer tenants)
         {
-            _services = services;
+            _driver = new OpenIdConnectServiceDriver(services);
             Clock = clock;
             Network = network;
             Resolver = resolver;
             Primary = primary;
             Other = other;
             Tenants = tenants;
-            // Scoped, as the application resolves it per request.
-            _scope = services.CreateScope();
-            Service = _scope.ServiceProvider.GetRequiredService<IOpenIdConnectAuthService>();
         }
 
         public FakeTimeProvider Clock { get; }
@@ -49,7 +45,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
 
         public FakeProviderResolver Resolver { get; }
 
-        public IOpenIdConnectAuthService Service { get; }
+        public IOpenIdConnectAuthService Service => _driver.Service;
 
         public FakeOpenIdConnectIssuer Primary { get; }
 
@@ -199,7 +195,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
         /// </summary>
         public OpenIdConnectCodeFlow CreateFlow(OpenIdConnectAuthOptions? options = null)
         {
-            return new OpenIdConnectCodeFlow(options ?? CreateOptions(), _services.GetRequiredService<IHttpClientFactory>(), Clock);
+            return new OpenIdConnectCodeFlow(options ?? CreateOptions(), _driver.Services.GetRequiredService<IHttpClientFactory>(), Clock);
         }
 
         public FakeOpenIdConnectIssuer IssuerFor(string providerKey)
@@ -221,45 +217,14 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
             return new FakeBrowser(Clock);
         }
 
-        /// <summary>
-        /// A request context from the browser, with the harness's services as its request services.
-        /// </summary>
-        public DefaultHttpContext CreateContext(FakeBrowser browser)
-        {
-            DefaultHttpContext context = new DefaultHttpContext { RequestServices = _services };
-            browser.ApplyTo(context.Request);
-            return context;
-        }
+        public DefaultHttpContext CreateContext(FakeBrowser browser) => _driver.CreateContext(browser);
 
-        /// <summary>
-        /// Begins a flow whose provider key resolves; <see cref="TryBeginAsync"/> for one that may not.
-        /// </summary>
-        public async Task<OpenIdConnectAuthBeginResult> BeginAsync(OpenIdConnectAuthBeginRequest request, FakeBrowser browser)
-        {
-            return await TryBeginAsync(request, browser)
-                ?? throw new AssertFailedException($"The provider key '{request.ProviderKey}' resolved to no provider.");
-        }
+        public Task<OpenIdConnectAuthBeginResult> BeginAsync(OpenIdConnectAuthBeginRequest request, FakeBrowser browser) => _driver.BeginAsync(request, browser);
 
-        public async Task<OpenIdConnectAuthBeginResult?> TryBeginAsync(OpenIdConnectAuthBeginRequest request, FakeBrowser browser)
-        {
-            DefaultHttpContext context = CreateContext(browser);
-            try
-            {
-                return await Service.BeginAsync(request, context);
-            }
-            finally
-            {
-                browser.Absorb(context.Response);
-            }
-        }
+        public Task<OpenIdConnectAuthBeginResult?> TryBeginAsync(OpenIdConnectAuthBeginRequest request, FakeBrowser browser) => _driver.TryBeginAsync(request, browser);
 
-        public async Task<OpenIdConnectAuthCompletionResult> CompleteAsync(OpenIdConnectAuthorizationResponse response, FakeBrowser browser)
-        {
-            DefaultHttpContext context = CreateContext(browser);
-            OpenIdConnectAuthCompletionResult result = await Service.CompleteAsync(response, context);
-            browser.Absorb(context.Response);
-            return result;
-        }
+        public Task<OpenIdConnectAuthCompletionResult> CompleteAsync(OpenIdConnectAuthorizationResponse response, FakeBrowser browser, string expectedCallerBinding = CallerBinding)
+            => _driver.CompleteAsync(response, browser, expectedCallerBinding);
 
         /// <summary>
         /// Lets the provider of a begun flow sign the person in, and completes the flow in the same browser at the
@@ -317,8 +282,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
 
         public void Dispose()
         {
-            _scope.Dispose();
-            _services.Dispose();
+            _driver.Dispose();
         }
     }
 }

@@ -43,16 +43,26 @@ jobs:
           auth-client)   PROJECT="EasyReasy.Auth.Client";         TEST_PROJECT="EasyReasy.Auth.Client.Tests" ;;
           auth-google)   PROJECT="EasyReasy.Auth.Google";         TEST_PROJECT="EasyReasy.Auth.Google.Tests" ;;
           auth-microsoft) PROJECT="EasyReasy.Auth.Microsoft";     TEST_PROJECT="EasyReasy.Auth.Microsoft.Tests" ;;
+          auth-openidconnect) PROJECT="EasyReasy.Auth.OpenIdConnect"; TEST_PROJECT="EasyReasy.Auth.OpenIdConnect.Tests" ;;
           auth-testing)  PROJECT="EasyReasy.Auth.Testing";        TEST_PROJECT="EasyReasy.Auth.Testing.Tests" ;;
           byteshelf)     PROJECT="EasyReasy.ByteShelfProvider";   TEST_PROJECT="EasyReasy.ByteShelfProvider.Tests" ;;
           env)           PROJECT="EasyReasy.EnvironmentVariables"; TEST_PROJECT="EasyReasy.EnvironmentVariables.Tests" ;;
           vectorstorage) PROJECT="EasyReasy.VectorStorage";       TEST_PROJECT="EasyReasy.VectorStorage.Tests" ;;
           *)             echo "Unknown package: $PACKAGE" && exit 1 ;;
         esac
+        # A package whose sign-in flow runs on a shared engine is released only after the engine's real flows pass
+        # against Keycloak, as the keycloak job in tests.yml runs them: EasyReasy.Auth.Microsoft runs on
+        # EasyReasy.Auth.OpenIdConnect's code flow.
+        case "$PACKAGE" in
+          auth-openidconnect|auth-microsoft) KEYCLOAK_TEST_PROJECT="EasyReasy.Auth.OpenIdConnect.Tests" ;;
+          *)                                 KEYCLOAK_TEST_PROJECT="" ;;
+        esac
         echo "PROJECT=${PROJECT}" >> $GITHUB_OUTPUT
         echo "TEST_PROJECT=${TEST_PROJECT}" >> $GITHUB_OUTPUT
+        echo "KEYCLOAK_TEST_PROJECT=${KEYCLOAK_TEST_PROJECT}" >> $GITHUB_OUTPUT
         echo "Project: ${PROJECT}"
         echo "Test project: ${TEST_PROJECT}"
+        echo "Keycloak test project: ${KEYCLOAK_TEST_PROJECT:-none}"
 
     # Each project's csproj <VersionPrefix> is the single source of truth for its
     # version; the tag only selects which package to publish. Fail fast if they
@@ -61,6 +71,8 @@ jobs:
     # property propagates into referenced projects and would stamp cross-package
     # dependencies (e.g. EasyReasy.Auth.Google -> EasyReasy.Auth) at the wrong
     # version, so each project must carry its own version in its csproj.
+    #
+    # A prerelease adds <VersionSuffix> (e.g. 1.0.0 and preview.1), and its tag carries both: auth-openidconnect-v1.0.0-preview.1.
     - name: Verify tag version matches csproj
       run: |
         PROJECT="${{ steps.project.outputs.PROJECT }}"
@@ -71,8 +83,12 @@ jobs:
           echo "::error::No <VersionPrefix> found in ${CSPROJ}; add one so the published version is explicit and verifiable."
           exit 1
         fi
+        CSPROJ_SUFFIX=$(grep -oP '(?<=<VersionSuffix>)[^<]+' "$CSPROJ" || true)
+        if [ -n "$CSPROJ_SUFFIX" ]; then
+          CSPROJ_VERSION="${CSPROJ_VERSION}-${CSPROJ_SUFFIX}"
+        fi
         if [ "$CSPROJ_VERSION" != "$VERSION" ]; then
-          echo "::error::Tag version ${VERSION} does not match ${CSPROJ} <VersionPrefix> ${CSPROJ_VERSION}. Bump the csproj or fix the tag."
+          echo "::error::Tag version ${VERSION} does not match ${CSPROJ}'s version ${CSPROJ_VERSION} (<VersionPrefix>, plus -<VersionSuffix> when set). Bump the csproj or fix the tag."
           exit 1
         fi
         echo "Version check OK: ${PROJECT} ${VERSION}"
@@ -90,6 +106,14 @@ jobs:
     #   shared CI runners.
     - name: Test
       run: dotnet test ${{ steps.project.outputs.TEST_PROJECT }} --no-build --configuration Release --filter "FullyQualifiedName!~IntegrationTests&FullyQualifiedName!~PerformanceTest"
+
+    - name: Start Keycloak
+      if: steps.project.outputs.KEYCLOAK_TEST_PROJECT != ''
+      run: .github/scripts/keycloak.sh start && .github/scripts/keycloak.sh wait
+
+    - name: Keycloak tests
+      if: steps.project.outputs.KEYCLOAK_TEST_PROJECT != ''
+      run: .github/scripts/keycloak.sh test ${{ steps.project.outputs.KEYCLOAK_TEST_PROJECT }}
 
     - name: Pack
       run: dotnet pack ${{ steps.project.outputs.PROJECT }} --no-build --configuration Release --output ./nupkgs

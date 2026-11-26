@@ -30,17 +30,21 @@ namespace EasyReasy.Auth.Microsoft
         Task<OpenIdConnectAuthBeginResult> BeginAsync(MicrosoftAuthBeginRequest request, HttpContext httpContext, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Completes a flow from what Microsoft's redirect brought back: checks the state, the browser binding and the
-        /// redirect URI the response arrived at, clears the flow's cookie, checks the <c>iss</c> parameter, redeems the
-        /// code, validates the ID token, and applies the tenant, authentication context and max age checks the flow was
-        /// begun with.
+        /// Completes a flow from what Microsoft's redirect brought back: checks the state, the browser binding, the caller
+        /// binding and the redirect URI the response arrived at, clears the flow's cookie, checks the <c>iss</c> parameter,
+        /// redeems the code, validates the ID token, and applies the tenant, authentication context and max age checks the
+        /// flow was begun with.
         /// </summary>
         /// <param name="response">The code, state and <c>iss</c> from the redirect, and the redirect URI it arrived at.</param>
+        /// <param name="expectedCallerBinding">The <see cref="MicrosoftAuthBeginRequest.CallerBinding"/> this endpoint
+        /// begins its flows with. A flow begun with another is refused as
+        /// <see cref="MicrosoftAuthFailureReason.CallerBindingMismatch"/> before its code is redeemed, so a re-check
+        /// endpoint never accepts a plain sign-in that carried none of its rules.</param>
         /// <param name="httpContext">The request from the browser completing the flow; its binding cookie is read
         /// from the request and cleared on the response.</param>
         /// <param name="cancellationToken">Cancels the calls to Microsoft.</param>
-        /// <returns>The validated identity, the caller binding and the ID token it was read from, or the reason the flow
-        /// was refused.</returns>
+        /// <returns>The validated identity and the ID token it was read from, or the reason the flow was refused.</returns>
+        /// <exception cref="ArgumentNullException">An argument is null.</exception>
         /// <exception cref="HttpRequestException">
         /// Microsoft's token endpoint could not be reached, or answered with an unsuccessful status other than 400 or
         /// 401 (a server error, or a 429 throttle). An outage is not a refusal, so it is not reported as one.
@@ -48,6 +52,6 @@ namespace EasyReasy.Auth.Microsoft
         /// <exception cref="InvalidOperationException">Microsoft's OpenID configuration or signing keys could not be
         /// retrieved, or its token endpoint refused the client itself (such as <c>invalid_client</c> for an expired
         /// secret).</exception>
-        Task<MicrosoftAuthCompletionResult> CompleteAsync(OpenIdConnectAuthorizationResponse response, HttpContext httpContext, CancellationToken cancellationToken = default);
+        Task<MicrosoftAuthCompletionResult> CompleteAsync(OpenIdConnectAuthorizationResponse response, string expectedCallerBinding, HttpContext httpContext, CancellationToken cancellationToken = default);
     }
 }

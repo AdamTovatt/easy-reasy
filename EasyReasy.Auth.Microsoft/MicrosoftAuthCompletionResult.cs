@@ -4,21 +4,19 @@ using System.Text.Json.Serialization;
 namespace EasyReasy.Auth.Microsoft
 {
     /// <summary>
-    /// The outcome of <see cref="IMicrosoftAuthService.CompleteAsync"/>: the validated identity, the caller binding
-    /// from Begin and the ID token it was read from, or the reason the flow was refused.
+    /// The outcome of <see cref="IMicrosoftAuthService.CompleteAsync"/>: the validated identity and the ID token it was
+    /// read from, or the reason the flow was refused.
     /// </summary>
     public sealed class MicrosoftAuthCompletionResult
     {
         private MicrosoftAuthCompletionResult(
             MicrosoftUserInfo? userInfo,
-            string? callerBinding,
             string? idToken,
             string? idTokenSigningKey,
             MicrosoftAuthFailureReason? failureReason,
             string? attemptedSubject)
         {
             UserInfo = userInfo;
-            CallerBinding = callerBinding;
             IdToken = idToken;
             IdTokenSigningKey = idTokenSigningKey;
             FailureReason = failureReason;
@@ -28,7 +26,7 @@ namespace EasyReasy.Auth.Microsoft
         /// <summary>
         /// Whether every check passed.
         /// </summary>
-        [MemberNotNullWhen(true, nameof(UserInfo), nameof(CallerBinding), nameof(IdToken), nameof(IdTokenSigningKey), nameof(AttemptedSubject))]
+        [MemberNotNullWhen(true, nameof(UserInfo), nameof(IdToken), nameof(IdTokenSigningKey), nameof(AttemptedSubject))]
         [MemberNotNullWhen(false, nameof(FailureReason))]
         public bool Success => FailureReason == null;
 
@@ -38,15 +36,6 @@ namespace EasyReasy.Auth.Microsoft
         /// </summary>
         [JsonIgnore]
         public MicrosoftUserInfo? UserInfo { get; }
-
-        /// <summary>
-        /// The <see cref="MicrosoftAuthBeginRequest.CallerBinding"/> the flow was begun with. Only populated when
-        /// <see cref="Success"/> is true. Compare it with what the completing endpoint expects before acting on the
-        /// identity. The application's own value, which may name a user or a record, so it is left out of
-        /// <see cref="ToString"/> and of JSON serialization.
-        /// </summary>
-        [JsonIgnore]
-        public string? CallerBinding { get; }
 
         /// <summary>
         /// The raw ID token <see cref="UserInfo"/> was read from, exactly as Microsoft's token endpoint returned it and
@@ -86,7 +75,7 @@ namespace EasyReasy.Auth.Microsoft
         /// <summary>
         /// The account as <c>tid:oid</c>, for an audit record: populated on success, and on a refusal of a genuine
         /// token (its tenant, authentication context or sign-in time). Null when the token itself, the state, the
-        /// cookie or the code failed, because no trustworthy account is known then.
+        /// cookie, the caller binding or the code failed, because no trustworthy account is known then.
         /// </summary>
         public string? AttemptedSubject { get; }
 
@@ -94,13 +83,12 @@ namespace EasyReasy.Auth.Microsoft
         /// Creates a successful result.
         /// </summary>
         /// <param name="userInfo">The validated identity.</param>
-        /// <param name="callerBinding">The caller binding from Begin.</param>
         /// <param name="idToken">The validated ID token the identity was read from.</param>
         /// <param name="idTokenSigningKey">The public key the ID token was verified with, as JWK JSON.</param>
         /// <returns>A successful result.</returns>
-        internal static MicrosoftAuthCompletionResult Succeeded(MicrosoftUserInfo userInfo, string callerBinding, string idToken, string idTokenSigningKey)
+        internal static MicrosoftAuthCompletionResult Succeeded(MicrosoftUserInfo userInfo, string idToken, string idTokenSigningKey)
         {
-            return new MicrosoftAuthCompletionResult(userInfo, callerBinding, idToken, idTokenSigningKey, null, FormatSubject(userInfo));
+            return new MicrosoftAuthCompletionResult(userInfo, idToken, idTokenSigningKey, null, FormatSubject(userInfo));
         }
 
         /// <summary>
@@ -111,7 +99,7 @@ namespace EasyReasy.Auth.Microsoft
         /// <returns>A failed result.</returns>
         internal static MicrosoftAuthCompletionResult Refused(MicrosoftAuthFailureReason reason, MicrosoftUserInfo userInfo)
         {
-            return new MicrosoftAuthCompletionResult(null, null, null, null, reason, FormatSubject(userInfo));
+            return new MicrosoftAuthCompletionResult(null, null, null, reason, FormatSubject(userInfo));
         }
 
         /// <summary>
@@ -121,12 +109,12 @@ namespace EasyReasy.Auth.Microsoft
         /// <returns>A failed result.</returns>
         internal static MicrosoftAuthCompletionResult Failed(MicrosoftAuthFailureReason reason)
         {
-            return new MicrosoftAuthCompletionResult(null, null, null, null, reason, null);
+            return new MicrosoftAuthCompletionResult(null, null, null, reason, null);
         }
 
         /// <summary>
-        /// Describes the outcome without the caller binding or the identity's details, and with the ID token as
-        /// <c>[REDACTED]</c>, so the result is safe to log. JSON serialization leaves out the same three.
+        /// Describes the outcome without the identity's details, and with the ID token as <c>[REDACTED]</c>, so the result
+        /// is safe to log. JSON serialization leaves out the same, and the signing key.
         /// </summary>
         /// <returns>The outcome, the failure reason and the account as <c>tid:oid</c> when they are known.</returns>
         public override string ToString()

@@ -15,7 +15,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
         private static readonly string SigningRedirectUri = OpenIdConnectAuthHarness.SigningRedirectUri(OpenIdConnectAuthHarness.PrimaryKey);
 
         [TestMethod]
-        public async Task Complete_ValidFlow_ReturnsTheIdentityTheCallerBindingAndTheIdToken()
+        public async Task Complete_ValidFlow_ReturnsTheIdentityAndTheIdToken()
         {
             using OpenIdConnectAuthHarness harness = OpenIdConnectAuthHarness.Create();
             DateTimeOffset signedInAt = harness.Clock.GetUtcNow();
@@ -24,7 +24,6 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
 
             Assert.IsTrue(result.Success, result.FailureReason?.ToString());
             OpenIdConnectIdentity expected = new OpenIdConnectIdentity(harness.Primary.Issuer, FakeOpenIdConnectIssuer.Subject);
-            Assert.AreEqual(OpenIdConnectAuthHarness.CallerBinding, result.CallerBinding);
             Assert.AreEqual(expected, result.AttemptedIdentity);
             Assert.AreEqual(expected, result.UserInfo.Identity);
             Assert.AreEqual(OpenIdConnectAuthHarness.PrimaryKey, result.UserInfo.ProviderKey);
@@ -100,7 +99,6 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
 
             Assert.IsTrue(result.Success, result.FailureReason?.ToString());
             Assert.IsFalse(text.Contains(result.IdToken, StringComparison.Ordinal), text);
-            Assert.IsFalse(text.Contains(result.CallerBinding, StringComparison.Ordinal), text);
             Assert.IsFalse(text.Contains(result.UserInfo.Email!, StringComparison.Ordinal), text);
             Assert.IsFalse(text.Contains(result.UserInfo.Name!, StringComparison.Ordinal), text);
             StringAssert.Contains(text, FakeOpenIdConnectIssuer.Subject);
@@ -211,11 +209,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
             using OpenIdConnectAuthHarness harness = OpenIdConnectAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
             OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(OpenIdConnectAuthHarness.CreateRequest(), browser);
-            FakeBrowser copy = harness.CreateBrowser();
-            foreach (KeyValuePair<string, string> cookie in browser.Cookies)
-            {
-                copy.Set(cookie.Key, cookie.Value);
-            }
+            FakeBrowser copy = browser.Clone();
 
             OpenIdConnectAuthorizationResponse response = OpenIdConnectAuthHarness.CreateResponse(harness.Primary.IssueCode(begun.AuthorizationUrl), begun.State, SigningRedirectUri);
             OpenIdConnectAuthCompletionResult first = await harness.CompleteAsync(response, browser);
@@ -357,6 +351,25 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
             Assert.AreEqual(OpenIdConnectAuthFailureReason.RedirectUriMismatch, result.FailureReason);
             Assert.AreEqual(0, harness.Other.TokenRequests.Count);
             Assert.AreEqual(0, harness.Primary.TokenRequests.Count);
+        }
+
+        [TestMethod]
+        public async Task Complete_FlowBegunWithAnotherCallerBinding_IsRefusedAsCallerBindingMismatchBeforeAnyRedemption()
+        {
+            using OpenIdConnectAuthHarness harness = OpenIdConnectAuthHarness.Create();
+            FakeBrowser browser = harness.CreateBrowser();
+            OpenIdConnectAuthBeginResult begun = await harness.BeginAsync(OpenIdConnectAuthHarness.CreateRequest(), browser);
+            string code = harness.Primary.IssueCode(begun.AuthorizationUrl);
+            string anotherRecordsBinding = "user-7:record-10";
+
+            OpenIdConnectAuthCompletionResult result = await harness.CompleteAsync(
+                OpenIdConnectAuthHarness.CreateResponse(code, begun.State, SigningRedirectUri), browser, expectedCallerBinding: anotherRecordsBinding);
+
+            Assert.AreNotEqual(OpenIdConnectAuthHarness.CallerBinding, anotherRecordsBinding);
+            Assert.AreEqual(OpenIdConnectAuthFailureReason.CallerBindingMismatch, result.FailureReason);
+            Assert.IsNull(result.AttemptedIdentity);
+            Assert.AreEqual(0, harness.Primary.TokenRequests.Count);
+            Assert.AreEqual(0, OpenIdConnectAuthHarness.CountBindingCookies(browser));
         }
 
         [TestMethod]
@@ -1027,7 +1040,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
 
             Assert.AreEqual(
                 $"OpenIdConnectAuthCompletionResult {{ Success = true, AttemptedIdentity = {identity}, IdToken = [REDACTED] }}",
-                OpenIdConnectAuthCompletionResult.Succeeded(userInfo, "binding", "header.payload.signature", "{}").ToString());
+                OpenIdConnectAuthCompletionResult.Succeeded(userInfo, "header.payload.signature", "{}").ToString());
             Assert.AreEqual(
                 $"OpenIdConnectAuthCompletionResult {{ Success = false, FailureReason = StaleAuthTime, AttemptedIdentity = {identity} }}",
                 OpenIdConnectAuthCompletionResult.Refused(OpenIdConnectAuthFailureReason.StaleAuthTime, identity).ToString());
