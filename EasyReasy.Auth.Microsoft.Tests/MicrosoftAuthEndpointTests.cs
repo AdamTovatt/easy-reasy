@@ -184,7 +184,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
             Assert.AreEqual("no-store", response.Headers.CacheControl?.ToString());
-            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, MicrosoftAuthFailureReason.BindingCookieMissing, expectSubject: false);
+            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, OpenIdConnectAuthFailureReason.BindingCookieMissing, expectSubject: false);
             Assert.AreEqual(0, host.Handler.ReceivedUsers.Count);
         }
 
@@ -200,7 +200,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             HttpResponseMessage response = await host.PostSignInBodyAsync(browser, new { code, state = MicrosoftAuthEndpointHost.ReadState(authorizationUrl) });
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, MicrosoftAuthFailureReason.RedirectUriMismatch, expectSubject: false);
+            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, OpenIdConnectAuthFailureReason.RedirectUriMismatch, expectSubject: false);
             Assert.AreEqual(0, host.Handler.ReceivedUsers.Count);
         }
 
@@ -217,7 +217,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             HttpResponseMessage response = await host.PostSignInAsync(browser, code, MicrosoftAuthEndpointHost.ReadState(authorizationUrl));
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, MicrosoftAuthFailureReason.BindingCookieMismatch, expectSubject: false);
+            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, OpenIdConnectAuthFailureReason.BindingCookieMismatch, expectSubject: false);
         }
 
         [TestMethod]
@@ -235,7 +235,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             HttpResponseMessage response = await host.PostSignInAsync(browser, code, MicrosoftAuthEndpointHost.ReadState(authorizationUrl));
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, MicrosoftAuthFailureReason.ExpiredState, expectSubject: false);
+            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, OpenIdConnectAuthFailureReason.ExpiredState, expectSubject: false);
         }
 
         [TestMethod]
@@ -247,7 +247,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             HttpResponseMessage response = await host.PostSignInAsync(host.CreateBrowser(), "code", "not-a-state");
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, MicrosoftAuthFailureReason.InvalidState, expectSubject: false);
+            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, OpenIdConnectAuthFailureReason.InvalidState, expectSubject: false);
         }
 
         [TestMethod]
@@ -267,7 +267,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             Assert.AreEqual(HttpStatusCode.Unauthorized, replay.StatusCode);
             Assert.AreEqual(2, auditLogger.ExternalAuthCalls.Count);
             Assert.IsTrue(auditLogger.ExternalAuthCalls[0].Result.Success);
-            Assert.AreEqual(nameof(MicrosoftAuthFailureReason.BindingCookieMissing), auditLogger.ExternalAuthCalls[1].Result.FailureDetail);
+            Assert.AreEqual(nameof(OpenIdConnectAuthFailureReason.BindingCookieMissing), auditLogger.ExternalAuthCalls[1].Result.FailureDetail);
             Assert.AreEqual(1, host.Handler.ReceivedUsers.Count);
         }
 
@@ -309,6 +309,26 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
+        public async Task SignIn_AuthTimeOlderThanTheMaxAge_IsRejectedAsAFlowRuleAndAuditedWithTheAccount()
+        {
+            RecordingAuditLogger auditLogger = new RecordingAuditLogger();
+            await using MicrosoftAuthEndpointHost host = await MicrosoftAuthEndpointHost.StartAsync(auditLogger);
+            host.Handler.Settings = new MicrosoftSignInSettings
+            {
+                RedirectUri = MicrosoftAuthHarness.SignInRedirectUri,
+                MaxAuthenticationAge = TimeSpan.FromMinutes(5),
+            };
+            long now = host.Clock.GetUtcNow().ToUnixTimeSeconds();
+
+            HttpResponseMessage response = await host.SignInAsync(host.CreateBrowser(), token => token.Claims["auth_time"] = now - 301);
+
+            Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+            ExternalAuthResult audited = AssertAudited(auditLogger, ExternalAuthFailureReason.Rejected, OpenIdConnectAuthFailureReason.StaleAuthTime, expectSubject: true);
+            Assert.AreEqual($"{FakeMicrosoftIdentityProvider.TenantId}:{FakeMicrosoftIdentityProvider.ObjectId}", audited.AttemptedSubject);
+            Assert.AreEqual(0, host.Handler.ReceivedUsers.Count);
+        }
+
+        [TestMethod]
         public async Task SignIn_StateTheApplicationBeganForItsOwnFlow_IsRefusedAsACallerBindingMismatch()
         {
             RecordingAuditLogger auditLogger = new RecordingAuditLogger();
@@ -325,7 +345,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
             // Refused before the code is redeemed, so no account is known.
-            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, MicrosoftAuthFailureReason.CallerBindingMismatch, expectSubject: false);
+            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, OpenIdConnectAuthFailureReason.CallerBindingMismatch, expectSubject: false);
             Assert.AreEqual(0, host.Handler.ReceivedUsers.Count);
             Assert.AreEqual(0, host.IdentityProvider.TokenRequests.Count);
         }
@@ -499,7 +519,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         private static ExternalAuthResult AssertAudited(
             RecordingAuditLogger auditLogger,
             ExternalAuthFailureReason category,
-            MicrosoftAuthFailureReason reason,
+            Enum reason,
             bool expectSubject)
         {
             ExternalAuthResult audited = auditLogger.ExternalAuthCalls.Single().Result;

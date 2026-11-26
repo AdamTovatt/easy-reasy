@@ -124,48 +124,7 @@ namespace EasyReasy.Auth.OpenIdConnect
 
         private static ExternalAuthResult Refuse(OpenIdConnectAuthFailureReason reason, string? attemptedSubject)
         {
-            return ExternalAuthResult.Failed(ProviderName, GetCategory(reason), attemptedSubject, reason.ToString());
-        }
-
-        /// <summary>
-        /// The provider-neutral category of a refusal: a failure of the state, the binding cookie, the response, the
-        /// provider, the code or the token is <see cref="ExternalAuthFailureReason.InvalidToken"/>; a genuine identity
-        /// refused by the flow's rules is <see cref="ExternalAuthFailureReason.Rejected"/>.
-        /// </summary>
-        /// <exception cref="ArgumentOutOfRangeException">A reason with no category, so a new member cannot ship
-        /// unclassified.</exception>
-        internal static ExternalAuthFailureReason GetCategory(OpenIdConnectAuthFailureReason reason)
-        {
-            return reason switch
-            {
-                OpenIdConnectAuthFailureReason.InvalidState
-                    or OpenIdConnectAuthFailureReason.ExpiredState
-                    or OpenIdConnectAuthFailureReason.BindingCookieMissing
-                    or OpenIdConnectAuthFailureReason.BindingCookieMismatch
-                    or OpenIdConnectAuthFailureReason.RedirectUriMismatch
-                    or OpenIdConnectAuthFailureReason.IssuerParameterMismatch
-                    or OpenIdConnectAuthFailureReason.IssuerParameterMissing
-                    or OpenIdConnectAuthFailureReason.UnknownProvider
-                    or OpenIdConnectAuthFailureReason.ProviderChanged
-                    or OpenIdConnectAuthFailureReason.CodeRedemptionFailed
-                    or OpenIdConnectAuthFailureReason.InvalidToken
-                    or OpenIdConnectAuthFailureReason.InvalidSignature
-                    or OpenIdConnectAuthFailureReason.InvalidAudience
-                    or OpenIdConnectAuthFailureReason.InvalidIssuer
-                    or OpenIdConnectAuthFailureReason.TokenExpired
-                    or OpenIdConnectAuthFailureReason.NonceMismatch
-                    or OpenIdConnectAuthFailureReason.CallerBindingMismatch => ExternalAuthFailureReason.InvalidToken,
-                OpenIdConnectAuthFailureReason.IdentityMismatch
-                    or OpenIdConnectAuthFailureReason.MissingAuthTime
-                    or OpenIdConnectAuthFailureReason.StaleAuthTime
-                    or OpenIdConnectAuthFailureReason.MissingAcr
-                    or OpenIdConnectAuthFailureReason.AcrNotAccepted
-                    or OpenIdConnectAuthFailureReason.MissingAmr
-                    or OpenIdConnectAuthFailureReason.AmrNotAccepted
-                    or OpenIdConnectAuthFailureReason.MissingRequiredClaim
-                    or OpenIdConnectAuthFailureReason.RequiredClaimMismatch => ExternalAuthFailureReason.Rejected,
-                _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "The refusal reason has no category."),
-            };
+            return ExternalAuthResult.Failed(ProviderName, reason.ToExternalAuthFailureReason(), attemptedSubject, reason.ToString());
         }
     }
 }

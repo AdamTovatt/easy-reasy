@@ -310,13 +310,13 @@ If you register an `IAuthAuditLogger` (see "Security Audit Logging" in the EasyR
 
 - `Provider` is `"oidc"`.
 - `AttemptedSubject` is the identity as JSON, `{"issuer":"…","subject":"…"}`, on success and whenever a genuine token was refused by the flow's rules; null when the state, the cookie, the caller binding, the response, the provider, the code or the token failed.
-- `FailureReason` is `InvalidToken` for a failure of those, and `Rejected` for a genuine identity refused by the flow's rules or by your handler returning null.
+- `FailureReason`, the audit category in the tables below, is `InvalidToken` for a failure of those, and `Rejected` for a genuine identity refused by the flow's rules or by your handler returning null.
 - `FailureDetail` is the `OpenIdConnectAuthFailureReason` member name for every refusal the package makes itself, and null when your handler refused. Member names are a stable contract, so they are safe to store and query.
 
 ### Refusal reasons
 
-| `OpenIdConnectAuthFailureReason` | `FailureReason` | When |
-|----------------------------------|-----------------|------|
+| `OpenIdConnectAuthFailureReason` | Audit category | When |
+|----------------------------------|----------------|------|
 | `InvalidState` | `InvalidToken` | The state is missing, not this server's, tampered with or unreadable. |
 | `ExpiredState` | `InvalidToken` | The state is older than `StateLifetime`. |
 | `BindingCookieMissing` | `InvalidToken` | The browser did not send the flow's binding cookie: another browser, a completed flow, or one cleared by beginning too many. |
@@ -413,4 +413,4 @@ The begin endpoint takes `OpenIdConnectSignInBeginRequest` (`{ providerKey, logi
 
 ## Building a provider package on the flow
 
-`OpenIdConnectCodeFlow` is the engine behind `IOpenIdConnectAuthService`, public so a provider package can run the same flow with rules of its own on top: EasyReasy.Auth.Microsoft builds one under its own state key, resolves Entra's tenant segments as providers, and maps the flow's outcome to its own result. Its `CompleteAsync` returns an `OpenIdConnectCodeFlowResult` whose `UserInfo` is set whenever the token itself validated, even when a flow rule then refused it, so the package can apply its own rules first. An application uses `IOpenIdConnectAuthService`.
+`OpenIdConnectCodeFlow` is the engine behind `IOpenIdConnectAuthService`, public so a provider package can run the same flow with rules of its own on top: EasyReasy.Auth.Microsoft builds one under its own state key, resolves Entra's tenant segments as providers, and maps the flow's outcome to its own result. Its `CompleteAsync` returns an `OpenIdConnectCodeFlowResult` whose `UserInfo` is set whenever the token itself validated, even when a flow rule then refused it, so the package can apply its own rules first. A package passes the flow's `OpenIdConnectAuthFailureReason` through rather than copying it, and files it in an audit record with `ToExternalAuthFailureReason()`, the one category rule the package's own sign-in endpoint uses. An application uses `IOpenIdConnectAuthService`.

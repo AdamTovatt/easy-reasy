@@ -28,9 +28,9 @@ namespace EasyReasy.Auth.Microsoft
         /// <para>
         /// The sign-in endpoint accepts only a <c>state</c> its own begin endpoint issued: one an application began
         /// for its own flow through <see cref="IMicrosoftAuthService"/> is refused as
-        /// <see cref="MicrosoftAuthFailureReason.CallerBindingMismatch"/>. The rest of the sign-in endpoint is
+        /// <see cref="OpenIdConnectAuthFailureReason.CallerBindingMismatch"/>. The rest of the sign-in endpoint is
         /// <see cref="ExternalSignInEndpoint.HandleAsync"/>, shared with every provider package: the audit record
-        /// (here with the <see cref="MicrosoftAuthFailureReason"/> name as <see cref="ExternalAuthResult.FailureDetail"/>),
+        /// (here with <see cref="MicrosoftAuthCompletionResult.FailureDetail"/> as <see cref="ExternalAuthResult.FailureDetail"/>),
         /// the access-token cookie on success, the progressive-delay reset, and 200 or 401. Microsoft's token endpoint
         /// being unreachable or answering with a status other than 400 or 401 (a server error, a 429) or refusing the
         /// client itself, or its OpenID configuration or signing keys being unavailable, is not a refusal: it
