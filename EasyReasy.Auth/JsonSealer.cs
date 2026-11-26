@@ -57,7 +57,9 @@ namespace EasyReasy.Auth
         /// <typeparam name="T">The type it was sealed as.</typeparam>
         /// <param name="sealedValue">The sealed value.</param>
         /// <returns>The value, or null when it is null or empty, not base64url, tampered with, sealed under another key,
-        /// or not a <typeparamref name="T"/> (such as one sealed from an older layout of the type).</returns>
+        /// or JSON that does not deserialize as a <typeparamref name="T"/>. Give <typeparamref name="T"/> <c>required</c>
+        /// members, so JSON of another shape (such as one sealed from an older layout of the type) is null rather than a
+        /// <typeparamref name="T"/> with default values.</returns>
         public T? Open<T>(string? sealedValue)
             where T : class
         {
@@ -78,7 +80,8 @@ namespace EasyReasy.Auth
 
             try
             {
-                // Only reachable for bytes this key sealed, so a parse failure means a value from an older layout.
+                // Only reachable for bytes this key sealed, so a parse failure means a value of another shape, such as an
+                // older layout whose required members are missing.
                 return JsonSerializer.Deserialize<T>(plaintext);
             }
             catch (JsonException)
