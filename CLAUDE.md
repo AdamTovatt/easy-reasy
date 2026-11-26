@@ -15,6 +15,16 @@ dotnet test EasyReasy.Auth.Tests                # Run tests for a specific proje
 dotnet test --filter "FullyQualifiedName~ClassName.MethodName" EasyReasy.Auth.Tests  # Run a single test
 ```
 
+CI's main test job skips every `*IntegrationTests` class. The exception is the `*KeycloakIntegrationTests`, which run against a Keycloak container in the `keycloak` job of `tests.yml`, and in `publish.yml` before `auth-openidconnect` or `auth-microsoft` (which runs on its flow) is packed. Without `KEYCLOAK_URL` they are inconclusive, so a plain `dotnet test` passes without Keycloak. `.github/scripts/keycloak.sh` holds the image, port and admin, and how the tests are run:
+
+```bash
+export KEYCLOAK_PORT=18080   # optional, default 8080; export it so start, wait and test all use it
+.github/scripts/keycloak.sh start && .github/scripts/keycloak.sh wait
+dotnet build -c Release && .github/scripts/keycloak.sh test EasyReasy.Auth.OpenIdConnect.Tests
+```
+
+Pushing a tag `<package>-v<version>` publishes that package through `publish.yml`, and the version must match the csproj's. A prerelease's tag carries its `<VersionSuffix>` too: `auth-openidconnect-v1.0.0-preview.1`.
+
 ## Solution Structure
 
 Each library project has a corresponding test project:
@@ -24,14 +34,15 @@ Each library project has a corresponding test project:
 | `EasyReasy` | Core resource management (embedded/file resources) | — |
 | `EasyReasy.ByteShelfProvider` | Remote resource provider via ByteShelf | `EasyReasy` |
 | `EasyReasy.EnvironmentVariables` | Typed environment variable validation & retrieval | — |
-| `EasyReasy.Auth` | JWT auth, claims middleware, password hashing, TOTP/base32/secret-cipher MFA primitives, WebAuthn/FIDO2 second factor and passkey sign-in, query-string tokens for WebSockets, path-scoped cookie tokens for files opened in a new tab, an OAuth 2.1 authorization server with app-owned consent and store (ASP.NET Core) | — |
+| `EasyReasy.Auth` | JWT auth, claims middleware, password hashing, TOTP/base32/secret-cipher MFA primitives, WebAuthn/FIDO2 second factor and passkey sign-in, query-string tokens for WebSockets, path-scoped cookie tokens for files opened in a new tab, an OAuth 2.1 authorization server with app-owned consent and store, and the building blocks browser-redirect sign-in packages share (`FlowBindingCookie`, `JsonSealer`) (ASP.NET Core) | — |
 | `EasyReasy.Auth.Client` | Lightweight HTTP client for Auth servers | — |
 | `EasyReasy.Auth.Google` | Google Sign-In integration for EasyReasy.Auth | `EasyReasy.Auth` |
-| `EasyReasy.Auth.Microsoft` | Microsoft (Entra ID) sign-in through the server-side code flow with PKCE, for EasyReasy.Auth | `EasyReasy.Auth` |
+| `EasyReasy.Auth.OpenIdConnect` | Sign-in with any OpenID Connect provider through the server-side code flow with PKCE, for EasyReasy.Auth: providers resolved per request by the app, and the public code flow engine a provider package builds on | `EasyReasy.Auth` |
+| `EasyReasy.Auth.Microsoft` | Microsoft (Entra ID) sign-in for EasyReasy.Auth, on `EasyReasy.Auth.OpenIdConnect`'s code flow with Entra's tenants as providers and the tenant, authentication context and `tid` plus `oid` rules on top | `EasyReasy.Auth.OpenIdConnect` |
 | `EasyReasy.Auth.Testing` | Test helpers for consumers' test projects: a software WebAuthn authenticator verified against the real `WebAuthnVerifier`, and an OAuth test client and in-memory store that drive the OAuth authorization server; built on `EasyReasy.Auth`'s public API only, with no `InternalsVisibleTo` | `EasyReasy.Auth` |
 | `EasyReasy.VectorStorage` | In-memory cosine similarity vector search | — |
 
-`EasyReasy.ByteShelfProvider` depends on `EasyReasy`, and each sign-in provider package (`EasyReasy.Auth.Google`, `EasyReasy.Auth.Microsoft`) and `EasyReasy.Auth.Testing` depend on `EasyReasy.Auth`. All other libraries are fully independent of each other. `EasyReasy.Auth.Tests` uses `EasyReasy.Auth.Testing`'s authenticator for its key, COSE encoding and signatures, and its OAuth test client and in-memory store to drive the OAuth server; `EasyReasy.Auth.Testing.Tests` proves the authenticator's ceremonies against the real verifier, and the OAuth client and store against a real OAuth server.
+`EasyReasy.ByteShelfProvider` depends on `EasyReasy`. `EasyReasy.Auth.Google`, `EasyReasy.Auth.OpenIdConnect` and `EasyReasy.Auth.Testing` depend on `EasyReasy.Auth`. `EasyReasy.Auth.Microsoft` depends on `EasyReasy.Auth.OpenIdConnect`. All other libraries are fully independent of each other. `EasyReasy.Auth.Tests` uses `EasyReasy.Auth.Testing`'s authenticator for its key, COSE encoding and signatures, and its OAuth test client and in-memory store to drive the OAuth server; `EasyReasy.Auth.Testing.Tests` proves the authenticator's ceremonies against the real verifier, and the OAuth client and store against a real OAuth server. `EasyReasy.Auth.Tests` also holds `FakeBrowser`, the cookie jar the OpenID Connect and Microsoft test projects link in.
 
 ## Architecture
 

@@ -24,6 +24,7 @@ EasyReasy.Auth makes it easy to issue, validate, and work with JWT tokens in you
 - **Files in a new tab**: Opt-in, per-path acceptance of the token in a host-only, `HttpOnly`, `SameSite=Strict` cookie on `GET` and `HEAD`, set and cleared by the built-in endpoints, so opening a protected file needs the user's own browser session rather than a public link
 - **Testable clock**: One `TimeProvider` registered in DI drives token issuing, refreshing and validation, so tests can mint expired or not-yet-valid tokens
 - **OAuth 2.1 authorization server**: MCP clients and other systems connect once a person approves on your own consent page — authorization code with PKCE, rotating refresh tokens with reuse detection, revocation by token or by grant, discovery, dynamic client registration and client ID metadata documents, over a store you implement (section 17)
+- **Building blocks for sign-in packages**: the binding cookie that ties a browser-redirect sign-in to the browser that began it, a sealer for what a flow carries through the browser, and the random values and PKCE challenge a client sends (section 18)
 - **Flexible configuration**: Options pattern for JWT settings (issuer, audience, clock skew) and progressive delay tuning
 - **Clear error messages**: Enforces minimum secret length for security
 
@@ -1702,6 +1703,52 @@ EasyReasy.Auth.Testing's `OAuthTestClient` drives the whole flow over your test 
 
 Token introspection, revoking an access token, `private_key_jwt`, OpenID Connect (no ID tokens, no `/.well-known/openid-configuration`), and CORS, which is your application's to configure if a browser-based client calls the endpoints.
 
+### 18. Building Blocks for Sign-in Packages
+
+The sign-in packages that run a browser-redirect flow (EasyReasy.Auth.OpenIdConnect, and EasyReasy.Auth.Microsoft on it) are built on four public pieces of this library. An application using those packages needs none of them directly; they are here for a package, or an application's own flow, that redirects the browser to an identity provider and back.
+
+#### `FlowBindingCookie`
+
+Binds a flow to the browser that began it, which stops someone from beginning a sign-in and getting a victim's browser to finish it (login CSRF). Begin sets a random value under a name carrying a new flow id, and puts the id and the value's hash in the flow's state; completion refuses a state whose browser does not send the matching value.
+
+```csharp
+private static readonly FlowBindingCookie BindingCookie = new FlowBindingCookie("__Host-myapp-flow-");
+
+// Begin: set the cookie and carry the binding in the sealed state.
+FlowBinding binding = BindingCookie.Issue(httpContext, TimeSpan.FromMinutes(10));
+// ... state.FlowId = binding.FlowId; state.BindingHash = binding.ValueHash;
+
+// Complete: check it, and clear it whatever the outcome, so a state cannot be completed twice in one browser.
+FlowBinding expected = new FlowBinding(state.FlowId, state.BindingHash);
+FlowBindingCookieCheck check = BindingCookie.Check(httpContext, expected);
+BindingCookie.Clear(httpContext, expected);
+if (check != FlowBindingCookieCheck.Matches)
+{
+    // Missing: another browser, an expired or completed flow. Mismatch: a planted value.
+}
+```
+
+- The name prefix must be `__Host-` followed by letters, digits, `-`, `_` or `.`. `__Host-` makes browsers insist on `Secure`, `Path=/` and no `Domain`, so a sibling subdomain cannot plant one. Each kind of flow gets its own prefix.
+- The cookie is HttpOnly, Secure and SameSite=Lax: it reaches your own page after the provider's top-level redirect, and that page's same-site post, but not a provider's cross-site POST (a `form_post` response), so have the provider redirect to a page of your own first.
+- A browser holds at most `FlowBindingCookie.MaxPendingFlows` (5) cookies of one prefix. Issuing one more clears that prefix's pending cookies first; their flows then find their cookie `Missing`.
+
+#### `JsonSealer`
+
+Seals a value as text no one without its key can read or forge: the value's JSON, encrypted and authenticated with its own `AesGcmSecretCipher`, as unpadded base64url, so it fits a URL or a cookie. `Open<T>` returns null for anything not sealed intact by this key. Give a sealed type `required` members: JSON of another shape, such as one sealed from an older layout of the type, then fails to open instead of opening with default values.
+
+```csharp
+JsonSealer sealer = new JsonSealer(stateKey); // 32 bytes, used for nothing else
+
+string state = sealer.Seal(new MyFlowState { FlowId = binding.FlowId, ExpiresAtUnixSeconds = expiresAt });
+MyFlowState? opened = sealer.Open<MyFlowState>(state); // null when tampered with or sealed under another key
+```
+
+Give each purpose its own key, never your MFA-secret cipher's. Sealing says the value came from this key's holder, unchanged; it does not expire, so a sealed type that must expire carries its own expiry and its reader checks it.
+
+#### `SecureToken` and `OAuthPkce`
+
+`SecureToken.Generate()` is the library's one way to make a bearer secret: 256 random bits as base64url. `SecureToken.Hash` (lowercase hex) and `HashBytes` are the SHA-256 it stores one under, and `MatchesHash` the constant-time check against it. A client's PKCE verifier is a `SecureToken.Generate()` value, and `OAuthPkce.CreateS256Challenge(verifier)` is its S256 challenge (RFC 7636). The OAuth server checks a challenge's form with `IsS256Challenge` and a verifier against it with `VerifierMatchesChallenge`, on the same rule; `ChallengeLength`, `MinVerifierLength` and `MaxVerifierLength` are the RFC's lengths.
+
 ## Advanced Configuration
 
 ### Service Registration Options
@@ -1855,6 +1902,21 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.18.0
+
+Version 5.19.0 adds the building blocks the browser-redirect sign-in packages are built on. Nothing existing changes.
+
+### New: `FlowBindingCookie`, `FlowBinding` and `FlowBindingCookieCheck`
+- **The binding cookie of a browser-redirect sign-in**, with a `__Host-` name prefix per kind of flow and at most five pending flows per prefix. See [section 18](#18-building-blocks-for-sign-in-packages).
+
+### New: `JsonSealer`
+- **Seals a value's JSON** with its own AES-256-GCM key as base64url text, for what a flow carries through the browser. See [section 18](#18-building-blocks-for-sign-in-packages).
+
+### New: `SecureToken` and `OAuthPkce` are public
+- **`SecureToken`** (`Generate`, `Hash`, `HashBytes`, `MatchesHash`) generates a 256-bit random value and hashes it for storage. It was internal; its behaviour is unchanged.
+- **`OAuthPkce`** (`VerifierMatchesChallenge`, `IsS256Challenge` and the three length constants) is the OAuth server's S256 rule. It was internal; its behaviour is unchanged.
+- **`OAuthPkce.CreateS256Challenge`** is new: it computes a client's S256 challenge from its verifier.
 
 ## Migration from 5.17.0
 
