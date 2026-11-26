@@ -45,7 +45,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         private static readonly IReadOnlySet<string> ReservedClaimRequests = new HashSet<string>(StringComparer.Ordinal) { "auth_time", "acr", "amr" };
 
         private readonly TimeSpan _stateLifetime;
-        private readonly OpenIdConnectStateProtector _stateProtector;
+        private readonly JsonSealer _stateSealer;
         private readonly OpenIdConnectDiscovery _discovery;
         private readonly OpenIdConnectTokenEndpointClient _tokenEndpointClient;
         private readonly OpenIdConnectIdTokenValidator _idTokenValidator;
@@ -74,7 +74,8 @@ namespace EasyReasy.Auth.OpenIdConnect
             }
 
             _stateLifetime = options.StateLifetime;
-            _stateProtector = new OpenIdConnectStateProtector(options.StateKey);
+            // Its own sealer under the state key, never a cipher from DI, which may be the one protecting MFA secrets.
+            _stateSealer = new JsonSealer(options.StateKey);
             _discovery = new OpenIdConnectDiscovery(httpClientFactory);
             _tokenEndpointClient = new OpenIdConnectTokenEndpointClient(httpClientFactory);
             _idTokenValidator = new OpenIdConnectIdTokenValidator(_discovery, timeProvider);
@@ -148,7 +149,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 ExpectedIssuer = request.ExpectedIdentity?.Issuer,
                 ExpectedSubject = request.ExpectedIdentity?.Subject,
             };
-            string protectedState = _stateProtector.Protect(state);
+            string protectedState = _stateSealer.Seal(state);
 
             Dictionary<string, string?> parameters = new Dictionary<string, string?>
             {
@@ -189,11 +190,14 @@ namespace EasyReasy.Auth.OpenIdConnect
         }
 
         /// <summary>
-        /// Completes a flow from what the provider's redirect brought back: checks the state, the browser binding and where
-        /// the response arrived, clears the flow's cookie, resolves the flow's provider again, checks the <c>iss</c>
-        /// parameter, redeems the code, validates the ID token, and applies the rules the flow was begun with.
+        /// Completes a flow from what the provider's redirect brought back: checks the state, the browser binding, the caller
+        /// binding and where the response arrived, clears the flow's cookie, resolves the flow's provider again, checks the
+        /// <c>iss</c> parameter, redeems the code, validates the ID token, and applies the rules the flow was begun with.
         /// </summary>
         /// <param name="response">The code, state and <c>iss</c> from the redirect, and the redirect URI it arrived at.</param>
+        /// <param name="expectedCallerBinding">The caller binding the completing endpoint begins its own flows with. A flow
+        /// begun with another is refused as <see cref="OpenIdConnectAuthFailureReason.CallerBindingMismatch"/> before its
+        /// code is redeemed, so an endpoint never accepts a flow begun by another endpoint with other rules.</param>
         /// <param name="resolver">Resolves the provider key sealed in the state.</param>
         /// <param name="httpContext">The request from the browser completing the flow; its binding cookie is read from the
         /// request and cleared on the response.</param>
@@ -207,15 +211,17 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// other than <c>invalid_grant</c> or <c>invalid_request</c>, such as <c>invalid_client</c>).</exception>
         public async Task<OpenIdConnectCodeFlowResult> CompleteAsync(
             OpenIdConnectAuthorizationResponse response,
+            string expectedCallerBinding,
             IOpenIdConnectProviderResolver resolver,
             HttpContext httpContext,
             CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(response);
+            ArgumentNullException.ThrowIfNull(expectedCallerBinding);
             ArgumentNullException.ThrowIfNull(resolver);
             ArgumentNullException.ThrowIfNull(httpContext);
 
-            OpenIdConnectState? flow = _stateProtector.Unprotect(response.State);
+            OpenIdConnectState? flow = _stateSealer.Open<OpenIdConnectState>(response.State);
             if (flow == null)
             {
                 return OpenIdConnectCodeFlowResult.Failed(OpenIdConnectAuthFailureReason.InvalidState);
@@ -238,6 +244,11 @@ namespace EasyReasy.Auth.OpenIdConnect
                 return OpenIdConnectCodeFlowResult.Failed(bindingCheck == FlowBindingCookieCheck.Missing
                     ? OpenIdConnectAuthFailureReason.BindingCookieMissing
                     : OpenIdConnectAuthFailureReason.BindingCookieMismatch);
+            }
+
+            if (!string.Equals(flow.CallerBinding, expectedCallerBinding, StringComparison.Ordinal))
+            {
+                return OpenIdConnectCodeFlowResult.Failed(OpenIdConnectAuthFailureReason.CallerBindingMismatch);
             }
 
             // Before anything goes to a provider: a response at another redirect URI may come from another provider, and
@@ -303,7 +314,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 return OpenIdConnectCodeFlowResult.Refused(refusalReason, validation.UserInfo);
             }
 
-            return OpenIdConnectCodeFlowResult.Succeeded(validation.UserInfo, flow.CallerBinding, idToken, validation.SigningKey);
+            return OpenIdConnectCodeFlowResult.Succeeded(validation.UserInfo, idToken, validation.SigningKey);
         }
 
         /// <summary>

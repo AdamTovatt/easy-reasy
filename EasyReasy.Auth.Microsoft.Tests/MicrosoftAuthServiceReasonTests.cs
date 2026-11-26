@@ -8,7 +8,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
     {
         /// <summary>
         /// Reasons only rules this package never sets can give: every tenant segment resolves, and no expected identity,
-        /// acr or amr rule is set; the caller binding is the sign-in endpoint's own check.
+        /// acr or amr rule is set.
         /// </summary>
         private static readonly OpenIdConnectAuthFailureReason[] Unreachable =
         [
@@ -18,7 +18,6 @@ namespace EasyReasy.Auth.Microsoft.Tests
             OpenIdConnectAuthFailureReason.AcrNotAccepted,
             OpenIdConnectAuthFailureReason.MissingAmr,
             OpenIdConnectAuthFailureReason.AmrNotAccepted,
-            OpenIdConnectAuthFailureReason.CallerBindingMismatch,
         ];
 
         [TestMethod]

@@ -324,8 +324,10 @@ namespace EasyReasy.Auth.Microsoft.Tests
             HttpResponseMessage response = await host.PostSignInAsync(browser, code, begun.State, MicrosoftAuthHarness.SigningRedirectUri);
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, MicrosoftAuthFailureReason.CallerBindingMismatch, expectSubject: true);
+            // Refused before the code is redeemed, so no account is known.
+            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, MicrosoftAuthFailureReason.CallerBindingMismatch, expectSubject: false);
             Assert.AreEqual(0, host.Handler.ReceivedUsers.Count);
+            Assert.AreEqual(0, host.IdentityProvider.TokenRequests.Count);
         }
 
         [TestMethod]

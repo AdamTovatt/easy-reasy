@@ -31,3 +31,31 @@ jobs:
     #   shared CI runners.
     - name: Test
       run: dotnet test --no-build --configuration Release --filter "FullyQualifiedName!~IntegrationTests&FullyQualifiedName!~PerformanceTest"
+
+  # The real sign-in flows against a Keycloak container, which the test job above skips with the other
+  # IntegrationTests. A job of its own, so it is a check a pull request must pass.
+  keycloak:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+
+    # Started before the build and waited for after it, so Keycloak boots while the solution builds.
+    - name: Start Keycloak
+      run: .github/scripts/keycloak.sh start
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --no-restore --configuration Release
+
+    - name: Wait for Keycloak
+      run: .github/scripts/keycloak.sh wait
+
+    - name: Test
+      run: .github/scripts/keycloak.sh test EasyReasy.Auth.OpenIdConnect.Tests

@@ -92,16 +92,11 @@ namespace EasyReasy.Auth.Microsoft
             IRefreshTokenService? refreshTokenService,
             HttpContext httpContext)
         {
-            MicrosoftAuthCompletionResult completion = await _authService.CompleteAsync(response, httpContext, httpContext.RequestAborted);
+            MicrosoftAuthCompletionResult completion = await _authService.CompleteAsync(response, SignInCallerBinding, httpContext, httpContext.RequestAborted);
 
             if (!completion.Success)
             {
                 return Refuse(completion.FailureReason.Value, completion.AttemptedSubject);
-            }
-
-            if (!string.Equals(completion.CallerBinding, SignInCallerBinding, StringComparison.Ordinal))
-            {
-                return Refuse(MicrosoftAuthFailureReason.CallerBindingMismatch, completion.AttemptedSubject);
             }
 
             AuthResponse? authResponse = await _handler.HandleMicrosoftUserAsync(completion.UserInfo, jwtTokenService, refreshTokenService, httpContext);

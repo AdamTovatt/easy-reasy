@@ -127,11 +127,11 @@ namespace EasyReasy.Auth.Microsoft.Tests
         /// Completes a flow the way its redirect URI page would: posting the code and state with the page's own address,
         /// the signing redirect URI unless given.
         /// </summary>
-        public async Task<MicrosoftAuthCompletionResult> CompleteAsync(string code, string state, FakeBrowser browser, string redirectUri = SigningRedirectUri, string? issuer = null)
+        public async Task<MicrosoftAuthCompletionResult> CompleteAsync(string code, string state, FakeBrowser browser, string redirectUri = SigningRedirectUri, string? issuer = null, string expectedCallerBinding = CallerBinding)
         {
             DefaultHttpContext context = new DefaultHttpContext();
             browser.ApplyTo(context.Request);
-            MicrosoftAuthCompletionResult result = await Service.CompleteAsync(new OpenIdConnectAuthorizationResponse(code, state, issuer, redirectUri), context);
+            MicrosoftAuthCompletionResult result = await Service.CompleteAsync(new OpenIdConnectAuthorizationResponse(code, state, issuer, redirectUri), expectedCallerBinding, context);
             browser.Absorb(context.Response);
             return result;
         }

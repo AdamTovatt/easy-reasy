@@ -19,9 +19,10 @@ namespace EasyReasy.Auth.Microsoft
         public required string RedirectUri { get; init; }
 
         /// <summary>
-        /// An opaque value the application chooses, returned by Complete untouched so the application can check the
-        /// completed flow is the one it began (for example "user X, signing record Y"). The package only carries it;
-        /// comparing it is the application's job. It travels inside the encrypted <c>state</c>, so keep it short.
+        /// An opaque value the application chooses for what this flow is for (for example "user X, signing record Y").
+        /// The completing endpoint passes the value it expects to <see cref="IMicrosoftAuthService.CompleteAsync"/>,
+        /// which refuses a flow begun with another before redeeming its code. It travels inside the encrypted
+        /// <c>state</c>, so keep it short.
         /// </summary>
         public required string CallerBinding { get; init; }
 

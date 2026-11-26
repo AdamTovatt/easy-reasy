@@ -104,17 +104,12 @@ namespace EasyReasy.Auth.OpenIdConnect
             IRefreshTokenService? refreshTokenService,
             HttpContext httpContext)
         {
-            OpenIdConnectAuthCompletionResult completion = await _authService.CompleteAsync(response, httpContext, httpContext.RequestAborted);
+            OpenIdConnectAuthCompletionResult completion = await _authService.CompleteAsync(response, SignInCallerBinding, httpContext, httpContext.RequestAborted);
             string? attemptedSubject = completion.AttemptedIdentity?.ToString();
 
             if (!completion.Success)
             {
                 return Refuse(completion.FailureReason.Value, attemptedSubject);
-            }
-
-            if (!string.Equals(completion.CallerBinding, SignInCallerBinding, StringComparison.Ordinal))
-            {
-                return Refuse(OpenIdConnectAuthFailureReason.CallerBindingMismatch, attemptedSubject);
             }
 
             AuthResponse? authResponse = await _handler.HandleOpenIdConnectUserAsync(completion.UserInfo, jwtTokenService, refreshTokenService, httpContext);

@@ -55,12 +55,13 @@ namespace EasyReasy.Auth.Microsoft
         }
 
         /// <inheritdoc />
-        public async Task<MicrosoftAuthCompletionResult> CompleteAsync(OpenIdConnectAuthorizationResponse response, HttpContext httpContext, CancellationToken cancellationToken = default)
+        public async Task<MicrosoftAuthCompletionResult> CompleteAsync(OpenIdConnectAuthorizationResponse response, string expectedCallerBinding, HttpContext httpContext, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(response);
+            ArgumentNullException.ThrowIfNull(expectedCallerBinding);
             ArgumentNullException.ThrowIfNull(httpContext);
 
-            OpenIdConnectCodeFlowResult result = await _flow.CompleteAsync(response, _resolver, httpContext, cancellationToken);
+            OpenIdConnectCodeFlowResult result = await _flow.CompleteAsync(response, expectedCallerBinding, _resolver, httpContext, cancellationToken);
             if (result.UserInfo == null)
             {
                 // The flow sets the identity whenever the token validated, so a result without one is a failure.
@@ -86,7 +87,7 @@ namespace EasyReasy.Auth.Microsoft
                 return MicrosoftAuthCompletionResult.Refused(ToMicrosoftReason(result.FailureReason.Value), userInfo);
             }
 
-            return MicrosoftAuthCompletionResult.Succeeded(userInfo, result.CallerBinding, result.IdToken, result.IdTokenSigningKey);
+            return MicrosoftAuthCompletionResult.Succeeded(userInfo, result.IdToken, result.IdTokenSigningKey);
         }
 
         /// <summary>
@@ -185,6 +186,7 @@ namespace EasyReasy.Auth.Microsoft
                 OpenIdConnectAuthFailureReason.IssuerParameterMismatch => MicrosoftAuthFailureReason.IssuerParameterMismatch,
                 OpenIdConnectAuthFailureReason.IssuerParameterMissing => MicrosoftAuthFailureReason.IssuerParameterMissing,
                 OpenIdConnectAuthFailureReason.ProviderChanged => MicrosoftAuthFailureReason.ProviderChanged,
+                OpenIdConnectAuthFailureReason.CallerBindingMismatch => MicrosoftAuthFailureReason.CallerBindingMismatch,
                 OpenIdConnectAuthFailureReason.CodeRedemptionFailed => MicrosoftAuthFailureReason.CodeRedemptionFailed,
                 OpenIdConnectAuthFailureReason.InvalidToken => MicrosoftAuthFailureReason.InvalidToken,
                 OpenIdConnectAuthFailureReason.InvalidSignature => MicrosoftAuthFailureReason.InvalidSignature,
@@ -196,8 +198,7 @@ namespace EasyReasy.Auth.Microsoft
                 OpenIdConnectAuthFailureReason.StaleAuthTime => MicrosoftAuthFailureReason.StaleAuthTime,
                 OpenIdConnectAuthFailureReason.MissingRequiredClaim
                     or OpenIdConnectAuthFailureReason.RequiredClaimMismatch => MicrosoftAuthFailureReason.MissingAuthenticationContext,
-                // Every segment resolves; no expected identity, acr or amr rule is set; the caller binding is the sign-in
-                // endpoint's check.
+                // Every segment resolves, and no expected identity, acr or amr rule is set.
                 _ => throw new UnreachableException($"The shared flow gave {reason}, which no rule of this package can cause."),
             };
         }

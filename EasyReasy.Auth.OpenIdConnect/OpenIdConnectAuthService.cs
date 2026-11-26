@@ -32,9 +32,9 @@ namespace EasyReasy.Auth.OpenIdConnect
         }
 
         /// <inheritdoc />
-        public async Task<OpenIdConnectAuthCompletionResult> CompleteAsync(OpenIdConnectAuthorizationResponse response, HttpContext httpContext, CancellationToken cancellationToken = default)
+        public async Task<OpenIdConnectAuthCompletionResult> CompleteAsync(OpenIdConnectAuthorizationResponse response, string expectedCallerBinding, HttpContext httpContext, CancellationToken cancellationToken = default)
         {
-            return OpenIdConnectAuthCompletionResult.From(await _flow.CompleteAsync(response, _resolver, httpContext, cancellationToken));
+            return OpenIdConnectAuthCompletionResult.From(await _flow.CompleteAsync(response, expectedCallerBinding, _resolver, httpContext, cancellationToken));
         }
     }
 }

@@ -14,13 +14,11 @@ namespace EasyReasy.Auth.OpenIdConnect
         private OpenIdConnectCodeFlowResult(
             OpenIdConnectAuthFailureReason? failureReason,
             OpenIdConnectUserInfo? userInfo,
-            string? callerBinding,
             string? idToken,
             string? idTokenSigningKey)
         {
             FailureReason = failureReason;
             UserInfo = userInfo;
-            CallerBinding = callerBinding;
             IdToken = idToken;
             IdTokenSigningKey = idTokenSigningKey;
         }
@@ -28,7 +26,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// <summary>
         /// Whether every check passed.
         /// </summary>
-        [MemberNotNullWhen(true, nameof(UserInfo), nameof(CallerBinding), nameof(IdToken), nameof(IdTokenSigningKey))]
+        [MemberNotNullWhen(true, nameof(UserInfo), nameof(IdToken), nameof(IdTokenSigningKey))]
         [MemberNotNullWhen(false, nameof(FailureReason))]
         public bool Success => FailureReason == null;
 
@@ -40,17 +38,11 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// <summary>
         /// The identity in the ID token, populated whenever the token validated: on success, and on a refusal by one of
         /// the flow's rules (identity, sign-in time, <c>acr</c>, <c>amr</c>), so a provider package can apply its own
-        /// rules first and name the account in its refusal. Null when the state, the cookie, the response, the provider,
-        /// the code or the token failed. Never act on it unless <see cref="Success"/> is true.
+        /// rules first and name the account in its refusal. Null when the state, the cookie, the caller binding, the
+        /// response, the provider, the code or the token failed. Never act on it unless <see cref="Success"/> is true.
         /// </summary>
         [JsonIgnore]
         public OpenIdConnectUserInfo? UserInfo { get; }
-
-        /// <summary>
-        /// The caller binding the flow was begun with. Only populated when <see cref="Success"/> is true.
-        /// </summary>
-        [JsonIgnore]
-        public string? CallerBinding { get; }
 
         /// <summary>
         /// The raw ID token <see cref="UserInfo"/> was read from. Only populated when <see cref="Success"/> is true. A
@@ -66,23 +58,23 @@ namespace EasyReasy.Auth.OpenIdConnect
         [JsonIgnore]
         public string? IdTokenSigningKey { get; }
 
-        internal static OpenIdConnectCodeFlowResult Succeeded(OpenIdConnectUserInfo userInfo, string callerBinding, string idToken, string idTokenSigningKey)
+        internal static OpenIdConnectCodeFlowResult Succeeded(OpenIdConnectUserInfo userInfo, string idToken, string idTokenSigningKey)
         {
-            return new OpenIdConnectCodeFlowResult(null, userInfo, callerBinding, idToken, idTokenSigningKey);
+            return new OpenIdConnectCodeFlowResult(null, userInfo, idToken, idTokenSigningKey);
         }
 
         internal static OpenIdConnectCodeFlowResult Refused(OpenIdConnectAuthFailureReason reason, OpenIdConnectUserInfo userInfo)
         {
-            return new OpenIdConnectCodeFlowResult(reason, userInfo, null, null, null);
+            return new OpenIdConnectCodeFlowResult(reason, userInfo, null, null);
         }
 
         internal static OpenIdConnectCodeFlowResult Failed(OpenIdConnectAuthFailureReason reason)
         {
-            return new OpenIdConnectCodeFlowResult(reason, null, null, null, null);
+            return new OpenIdConnectCodeFlowResult(reason, null, null, null);
         }
 
         /// <summary>
-        /// Describes the outcome without the identity, the caller binding or the ID token, so the result is safe to log.
+        /// Describes the outcome without the identity or the ID token, so the result is safe to log.
         /// </summary>
         /// <returns>The outcome and the failure reason.</returns>
         public override string ToString()

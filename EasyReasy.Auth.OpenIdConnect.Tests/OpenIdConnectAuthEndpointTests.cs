@@ -260,8 +260,10 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
             HttpResponseMessage response = await host.PostSignInAsync(browser, host.Primary.IssueCode(begun.AuthorizationUrl), begun.State);
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, OpenIdConnectAuthFailureReason.CallerBindingMismatch, expectSubject: true);
+            // Refused before the code is redeemed, so no account is known.
+            AssertAudited(auditLogger, ExternalAuthFailureReason.InvalidToken, OpenIdConnectAuthFailureReason.CallerBindingMismatch, expectSubject: false);
             Assert.AreEqual(0, host.Handler.ReceivedUsers.Count);
+            Assert.AreEqual(0, host.Primary.TokenRequests.Count);
         }
 
         [TestMethod]
