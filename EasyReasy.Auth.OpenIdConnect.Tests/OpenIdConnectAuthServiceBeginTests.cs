@@ -193,12 +193,12 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
             using OpenIdConnectAuthHarness harness = OpenIdConnectAuthHarness.Create();
             FakeBrowser browser = harness.CreateBrowser();
 
-            for (int flow = 0; flow < OpenIdConnectBindingCookie.MaxPendingFlows; flow++)
+            for (int flow = 0; flow < FlowBindingCookie.MaxPendingFlows; flow++)
             {
                 await harness.BeginAsync(OpenIdConnectAuthHarness.CreateRequest(), browser);
             }
 
-            Assert.AreEqual(OpenIdConnectBindingCookie.MaxPendingFlows, OpenIdConnectAuthHarness.CountBindingCookies(browser));
+            Assert.AreEqual(FlowBindingCookie.MaxPendingFlows, OpenIdConnectAuthHarness.CountBindingCookies(browser));
         }
 
         [TestMethod]
@@ -453,7 +453,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
         private static async Task<IReadOnlyList<OpenIdConnectAuthBeginResult>> BeginUpToTheLimitAsync(OpenIdConnectAuthHarness harness, FakeBrowser browser)
         {
             List<OpenIdConnectAuthBeginResult> pending = new List<OpenIdConnectAuthBeginResult>();
-            for (int flow = 0; flow < OpenIdConnectBindingCookie.MaxPendingFlows; flow++)
+            for (int flow = 0; flow < FlowBindingCookie.MaxPendingFlows; flow++)
             {
                 pending.Add(await harness.BeginAsync(OpenIdConnectAuthHarness.CreateRequest(), browser));
             }

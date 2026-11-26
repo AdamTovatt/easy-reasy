@@ -1,8 +1,10 @@
+using EasyReasy.Auth.OpenIdConnect;
+
 namespace EasyReasy.Auth.Microsoft
 {
     /// <summary>
     /// What a flow asks of Microsoft, and what its Complete will check: the input to
-    /// <see cref="IMicrosoftAuthService.Begin"/>.
+    /// <see cref="IMicrosoftAuthService.BeginAsync"/>.
     /// </summary>
     /// <remarks>
     /// Every value here except <see cref="LoginHint"/> decides what the resulting sign-in proves, so build it from
@@ -33,7 +35,7 @@ namespace EasyReasy.Auth.Microsoft
         /// <summary>
         /// The <c>prompt</c> to send, or null to send none.
         /// </summary>
-        public MicrosoftAuthPrompt? Prompt { get; init; }
+        public OpenIdConnectPrompt? Prompt { get; init; }
 
         /// <summary>
         /// The nonce to send, or null to have Begin generate a random one. Supply one to tie the sign-in to

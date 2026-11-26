@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
 
-namespace EasyReasy.Auth.OpenIdConnect.Tests
+namespace EasyReasy.Auth.Tests
 {
     /// <summary>
     /// A cookie jar standing in for one browser: it keeps what responses set, drops what they expire or what outlives

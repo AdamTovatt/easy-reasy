@@ -15,7 +15,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         public required string FlowId { get; init; }
 
         /// <summary>
-        /// The base64url SHA-256 hash of the binding cookie's value.
+        /// The hash of the binding cookie's value, as <see cref="FlowBindingCookie.Issue"/> returned it.
         /// </summary>
         [JsonPropertyName("b")]
         public required string BindingCookieHash { get; init; }

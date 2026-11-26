@@ -4,10 +4,11 @@ using System.Text;
 namespace EasyReasy.Auth
 {
     /// <summary>
-    /// The library's bearer secrets (refresh tokens, password reset tokens, and the OAuth server's request ids, codes,
-    /// client ids and secrets): how a new one is generated and the one hash it is stored under.
+    /// The library's bearer secrets (refresh tokens, password reset tokens, the OAuth server's request ids, codes,
+    /// client ids and secrets, flow binding cookies, and a sign-in package's PKCE verifiers and nonces): how a new one is
+    /// generated and the one hash it is stored under.
     /// </summary>
-    internal static class SecureToken
+    public static class SecureToken
     {
         /// <summary>
         /// A new 256-bit random value, base64url-encoded.

@@ -4,9 +4,10 @@ using System.Text;
 namespace EasyReasy.Auth
 {
     /// <summary>
-    /// PKCE with S256 (RFC 7636), the only method the authorization server accepts.
+    /// PKCE with S256 (RFC 7636): the only method the authorization server accepts, and the one a sign-in package's
+    /// client side sends.
     /// </summary>
-    internal static class OAuthPkce
+    public static class OAuthPkce
     {
         /// <summary>
         /// The length of an S256 code challenge: the base64url encoding of 32 bytes.
@@ -37,8 +38,22 @@ namespace EasyReasy.Auth
                 return false;
             }
 
-            string computed = Base64UrlEncoding.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));
+            string computed = CreateS256Challenge(codeVerifier);
             return CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(computed), Encoding.ASCII.GetBytes(codeChallenge));
+        }
+
+        /// <summary>
+        /// The S256 code challenge for a code verifier (RFC 7636 section 4.2): the SHA-256 of its ASCII bytes, as unpadded
+        /// base64url. A client makes the verifier with <see cref="SecureToken.Generate"/>, which is 43 unreserved
+        /// characters.
+        /// </summary>
+        /// <param name="codeVerifier">The code verifier.</param>
+        /// <returns>The code challenge.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="codeVerifier"/> is null.</exception>
+        public static string CreateS256Challenge(string codeVerifier)
+        {
+            ArgumentNullException.ThrowIfNull(codeVerifier);
+            return Base64UrlEncoding.Encode(SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier)));
         }
 
         /// <summary>

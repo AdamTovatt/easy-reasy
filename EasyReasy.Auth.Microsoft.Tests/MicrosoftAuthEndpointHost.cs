@@ -119,13 +119,22 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         /// <summary>
-        /// Posts a code and state to the sign-in endpoint as the browser.
+        /// Posts a code and state to the sign-in endpoint as the browser, as the page at a redirect URI (the sign-in one
+        /// unless given) would, naming its own address.
         /// </summary>
-        public async Task<HttpResponseMessage> PostSignInAsync(FakeBrowser browser, string code, string state)
+        public async Task<HttpResponseMessage> PostSignInAsync(FakeBrowser browser, string code, string state, string redirectUri = MicrosoftAuthHarness.SignInRedirectUri)
+        {
+            return await PostSignInBodyAsync(browser, new { code, state, redirectUri });
+        }
+
+        /// <summary>
+        /// Posts any body to the sign-in endpoint, such as one a frontend written for an older version sends.
+        /// </summary>
+        public async Task<HttpResponseMessage> PostSignInBodyAsync(FakeBrowser browser, object body)
         {
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/microsoft")
             {
-                Content = JsonContent.Create(new { code, state }),
+                Content = JsonContent.Create(body),
             };
 
             return await SendAsync(request, browser);

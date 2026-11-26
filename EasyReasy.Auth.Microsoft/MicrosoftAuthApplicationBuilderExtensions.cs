@@ -1,3 +1,4 @@
+using EasyReasy.Auth.OpenIdConnect;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -14,8 +15,9 @@ namespace EasyReasy.Auth.Microsoft
         /// <summary>
         /// Adds the two Microsoft sign-in endpoints. <c>POST /api/auth/microsoft/begin</c> takes an optional JSON body
         /// with a <c>loginHint</c>, sets the flow's binding cookie and returns the <c>authorizationUrl</c> to send the
-        /// browser to. <c>POST /api/auth/microsoft</c> takes a JSON body with the <c>code</c> and <c>state</c>
-        /// Microsoft's redirect brought back, and answers like the Google sign-in endpoint: 200 with the
+        /// browser to. <c>POST /api/auth/microsoft</c> takes a JSON body with the <c>code</c>, <c>state</c> and
+        /// <c>iss</c> Microsoft's redirect brought back and the <c>redirectUri</c> it arrived at (an
+        /// <see cref="OpenIdConnectAuthorizationResponse"/>), and answers like the Google sign-in endpoint: 200 with the
         /// <see cref="AuthResponse"/>, or 401.
         /// </summary>
         /// <remarks>
@@ -30,8 +32,9 @@ namespace EasyReasy.Auth.Microsoft
         /// <see cref="ExternalSignInEndpoint.HandleAsync"/>, shared with every provider package: the audit record
         /// (here with the <see cref="MicrosoftAuthFailureReason"/> name as <see cref="ExternalAuthResult.FailureDetail"/>),
         /// the access-token cookie on success, the progressive-delay reset, and 200 or 401. Microsoft's token endpoint
-        /// being unreachable or answering with a status other than 400 or 401 (a server error, a 429), or its signing
-        /// keys being unavailable, is not a refusal: it propagates as a 500 and is not audited.
+        /// being unreachable or answering with a status other than 400 or 401 (a server error, a 429) or refusing the
+        /// client itself, or its OpenID configuration or signing keys being unavailable, is not a refusal: it
+        /// propagates as a 500 and is not audited.
         /// </para>
         /// </remarks>
         /// <param name="app">The web application.</param>
@@ -60,14 +63,14 @@ namespace EasyReasy.Auth.Microsoft
             }).AllowAnonymous();
 
             app.MapPost("/api/auth/microsoft", (
-                MicrosoftSignInRequest request,
+                OpenIdConnectAuthorizationResponse request,
                 IMicrosoftAuthService authService,
                 IMicrosoftAuthHandler handler,
                 HttpContext httpContext) =>
             {
                 MicrosoftSignInService signInService = new MicrosoftSignInService(authService, handler);
                 return ExternalSignInEndpoint.HandleAsync(httpContext, (jwtTokenService, refreshTokenService) =>
-                    signInService.AuthenticateAsync(request.Code, request.State, jwtTokenService, refreshTokenService, httpContext));
+                    signInService.AuthenticateAsync(request, jwtTokenService, refreshTokenService, httpContext));
             }).AllowAnonymous();
 
             return app;

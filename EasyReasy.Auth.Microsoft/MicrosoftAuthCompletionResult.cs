@@ -13,12 +13,14 @@ namespace EasyReasy.Auth.Microsoft
             MicrosoftUserInfo? userInfo,
             string? callerBinding,
             string? idToken,
+            string? idTokenSigningKey,
             MicrosoftAuthFailureReason? failureReason,
             string? attemptedSubject)
         {
             UserInfo = userInfo;
             CallerBinding = callerBinding;
             IdToken = idToken;
+            IdTokenSigningKey = idTokenSigningKey;
             FailureReason = failureReason;
             AttemptedSubject = attemptedSubject;
         }
@@ -26,7 +28,7 @@ namespace EasyReasy.Auth.Microsoft
         /// <summary>
         /// Whether every check passed.
         /// </summary>
-        [MemberNotNullWhen(true, nameof(UserInfo), nameof(CallerBinding), nameof(IdToken), nameof(AttemptedSubject))]
+        [MemberNotNullWhen(true, nameof(UserInfo), nameof(CallerBinding), nameof(IdToken), nameof(IdTokenSigningKey), nameof(AttemptedSubject))]
         [MemberNotNullWhen(false, nameof(FailureReason))]
         public bool Success => FailureReason == null;
 
@@ -57,13 +59,24 @@ namespace EasyReasy.Auth.Microsoft
         /// or send it to a browser. It is a bearer credential for this app's client id until it expires, so treat it
         /// as a secret. <see cref="ToString"/> shows it as <c>[REDACTED]</c>, JSON serialization leaves it out, and the
         /// sign-in endpoints never pass it on: neither <see cref="IMicrosoftAuthHandler"/> nor
-        /// <see cref="ExternalAuthResult"/> carries it. To check it later, keep a copy of the public key it names (its
-        /// <c>kid</c>) along with it, since Microsoft rotates and retires its keys: that key is the one with this
-        /// <c>kid</c> in the key set at the <c>jwks_uri</c> of the OpenID configuration this package reads (see the
-        /// README's "Signing keys and key rotation").
+        /// <see cref="ExternalAuthResult"/> carries it. To check it later, keep <see cref="IdTokenSigningKey"/> along
+        /// with it, since Microsoft rotates and retires its keys.
         /// </remarks>
         [JsonIgnore]
         public string? IdToken { get; }
+
+        /// <summary>
+        /// Microsoft's public key <see cref="IdToken"/> was verified with, as JWK JSON. Only populated when
+        /// <see cref="Success"/> is true. Public, so not a secret; keep it with the ID token to verify its signature after
+        /// Microsoft has retired the key.
+        /// </summary>
+        /// <remarks>
+        /// Where the key came from is not returned with it: the ID token's signed <c>iss</c> already names the issuer
+        /// whose published OpenID configuration lists the key set, and a key set address or fetch time this application
+        /// recorded itself would prove no more than the key does.
+        /// </remarks>
+        [JsonIgnore]
+        public string? IdTokenSigningKey { get; }
 
         /// <summary>
         /// Why the flow was refused. Only populated when <see cref="Success"/> is false.
@@ -83,10 +96,11 @@ namespace EasyReasy.Auth.Microsoft
         /// <param name="userInfo">The validated identity.</param>
         /// <param name="callerBinding">The caller binding from Begin.</param>
         /// <param name="idToken">The validated ID token the identity was read from.</param>
+        /// <param name="idTokenSigningKey">The public key the ID token was verified with, as JWK JSON.</param>
         /// <returns>A successful result.</returns>
-        internal static MicrosoftAuthCompletionResult Succeeded(MicrosoftUserInfo userInfo, string callerBinding, string idToken)
+        internal static MicrosoftAuthCompletionResult Succeeded(MicrosoftUserInfo userInfo, string callerBinding, string idToken, string idTokenSigningKey)
         {
-            return new MicrosoftAuthCompletionResult(userInfo, callerBinding, idToken, null, FormatSubject(userInfo));
+            return new MicrosoftAuthCompletionResult(userInfo, callerBinding, idToken, idTokenSigningKey, null, FormatSubject(userInfo));
         }
 
         /// <summary>
@@ -97,7 +111,7 @@ namespace EasyReasy.Auth.Microsoft
         /// <returns>A failed result.</returns>
         internal static MicrosoftAuthCompletionResult Refused(MicrosoftAuthFailureReason reason, MicrosoftUserInfo userInfo)
         {
-            return new MicrosoftAuthCompletionResult(null, null, null, reason, FormatSubject(userInfo));
+            return new MicrosoftAuthCompletionResult(null, null, null, null, reason, FormatSubject(userInfo));
         }
 
         /// <summary>
@@ -107,7 +121,7 @@ namespace EasyReasy.Auth.Microsoft
         /// <returns>A failed result.</returns>
         internal static MicrosoftAuthCompletionResult Failed(MicrosoftAuthFailureReason reason)
         {
-            return new MicrosoftAuthCompletionResult(null, null, null, reason, null);
+            return new MicrosoftAuthCompletionResult(null, null, null, null, reason, null);
         }
 
         /// <summary>
