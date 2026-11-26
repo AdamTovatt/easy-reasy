@@ -11,14 +11,15 @@ namespace EasyReasy.Auth.OpenIdConnect
     /// <remarks>
     /// An entry is keyed by the address the document is read from and the issuer it must name, so a provider whose
     /// issuer or address changes gets a new entry rather than the old document. A document is checked before it is
-    /// cached: its issuer must be the provider's, and its authorize and token endpoints must be https (or http on a
-    /// loopback host). One that fails is not cached, and the flow fails with <see cref="InvalidOperationException"/>.
+    /// cached: its issuer must be the provider's, its authorize endpoint https (or http on a host the browser treats as
+    /// secure), and its token endpoint https (or http on a loopback host, for a provider whose discovery address is one).
+    /// One that fails is not cached, and the flow fails with <see cref="InvalidOperationException"/>.
     /// </remarks>
     internal sealed class OpenIdConnectDiscovery
     {
         private readonly ConcurrentDictionary<CacheKey, IConfigurationManager<OpenIdConnectConfiguration>> _managers = new ConcurrentDictionary<CacheKey, IConfigurationManager<OpenIdConnectConfiguration>>();
         private readonly IConfigurationRetriever<OpenIdConnectConfiguration> _configurationRetriever = new OpenIdConnectConfigurationRetriever();
-        private readonly IDocumentRetriever _documentRetriever;
+        private readonly IHttpClientFactory _httpClientFactory;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="OpenIdConnectDiscovery"/> class.
@@ -26,7 +27,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// <param name="httpClientFactory">Creates the package's named HTTP client, which fetches the documents.</param>
         public OpenIdConnectDiscovery(IHttpClientFactory httpClientFactory)
         {
-            _documentRetriever = new HttpClientFactoryDocumentRetriever(httpClientFactory);
+            _httpClientFactory = httpClientFactory;
         }
 
         /// <summary>
@@ -62,14 +63,14 @@ namespace EasyReasy.Auth.OpenIdConnect
             OpenIdConnectConfiguration configuration;
             try
             {
-                configuration = await _configurationRetriever.GetConfigurationAsync(address, _documentRetriever, cancellationToken);
+                configuration = await _configurationRetriever.GetConfigurationAsync(address, new HttpClientFactoryDocumentRetriever(_httpClientFactory, address), cancellationToken);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 throw new InvalidOperationException($"The OpenID configuration could not be retrieved from '{address}'.", exception);
             }
 
-            ConfigurationValidationResult check = new DocumentValidator(provider.Issuer.Value).Validate(configuration);
+            ConfigurationValidationResult check = new DocumentValidator(provider.Issuer.Value, address).Validate(configuration);
             if (!check.Succeeded)
             {
                 throw new InvalidOperationException($"The OpenID configuration at '{address}' cannot be used: {check.ErrorMessage}");
@@ -85,8 +86,8 @@ namespace EasyReasy.Auth.OpenIdConnect
                 key => new ConfigurationManager<OpenIdConnectConfiguration>(
                     key.MetadataAddress,
                     _configurationRetriever,
-                    _documentRetriever,
-                    new DocumentValidator(key.Issuer)));
+                    new HttpClientFactoryDocumentRetriever(_httpClientFactory, key.MetadataAddress),
+                    new DocumentValidator(key.Issuer, key.MetadataAddress)));
         }
 
         private readonly record struct CacheKey(string MetadataAddress, string Issuer);
@@ -97,10 +98,12 @@ namespace EasyReasy.Auth.OpenIdConnect
         private sealed class DocumentValidator : IConfigurationValidator<OpenIdConnectConfiguration>
         {
             private readonly string _issuer;
+            private readonly string _metadataAddress;
 
-            public DocumentValidator(string issuer)
+            public DocumentValidator(string issuer, string metadataAddress)
             {
                 _issuer = issuer;
+                _metadataAddress = metadataAddress;
             }
 
             public ConfigurationValidationResult Validate(OpenIdConnectConfiguration configuration)
@@ -117,9 +120,9 @@ namespace EasyReasy.Auth.OpenIdConnect
                     problems.Add($"its authorization_endpoint '{configuration.AuthorizationEndpoint}' is not an absolute https URL (or http on a local host)");
                 }
 
-                if (!OpenIdConnectAddress.TryParseFetchable(configuration.TokenEndpoint, out Uri? _))
+                if (!OpenIdConnectAddress.TryParseFetchableFrom(configuration.TokenEndpoint, _metadataAddress, out Uri? _))
                 {
-                    problems.Add($"its token_endpoint '{configuration.TokenEndpoint}' is not an absolute https URL (or http on a loopback host)");
+                    problems.Add($"its token_endpoint '{configuration.TokenEndpoint}' is not an absolute https URL (or http on a loopback host, for a provider whose discovery address is one)");
                 }
 
                 return problems.Count == 0

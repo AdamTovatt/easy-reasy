@@ -67,5 +67,25 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// this type does not name.
         /// </summary>
         public required IReadOnlyList<Claim> Claims { get; init; }
+
+        /// <summary>
+        /// Every value of one claim: one for a single value, one per element for an array, none when the token lacks it.
+        /// </summary>
+        /// <param name="type">The claim's name, such as <c>groups</c>.</param>
+        /// <returns>The values, in the token's order.</returns>
+        public IReadOnlyList<string> GetClaimValues(string type)
+        {
+            return Claims.Where(claim => claim.Type == type).Select(claim => claim.Value).ToList();
+        }
+
+        /// <summary>
+        /// The first value of one claim, or null when the token lacks it.
+        /// </summary>
+        /// <param name="type">The claim's name, such as <c>preferred_username</c>.</param>
+        /// <returns>The value, or null.</returns>
+        public string? FindClaimValue(string type)
+        {
+            return Claims.FirstOrDefault(claim => claim.Type == type)?.Value;
+        }
     }
 }

@@ -23,13 +23,6 @@ namespace EasyReasy.Auth.Microsoft
         /// </summary>
         internal const string SignInCallerBinding = "easyreasy.auth.microsoft:sign-in";
 
-        /// <summary>
-        /// The longest login hint the begin endpoint passes on; a longer one is ignored. Longer than any sign-in name
-        /// (an email address is at most 254 characters), so it only stops an anonymous caller from having an
-        /// arbitrarily large authorize URL built and returned.
-        /// </summary>
-        internal const int MaxLoginHintLength = 256;
-
         private readonly IMicrosoftAuthService _authService;
         private readonly IMicrosoftAuthHandler _handler;
 
@@ -48,7 +41,7 @@ namespace EasyReasy.Auth.Microsoft
         /// Begins a sign-in with the handler's settings and the browser's login hint.
         /// </summary>
         /// <param name="loginHint">The login hint from the browser, or null. A blank one, or one longer than
-        /// <see cref="MaxLoginHintLength"/>, is not sent.</param>
+        /// <see cref="OpenIdConnectLoginHint.MaxLength"/>, is not sent.</param>
         /// <param name="httpContext">The begin request, which the binding cookie is set on.</param>
         /// <returns>Where to send the browser.</returns>
         /// <exception cref="ArgumentException">The handler's settings are refused by
@@ -63,7 +56,7 @@ namespace EasyReasy.Auth.Microsoft
                 CallerBinding = SignInCallerBinding,
                 TenantId = settings.TenantId,
                 Prompt = settings.Prompt,
-                LoginHint = string.IsNullOrWhiteSpace(loginHint) || loginHint.Length > MaxLoginHintLength ? null : loginHint,
+                LoginHint = OpenIdConnectLoginHint.FromBrowser(loginHint),
                 RequiredAuthenticationContextId = settings.RequiredAuthenticationContextId,
                 MaxAuthenticationAge = settings.MaxAuthenticationAge,
             }, httpContext, httpContext.RequestAborted);

@@ -15,7 +15,7 @@ dotnet test EasyReasy.Auth.Tests                # Run tests for a specific proje
 dotnet test --filter "FullyQualifiedName~ClassName.MethodName" EasyReasy.Auth.Tests  # Run a single test
 ```
 
-CI's main test job skips every `*IntegrationTests` class. The exception is the `*KeycloakIntegrationTests`, which run against a Keycloak container in the `keycloak` job of `tests.yml`, and in `publish.yml` before `auth-openidconnect` or `auth-microsoft` (which runs on its flow) is packed. Without `KEYCLOAK_URL` they are inconclusive, so a plain `dotnet test` passes without Keycloak. `.github/scripts/keycloak.sh` holds the image, port and admin, and how the tests are run:
+CI's main test job skips every `*IntegrationTests` class. The exception is the `*KeycloakIntegrationTests`, which run against a Keycloak container in the `keycloak` job of `tests.yml`, and in `publish.yml` before any package built on EasyReasy.Auth.OpenIdConnect's flow is packed (`publish.yml` lists them). Without `KEYCLOAK_URL` they are inconclusive, so a plain `dotnet test` passes without Keycloak. `.github/scripts/keycloak.sh` holds the image, port and admin, and how the tests are run:
 
 ```bash
 export KEYCLOAK_PORT=18080   # optional, default 8080; export it so start, wait and test all use it

@@ -733,6 +733,25 @@ namespace EasyReasy.Auth.Microsoft.Tests
         }
 
         [TestMethod]
+        public async Task Complete_PersonalAccountWithAStaleAuthTime_IsRefusedForTheTenantFirst()
+        {
+            using MicrosoftAuthHarness harness = MicrosoftAuthHarness.Create();
+            string personal = FakeMicrosoftIdentityProvider.PersonalAccountsTenantId;
+            long now = harness.Clock.GetUtcNow().ToUnixTimeSeconds();
+
+            MicrosoftAuthCompletionResult result = await harness.SignInAsync(
+                MicrosoftAuthHarness.CreateRequest(maxAuthenticationAge: TimeSpan.FromMinutes(5)), token =>
+                {
+                    token.Claims["tid"] = personal;
+                    token.Claims["iss"] = $"{FakeMicrosoftIdentityProvider.Authority}/{personal}/v2.0";
+                    token.Claims["auth_time"] = now - 301;
+                });
+
+            Assert.AreEqual(MicrosoftAuthFailureReason.PersonalAccount, result.MicrosoftFailureReason);
+            Assert.IsNull(result.FlowFailureReason);
+        }
+
+        [TestMethod]
         public async Task Complete_PersonalAccountWithAnUppercaseTidAndAnEmptyAllowlist_IsStillRefused()
         {
             // The allowlist cannot hold the personal tenant (registration refuses it), so an empty allowlist, which

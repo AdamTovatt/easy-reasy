@@ -88,7 +88,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
                 Assert.AreEqual(reason, result.FlowFailureReason);
                 Assert.IsNull(result.MicrosoftFailureReason, reason.ToString());
                 Assert.AreEqual(reason.ToString(), result.FailureDetail);
-                Assert.IsNotNull(result.AttemptedSubject, reason.ToString());
+                Assert.AreEqual($"{FakeMicrosoftIdentityProvider.TenantId}:{FakeMicrosoftIdentityProvider.ObjectId}", result.AttemptedSubject, reason.ToString());
                 Assert.IsNull(result.UserInfo, reason.ToString());
             }
         }
@@ -104,7 +104,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
                 Assert.AreEqual(reason, result.MicrosoftFailureReason);
                 Assert.IsNull(result.FlowFailureReason, reason.ToString());
                 Assert.AreEqual(reason.ToString(), result.FailureDetail);
-                Assert.IsNotNull(result.AttemptedSubject, reason.ToString());
+                Assert.AreEqual($"{FakeMicrosoftIdentityProvider.TenantId}:{FakeMicrosoftIdentityProvider.ObjectId}", result.AttemptedSubject, reason.ToString());
                 Assert.IsNull(result.UserInfo, reason.ToString());
             }
         }

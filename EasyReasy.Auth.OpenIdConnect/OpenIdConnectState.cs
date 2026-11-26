@@ -93,15 +93,9 @@ namespace EasyReasy.Auth.OpenIdConnect
         public IReadOnlyDictionary<string, string>? RequiredClaimValues { get; init; }
 
         /// <summary>
-        /// The expected identity's issuer, or null. Begin checked it can be the provider's.
+        /// The account the person must sign in as, or null. Begin checked its issuer can be the provider's.
         /// </summary>
         [JsonPropertyName("x")]
-        public string? ExpectedIssuer { get; init; }
-
-        /// <summary>
-        /// The expected identity's subject, or null; set exactly when <see cref="ExpectedIssuer"/> is.
-        /// </summary>
-        [JsonPropertyName("s")]
-        public string? ExpectedSubject { get; init; }
+        public OpenIdConnectIdentity? ExpectedIdentity { get; init; }
     }
 }

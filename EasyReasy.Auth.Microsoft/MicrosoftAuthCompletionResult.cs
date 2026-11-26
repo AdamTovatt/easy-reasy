@@ -67,9 +67,10 @@ namespace EasyReasy.Auth.Microsoft
         /// Microsoft has retired the key.
         /// </summary>
         /// <remarks>
-        /// Where the key came from is not returned with it: the ID token's signed <c>iss</c> already names the issuer
-        /// whose published OpenID configuration lists the key set, and a key set address or fetch time this application
-        /// recorded itself would prove no more than the key does.
+        /// The key as this server verified with it, rewritten as JWK JSON with Microsoft's <c>x5c</c> certificate. A later
+        /// check shows the token was signed by this key; that the key was Microsoft's rests on this application's record
+        /// that it read it from Microsoft's key set at sign-in, so seal the key with the token and the record it vouches
+        /// for.
         /// </remarks>
         [JsonIgnore]
         public string? IdTokenSigningKey { get; }
