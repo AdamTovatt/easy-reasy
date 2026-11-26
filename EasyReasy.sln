@@ -42,6 +42,9 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.OpenIdConnect", "EasyReasy.Auth.OpenIdConnect\EasyReasy.Auth.OpenIdConnect.csproj", "{EE0E6061-5B1C-488E-8A65-FF9728F1189F}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.OpenIdConnect.Tests", "EasyReasy.Auth.OpenIdConnect.Tests\EasyReasy.Auth.OpenIdConnect.Tests.csproj", "{12B36DA6-FC26-449A-A426-0730D4F32592}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Saml", "EasyReasy.Auth.Saml\EasyReasy.Auth.Saml.csproj", "{2A6BCF64-1587-485D-A842-2CE619110665}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Saml.Tests", "EasyReasy.Auth.Saml.Tests\EasyReasy.Auth.Saml.Tests.csproj", "{8F48ED34-64BF-4932-8629-2EA8E90100C1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -129,6 +132,14 @@ Global
 		{12B36DA6-FC26-449A-A426-0730D4F32592}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{12B36DA6-FC26-449A-A426-0730D4F32592}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{12B36DA6-FC26-449A-A426-0730D4F32592}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2A6BCF64-1587-485D-A842-2CE619110665}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2A6BCF64-1587-485D-A842-2CE619110665}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2A6BCF64-1587-485D-A842-2CE619110665}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2A6BCF64-1587-485D-A842-2CE619110665}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8F48ED34-64BF-4932-8629-2EA8E90100C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8F48ED34-64BF-4932-8629-2EA8E90100C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8F48ED34-64BF-4932-8629-2EA8E90100C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8F48ED34-64BF-4932-8629-2EA8E90100C1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
