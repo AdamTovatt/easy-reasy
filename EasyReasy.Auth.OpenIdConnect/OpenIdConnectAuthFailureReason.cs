@@ -5,10 +5,11 @@ namespace EasyReasy.Auth.OpenIdConnect
     /// tell refusals apart without parsing a message. Intended for logs and audit records, not for the browser.
     /// </summary>
     /// <remarks>
-    /// The sign-in endpoint records the member's name as <see cref="ExternalAuthResult.FailureDetail"/>: a failure of the
-    /// state, the binding cookie, the response, the provider, the code or the token as
+    /// The sign-in endpoint records the member's name as <see cref="ExternalAuthResult.FailureDetail"/>, filed under
+    /// <see cref="OpenIdConnectAuthFailureReasonExtensions.ToExternalAuthFailureReason"/>: a failure of the state, the
+    /// binding cookie, the response, the provider, the code or the token as
     /// <see cref="ExternalAuthFailureReason.InvalidToken"/>, and a genuine identity refused by the flow's rules as
-    /// <see cref="ExternalAuthFailureReason.Rejected"/>.
+    /// <see cref="ExternalAuthFailureReason.Rejected"/>. A provider package on the flow passes these reasons through.
     /// <para>
     /// The member names are a stable contract: they are written into audit records that outlive any release, so a member
     /// is never renamed, and a new check gets a new member.

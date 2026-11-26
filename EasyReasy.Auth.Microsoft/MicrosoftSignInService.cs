@@ -80,7 +80,8 @@ namespace EasyReasy.Auth.Microsoft
         /// <param name="httpContext">The sign-in request, whose binding cookie is checked and cleared.</param>
         /// <returns>
         /// Success with the issued <see cref="AuthResponse"/>, or a failure whose
-        /// <see cref="ExternalAuthResult.FailureDetail"/> names the <see cref="MicrosoftAuthFailureReason"/>. A
+        /// <see cref="ExternalAuthResult.FailureDetail"/> names the <see cref="OpenIdConnectAuthFailureReason"/> or the
+        /// <see cref="MicrosoftAuthFailureReason"/>. A
         /// handler that returns null gives <see cref="ExternalAuthFailureReason.Rejected"/> with no detail.
         /// </returns>
         /// <exception cref="HttpRequestException">Microsoft's token endpoint could not be reached or failed.</exception>
@@ -96,7 +97,7 @@ namespace EasyReasy.Auth.Microsoft
 
             if (!completion.Success)
             {
-                return Refuse(completion.FailureReason.Value, completion.AttemptedSubject);
+                return ExternalAuthResult.Failed(ProviderName, completion.FailureCategory.Value, completion.AttemptedSubject, completion.FailureDetail);
             }
 
             AuthResponse? authResponse = await _handler.HandleMicrosoftUserAsync(completion.UserInfo, jwtTokenService, refreshTokenService, httpContext);
@@ -107,48 +108,6 @@ namespace EasyReasy.Auth.Microsoft
             }
 
             return ExternalAuthResult.Succeeded(ProviderName, authResponse, completion.AttemptedSubject);
-        }
-
-        private static ExternalAuthResult Refuse(MicrosoftAuthFailureReason reason, string? attemptedSubject)
-        {
-            return ExternalAuthResult.Failed(ProviderName, GetCategory(reason), attemptedSubject, reason.ToString());
-        }
-
-        /// <summary>
-        /// The provider-neutral category of a refusal: a failure of the state, the binding cookie, the code or the
-        /// token is <see cref="ExternalAuthFailureReason.InvalidToken"/>; a genuine identity refused by the flow's
-        /// rules is <see cref="ExternalAuthFailureReason.Rejected"/>.
-        /// </summary>
-        /// <exception cref="ArgumentOutOfRangeException">A reason with no category, so a new member cannot ship
-        /// unclassified.</exception>
-        internal static ExternalAuthFailureReason GetCategory(MicrosoftAuthFailureReason reason)
-        {
-            return reason switch
-            {
-                MicrosoftAuthFailureReason.InvalidState
-                    or MicrosoftAuthFailureReason.ExpiredState
-                    or MicrosoftAuthFailureReason.BindingCookieMissing
-                    or MicrosoftAuthFailureReason.BindingCookieMismatch
-                    or MicrosoftAuthFailureReason.RedirectUriMismatch
-                    or MicrosoftAuthFailureReason.IssuerParameterMismatch
-                    or MicrosoftAuthFailureReason.IssuerParameterMissing
-                    or MicrosoftAuthFailureReason.ProviderChanged
-                    or MicrosoftAuthFailureReason.CodeRedemptionFailed
-                    or MicrosoftAuthFailureReason.InvalidToken
-                    or MicrosoftAuthFailureReason.InvalidSignature
-                    or MicrosoftAuthFailureReason.InvalidAudience
-                    or MicrosoftAuthFailureReason.InvalidIssuer
-                    or MicrosoftAuthFailureReason.TokenExpired
-                    or MicrosoftAuthFailureReason.NonceMismatch
-                    or MicrosoftAuthFailureReason.CallerBindingMismatch => ExternalAuthFailureReason.InvalidToken,
-                MicrosoftAuthFailureReason.PersonalAccount
-                    or MicrosoftAuthFailureReason.TenantMismatch
-                    or MicrosoftAuthFailureReason.TenantNotAllowed
-                    or MicrosoftAuthFailureReason.MissingAuthenticationContext
-                    or MicrosoftAuthFailureReason.MissingAuthTime
-                    or MicrosoftAuthFailureReason.StaleAuthTime => ExternalAuthFailureReason.Rejected,
-                _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "The refusal reason has no category."),
-            };
         }
     }
 }

@@ -1,3 +1,4 @@
+using EasyReasy.Auth.OpenIdConnect;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
@@ -5,21 +6,27 @@ namespace EasyReasy.Auth.Microsoft
 {
     /// <summary>
     /// The outcome of <see cref="IMicrosoftAuthService.CompleteAsync"/>: the validated identity and the ID token it was
-    /// read from, or the reason the flow was refused.
+    /// read from, or the reason the flow was refused: the shared flow's, or the Entra rules'.
     /// </summary>
+    /// <remarks>
+    /// Built only through its factories, each of which sets at most one reason, so a result can never carry both
+    /// reasons, and a failure always carries one.
+    /// </remarks>
     public sealed class MicrosoftAuthCompletionResult
     {
         private MicrosoftAuthCompletionResult(
             MicrosoftUserInfo? userInfo,
             string? idToken,
             string? idTokenSigningKey,
-            MicrosoftAuthFailureReason? failureReason,
+            OpenIdConnectAuthFailureReason? flowFailureReason,
+            MicrosoftAuthFailureReason? microsoftFailureReason,
             string? attemptedSubject)
         {
             UserInfo = userInfo;
             IdToken = idToken;
             IdTokenSigningKey = idTokenSigningKey;
-            FailureReason = failureReason;
+            FlowFailureReason = flowFailureReason;
+            MicrosoftFailureReason = microsoftFailureReason;
             AttemptedSubject = attemptedSubject;
         }
 
@@ -27,8 +34,8 @@ namespace EasyReasy.Auth.Microsoft
         /// Whether every check passed.
         /// </summary>
         [MemberNotNullWhen(true, nameof(UserInfo), nameof(IdToken), nameof(IdTokenSigningKey), nameof(AttemptedSubject))]
-        [MemberNotNullWhen(false, nameof(FailureReason))]
-        public bool Success => FailureReason == null;
+        [MemberNotNullWhen(false, nameof(FailureDetail), nameof(FailureCategory))]
+        public bool Success => FlowFailureReason == null && MicrosoftFailureReason == null;
 
         /// <summary>
         /// The validated identity. Only populated when <see cref="Success"/> is true. Personal data, so it is left out
@@ -68,14 +75,42 @@ namespace EasyReasy.Auth.Microsoft
         public string? IdTokenSigningKey { get; }
 
         /// <summary>
-        /// Why the flow was refused. Only populated when <see cref="Success"/> is false.
+        /// Why the shared flow refused the sign-in: its state, binding cookie, response, code or token, or its max age
+        /// rule. A token whose <c>tid</c> or <c>oid</c> this package cannot read is reported here too, as
+        /// <see cref="OpenIdConnectAuthFailureReason.InvalidToken"/>, the name its audit records have always carried.
+        /// Null on success and when <see cref="MicrosoftFailureReason"/> is set.
         /// </summary>
-        public MicrosoftAuthFailureReason? FailureReason { get; }
+        public OpenIdConnectAuthFailureReason? FlowFailureReason { get; }
+
+        /// <summary>
+        /// Why the Entra rules refused the account: its tenant or its authentication context. Null on success and when
+        /// <see cref="FlowFailureReason"/> is set.
+        /// </summary>
+        public MicrosoftAuthFailureReason? MicrosoftFailureReason { get; }
+
+        /// <summary>
+        /// The name of whichever reason is set, as the sign-in endpoint records it in
+        /// <see cref="ExternalAuthResult.FailureDetail"/>. Null on success.
+        /// </summary>
+        [JsonIgnore]
+        public string? FailureDetail => FlowFailureReason?.ToString() ?? MicrosoftFailureReason?.ToString();
+
+        /// <summary>
+        /// The category the sign-in endpoint files the refusal under in <see cref="ExternalAuthResult.FailureReason"/>:
+        /// a flow reason's <see cref="OpenIdConnectAuthFailureReasonExtensions.ToExternalAuthFailureReason"/>, and
+        /// <see cref="ExternalAuthFailureReason.Rejected"/> for an Entra refusal, always of a genuine account. Null on
+        /// success.
+        /// </summary>
+        [JsonIgnore]
+        public ExternalAuthFailureReason? FailureCategory => FlowFailureReason is OpenIdConnectAuthFailureReason flowReason
+            ? flowReason.ToExternalAuthFailureReason()
+            : MicrosoftFailureReason != null ? ExternalAuthFailureReason.Rejected : null;
 
         /// <summary>
         /// The account as <c>tid:oid</c>, for an audit record: populated on success, and on a refusal of a genuine
         /// token (its tenant, authentication context or sign-in time). Null when the token itself, the state, the
-        /// cookie, the caller binding or the code failed, because no trustworthy account is known then.
+        /// cookie, the caller binding, the code or the account's <c>tid</c> or <c>oid</c> failed, because no trustworthy
+        /// account is known then.
         /// </summary>
         public string? AttemptedSubject { get; }
 
@@ -88,28 +123,40 @@ namespace EasyReasy.Auth.Microsoft
         /// <returns>A successful result.</returns>
         internal static MicrosoftAuthCompletionResult Succeeded(MicrosoftUserInfo userInfo, string idToken, string idTokenSigningKey)
         {
-            return new MicrosoftAuthCompletionResult(userInfo, idToken, idTokenSigningKey, null, FormatSubject(userInfo));
+            return new MicrosoftAuthCompletionResult(userInfo, idToken, idTokenSigningKey, null, null, FormatSubject(userInfo));
         }
 
         /// <summary>
-        /// Creates a refusal of a genuine token, which names the account it was for.
+        /// Creates a refusal of a genuine token by the Entra rules, which names the account it was for.
         /// </summary>
         /// <param name="reason">Why the account was refused.</param>
         /// <param name="userInfo">The identity in the refused token.</param>
         /// <returns>A failed result.</returns>
         internal static MicrosoftAuthCompletionResult Refused(MicrosoftAuthFailureReason reason, MicrosoftUserInfo userInfo)
         {
-            return new MicrosoftAuthCompletionResult(null, null, null, reason, FormatSubject(userInfo));
+            return new MicrosoftAuthCompletionResult(null, null, null, null, reason, FormatSubject(userInfo));
         }
 
         /// <summary>
-        /// Creates a failure before any trustworthy account is known.
+        /// Creates a refusal of a genuine token by the shared flow's rules, which names the account it was for.
+        /// </summary>
+        /// <param name="reason">Why the account was refused.</param>
+        /// <param name="userInfo">The identity in the refused token.</param>
+        /// <returns>A failed result.</returns>
+        internal static MicrosoftAuthCompletionResult Refused(OpenIdConnectAuthFailureReason reason, MicrosoftUserInfo userInfo)
+        {
+            return new MicrosoftAuthCompletionResult(null, null, null, reason, null, FormatSubject(userInfo));
+        }
+
+        /// <summary>
+        /// Creates a failure before any trustworthy account is known: the shared flow's, or this package's unreadable
+        /// <c>tid</c> or <c>oid</c> as <see cref="OpenIdConnectAuthFailureReason.InvalidToken"/>.
         /// </summary>
         /// <param name="reason">Why the flow failed.</param>
         /// <returns>A failed result.</returns>
-        internal static MicrosoftAuthCompletionResult Failed(MicrosoftAuthFailureReason reason)
+        internal static MicrosoftAuthCompletionResult Failed(OpenIdConnectAuthFailureReason reason)
         {
-            return new MicrosoftAuthCompletionResult(null, null, null, reason, null);
+            return new MicrosoftAuthCompletionResult(null, null, null, reason, null, null);
         }
 
         /// <summary>
@@ -121,9 +168,14 @@ namespace EasyReasy.Auth.Microsoft
         {
             List<string> parts = new List<string> { $"{nameof(Success)} = {(Success ? "true" : "false")}" };
 
-            if (FailureReason is MicrosoftAuthFailureReason reason)
+            if (FlowFailureReason is OpenIdConnectAuthFailureReason flowReason)
             {
-                parts.Add($"{nameof(FailureReason)} = {reason}");
+                parts.Add($"{nameof(FlowFailureReason)} = {flowReason}");
+            }
+
+            if (MicrosoftFailureReason is MicrosoftAuthFailureReason microsoftReason)
+            {
+                parts.Add($"{nameof(MicrosoftFailureReason)} = {microsoftReason}");
             }
 
             if (AttemptedSubject != null)

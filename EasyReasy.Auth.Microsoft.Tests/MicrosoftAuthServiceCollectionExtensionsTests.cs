@@ -68,7 +68,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
             Array.Clear(key);
 
             MicrosoftAuthCompletionResult result = await harness.CompleteAsync(harness.IdentityProvider.IssueCode(begun.AuthorizationUrl), begun.State, browser);
-            Assert.IsTrue(result.Success, result.FailureReason?.ToString());
+            Assert.IsTrue(result.Success, result.FailureDetail);
         }
 
         [TestMethod]

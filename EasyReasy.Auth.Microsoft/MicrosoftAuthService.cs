@@ -65,14 +65,14 @@ namespace EasyReasy.Auth.Microsoft
             if (result.UserInfo == null)
             {
                 // The flow sets the identity whenever the token validated, so a result without one is a failure.
-                return MicrosoftAuthCompletionResult.Failed(ToMicrosoftReason(
-                    result.FailureReason ?? throw new UnreachableException("A result without an identity has a reason.")));
+                return MicrosoftAuthCompletionResult.Failed(
+                    result.FailureReason ?? throw new UnreachableException("A result without an identity has a reason."));
             }
 
             MicrosoftUserInfo? userInfo = ReadIdentity(result.UserInfo);
             if (userInfo == null)
             {
-                return MicrosoftAuthCompletionResult.Failed(MicrosoftAuthFailureReason.InvalidToken);
+                return MicrosoftAuthCompletionResult.Failed(OpenIdConnectAuthFailureReason.InvalidToken);
             }
 
             // The tenant rules first, so a refused account is reported for its tenant before the flow's other rules.
@@ -84,7 +84,11 @@ namespace EasyReasy.Auth.Microsoft
 
             if (!result.Success)
             {
-                return MicrosoftAuthCompletionResult.Refused(ToMicrosoftReason(result.FailureReason.Value), userInfo);
+                // The authentication context is the one required claim this package asks for, so a refusal of it is
+                // the context's own Entra reason; every other rule's refusal passes through as the flow gave it.
+                return result.FailureReason is OpenIdConnectAuthFailureReason.MissingRequiredClaim or OpenIdConnectAuthFailureReason.RequiredClaimMismatch
+                    ? MicrosoftAuthCompletionResult.Refused(MicrosoftAuthFailureReason.MissingAuthenticationContext, userInfo)
+                    : MicrosoftAuthCompletionResult.Refused(result.FailureReason.Value, userInfo);
             }
 
             return MicrosoftAuthCompletionResult.Succeeded(userInfo, result.IdToken, result.IdTokenSigningKey);
@@ -166,41 +170,6 @@ namespace EasyReasy.Auth.Microsoft
             {
                 throw new ArgumentException($"Invalid {nameof(MicrosoftAuthBeginRequest)}:\n{string.Join("\n", errors)}", nameof(request));
             }
-        }
-
-        /// <summary>
-        /// The Microsoft name of a reason the shared flow gave. The names are an audit contract, so each keeps its
-        /// Microsoft name: the same name where the check is the same, and the authentication context's own name for the
-        /// required claim it is asked as.
-        /// </summary>
-        /// <exception cref="UnreachableException">A reason only rules this package never sets can give.</exception>
-        internal static MicrosoftAuthFailureReason ToMicrosoftReason(OpenIdConnectAuthFailureReason reason)
-        {
-            return reason switch
-            {
-                OpenIdConnectAuthFailureReason.InvalidState => MicrosoftAuthFailureReason.InvalidState,
-                OpenIdConnectAuthFailureReason.ExpiredState => MicrosoftAuthFailureReason.ExpiredState,
-                OpenIdConnectAuthFailureReason.BindingCookieMissing => MicrosoftAuthFailureReason.BindingCookieMissing,
-                OpenIdConnectAuthFailureReason.BindingCookieMismatch => MicrosoftAuthFailureReason.BindingCookieMismatch,
-                OpenIdConnectAuthFailureReason.RedirectUriMismatch => MicrosoftAuthFailureReason.RedirectUriMismatch,
-                OpenIdConnectAuthFailureReason.IssuerParameterMismatch => MicrosoftAuthFailureReason.IssuerParameterMismatch,
-                OpenIdConnectAuthFailureReason.IssuerParameterMissing => MicrosoftAuthFailureReason.IssuerParameterMissing,
-                OpenIdConnectAuthFailureReason.ProviderChanged => MicrosoftAuthFailureReason.ProviderChanged,
-                OpenIdConnectAuthFailureReason.CallerBindingMismatch => MicrosoftAuthFailureReason.CallerBindingMismatch,
-                OpenIdConnectAuthFailureReason.CodeRedemptionFailed => MicrosoftAuthFailureReason.CodeRedemptionFailed,
-                OpenIdConnectAuthFailureReason.InvalidToken => MicrosoftAuthFailureReason.InvalidToken,
-                OpenIdConnectAuthFailureReason.InvalidSignature => MicrosoftAuthFailureReason.InvalidSignature,
-                OpenIdConnectAuthFailureReason.InvalidAudience => MicrosoftAuthFailureReason.InvalidAudience,
-                OpenIdConnectAuthFailureReason.InvalidIssuer => MicrosoftAuthFailureReason.InvalidIssuer,
-                OpenIdConnectAuthFailureReason.TokenExpired => MicrosoftAuthFailureReason.TokenExpired,
-                OpenIdConnectAuthFailureReason.NonceMismatch => MicrosoftAuthFailureReason.NonceMismatch,
-                OpenIdConnectAuthFailureReason.MissingAuthTime => MicrosoftAuthFailureReason.MissingAuthTime,
-                OpenIdConnectAuthFailureReason.StaleAuthTime => MicrosoftAuthFailureReason.StaleAuthTime,
-                OpenIdConnectAuthFailureReason.MissingRequiredClaim
-                    or OpenIdConnectAuthFailureReason.RequiredClaimMismatch => MicrosoftAuthFailureReason.MissingAuthenticationContext,
-                // Every segment resolves, and no expected identity, acr or amr rule is set.
-                _ => throw new UnreachableException($"The shared flow gave {reason}, which no rule of this package can cause."),
-            };
         }
     }
 }

@@ -38,7 +38,7 @@ namespace EasyReasy.Auth.Microsoft
         /// <param name="response">The code, state and <c>iss</c> from the redirect, and the redirect URI it arrived at.</param>
         /// <param name="expectedCallerBinding">The <see cref="MicrosoftAuthBeginRequest.CallerBinding"/> this endpoint
         /// begins its flows with. A flow begun with another is refused as
-        /// <see cref="MicrosoftAuthFailureReason.CallerBindingMismatch"/> before its code is redeemed, so a re-check
+        /// <see cref="OpenIdConnectAuthFailureReason.CallerBindingMismatch"/> before its code is redeemed, so a re-check
         /// endpoint never accepts a plain sign-in that carried none of its rules.</param>
         /// <param name="httpContext">The request from the browser completing the flow; its binding cookie is read
         /// from the request and cleared on the response.</param>

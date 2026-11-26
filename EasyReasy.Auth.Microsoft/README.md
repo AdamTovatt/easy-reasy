@@ -237,7 +237,7 @@ app.MapPost("/api/sign/{recordId}/microsoft", async (string recordId, OpenIdConn
 
 **Signing evidence.** On success, `MicrosoftAuthCompletionResult.IdToken` is the raw ID token the identity was read from, after every check passed. It carries Microsoft's own signature over the account, the sign-in time, the authentication contexts and your nonce, so a record signed through a re-check can later be shown to rest on a token Microsoft signed, not only on your server's word. Seal it with the record (encrypted, access audited) and never log it or send it to a browser: until it expires it is a bearer credential for your client id. Keep `IdTokenSigningKey`, Microsoft's public key the token verified with as a JSON Web Key, with it: Microsoft rotates and retires keys, and the saved key is what lets the signature be checked after that. The result's `ToString()` shows the token as `[REDACTED]` and its JSON leaves out the token, the key and `UserInfo`, and the sign-in endpoints never pass the token on: your `IMicrosoftAuthHandler` and the audit record do not see it.
 
-`CompleteAsync` returns a `MicrosoftAuthFailureReason` on refusal. It throws when Microsoft's token endpoint cannot be reached or answers with a status other than 400 or 401, such as a server error or a 429 (`HttpRequestException`), when Microsoft's OpenID configuration or signing keys cannot be retrieved, and when the token endpoint refuses the client itself, such as `invalid_client` for an expired client secret (`InvalidOperationException`). `BeginAsync` reads the OpenID configuration too, so it throws `InvalidOperationException` while Microsoft is unreachable.
+`CompleteAsync` returns a refusal as the shared flow's `FlowFailureReason` or the Entra rules' `MicrosoftFailureReason`, exactly one of them (see "Refusal reasons"). It throws when Microsoft's token endpoint cannot be reached or answers with a status other than 400 or 401, such as a server error or a 429 (`HttpRequestException`), when Microsoft's OpenID configuration or signing keys cannot be retrieved, and when the token endpoint refuses the client itself, such as `invalid_client` for an expired client secret (`InvalidOperationException`). `BeginAsync` reads the OpenID configuration too, so it throws `InvalidOperationException` while Microsoft is unreachable.
 
 ## Endpoint Behavior
 
@@ -268,15 +268,17 @@ If you register an `IAuthAuditLogger` (see "Security Audit Logging" in the EasyR
 
 - `Provider` is `"microsoft"`.
 - `AttemptedSubject` is `tid:oid` (for example `22222222-bbbb-4bbb-8bbb-222222222222:44444444-dddd-4ddd-8ddd-444444444444`) on success and whenever a genuine token was refused by the tenant, authentication context or max age rules; it is null when the state, the cookie, the caller binding, the response, the code or the token failed, since no trustworthy account is known then.
-- `FailureReason` is `InvalidToken` for a failure of those, and `Rejected` for a genuine account refused by the tenant, authentication context or max age rules, or by your handler returning null.
-- `FailureDetail` is the `MicrosoftAuthFailureReason` member name for every refusal the package makes itself, and null when your handler refused. Member names are a stable contract, so they are safe to store and query.
+- `FailureReason`, the audit category in the tables below, is `InvalidToken` for a failure of those, and `Rejected` for a genuine account refused by the tenant, authentication context or max age rules, or by your handler returning null.
+- `FailureDetail` is the reason's member name (`MicrosoftAuthCompletionResult.FailureDetail`) for every refusal the package makes itself, and null when your handler refused. No `MicrosoftAuthFailureReason` member shares a name with an `OpenIdConnectAuthFailureReason` member, so the name alone tells the check. Member names are a stable contract, so they are safe to store and query.
 
 As with the other result types, log the metadata, never the whole result: on success it embeds the issued bearer token.
 
 ### Refusal reasons
 
-| `MicrosoftAuthFailureReason` | `FailureReason` | When |
-|------------------------------|-----------------|------|
+The shared flow's refusals are EasyReasy.Auth.OpenIdConnect's `OpenIdConnectAuthFailureReason`, in the result's `FlowFailureReason`, and filed under its `ToExternalAuthFailureReason()`. A token whose `tid` or `oid` the package cannot read is reported the same way, as `InvalidToken`, the name its audit records have always carried:
+
+| `OpenIdConnectAuthFailureReason` | Audit category | When |
+|----------------------------------|----------------|------|
 | `InvalidState` | `InvalidToken` | The state is missing, not this server's, tampered with or unreadable. |
 | `ExpiredState` | `InvalidToken` | The state is older than `StateLifetime`. |
 | `BindingCookieMissing` | `InvalidToken` | The browser did not send the flow's binding cookie: another browser, a completed flow, or one cleared by beginning too many. |
@@ -293,12 +295,17 @@ As with the other result types, log the metadata, never the whole result: on suc
 | `InvalidIssuer` | `InvalidToken` | The issuer is not the flow's: the token's own tenant's on a flow that named no tenant, that tenant's on one that did. |
 | `TokenExpired` | `InvalidToken` | The ID token has expired. |
 | `NonceMismatch` | `InvalidToken` | The nonce is missing or not the flow's. |
+| `MissingAuthTime` | `Rejected` | The flow set a max age and the token has no `auth_time`. |
+| `StaleAuthTime` | `Rejected` | The flow set a max age and `auth_time` is older. |
+
+The Entra rules' refusals are `MicrosoftAuthFailureReason`, in the result's `MicrosoftFailureReason`, each of a genuine account and so always `Rejected`:
+
+| `MicrosoftAuthFailureReason` | Audit category | When |
+|------------------------------|----------------|------|
 | `PersonalAccount` | `Rejected` | A personal Microsoft account. |
 | `TenantMismatch` | `Rejected` | The flow named a tenant, and the token, issued by that tenant, carries another `tid`. |
 | `TenantNotAllowed` | `Rejected` | The tenant is not in `AllowedTenantIds`. |
 | `MissingAuthenticationContext` | `Rejected` | The flow required an authentication context and `acrs` lacks it. |
-| `MissingAuthTime` | `Rejected` | The flow set a max age and the token has no `auth_time`. |
-| `StaleAuthTime` | `Rejected` | The flow set a max age and `auth_time` is older. |
 
 ## Models
 
@@ -348,7 +355,10 @@ The input to `IMicrosoftAuthService.BeginAsync` for your own flows, which return
 | `UserInfo` | `MicrosoftUserInfo?` | The verified identity. Set only on success. Personal data: left out of `ToString()` and JSON. |
 | `IdToken` | `string?` | The validated raw ID token, as signing evidence to seal with the record. Set only on success. Never log it; `ToString()` shows it as `[REDACTED]` and JSON leaves it out. |
 | `IdTokenSigningKey` | `string?` | Microsoft's public key the token verified with, as JWK JSON, to keep with the token. Set only on success; left out of JSON. |
-| `FailureReason` | `MicrosoftAuthFailureReason?` | Why the flow was refused. Set only on failure. |
+| `FlowFailureReason` | `OpenIdConnectAuthFailureReason?` | Why the shared flow refused it: its state, cookie, response, code, token or max age; also `InvalidToken` for a `tid` or `oid` the package cannot read. Set only on such a failure. |
+| `MicrosoftFailureReason` | `MicrosoftAuthFailureReason?` | Why the Entra rules refused the account: its tenant or authentication context. Set only on such a failure. |
+| `FailureDetail` | `string?` | The name of whichever reason is set, as the audit record carries it. Null on success. |
+| `FailureCategory` | `ExternalAuthFailureReason?` | The audit category the refusal is filed under (see "Refusal reasons"). Null on success. |
 | `AttemptedSubject` | `string?` | The account as `tid:oid`: set on success and when a genuine token was refused (tenant, authentication context or max age), null otherwise. |
 
 ### Endpoint bodies
@@ -366,8 +376,9 @@ The begin endpoint takes `MicrosoftSignInBeginRequest` (`{ loginHint }`) and ret
 5. **`MicrosoftAuthPrompt` is `OpenIdConnectPrompt`**, with the same members.
 6. **The named `HttpClient`** is `OpenIdConnectCodeFlow.HttpClientName`, replacing `MicrosoftAuthServiceCollectionExtensions.HttpClientName`.
 7. **Signing evidence**: keep `IdTokenSigningKey` with a sealed `IdToken` instead of looking the key up by `kid` yourself.
-8. **New refusal reasons** `RedirectUriMismatch`, `IssuerParameterMismatch`, `IssuerParameterMissing` and `ProviderChanged` appear in `FailureDetail`.
-9. **Behaviour**:
+8. **The failure reason is split in two.** `MicrosoftAuthFailureReason` keeps only the four Entra refusals (`PersonalAccount`, `TenantMismatch`, `TenantNotAllowed`, `MissingAuthenticationContext`), in the result's `MicrosoftFailureReason`; every other refusal is the shared flow's `OpenIdConnectAuthFailureReason`, in `FlowFailureReason`. The result's `FailureReason` is gone: test the reason you handle on its own property, or read `FailureDetail` for the name. The names are unchanged, so stored audit records keep their meaning.
+9. **New refusal reasons** `RedirectUriMismatch`, `IssuerParameterMismatch`, `IssuerParameterMissing` and `ProviderChanged` appear in `FailureDetail`.
+10. **Behaviour**:
    - A refusal of the client itself (`invalid_client`, such as an expired client secret) now throws instead of returning `CodeRedemptionFailed`, so it surfaces as a 500 rather than a refused user.
    - On a flow that named a tenant, a token issued by another tenant is now `InvalidIssuer` with no subject, where it was `TenantMismatch` with the account.
    - `CallerBindingMismatch` is now refused before the code is redeemed, with no subject.
