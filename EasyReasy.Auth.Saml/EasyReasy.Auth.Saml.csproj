@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <!-- Not packed: the package has no public API, so a published package would offer nothing to call. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EasyReasy.Auth.Saml.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 4.22.2 and 4.22.3 carry security fixes to SAML message processing; never go below 4.22.3. -->
+    <PackageReference Include="ITfoxtec.Identity.Saml2" Version="4.22.3" />
+    <!-- These match the Microsoft.IdentityModel.Tokens.Saml version ITfoxtec pulls in, which lifts part of the
+         IdentityModel family; a mixed set rejects every token EasyReasy.Auth issues (IDX14102).
+         IdentityModelVersionAlignmentTests, linked into the test project, fails if they drift apart. -->
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.23.0" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.23.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EasyReasy.Auth\EasyReasy.Auth.csproj" />
+  </ItemGroup>
+
+</Project>
