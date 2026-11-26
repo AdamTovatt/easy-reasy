@@ -5,12 +5,12 @@ namespace EasyReasy.Auth.OpenIdConnect
     /// <summary>
     /// One OpenID Connect provider the application signs people in with: its issuer and the client registered there.
     /// The authorize and token endpoints and the signing keys come from the issuer's discovery document, whose issuer
-    /// must equal <see cref="Issuer"/>.
+    /// must equal <see cref="OpenIdConnectIssuer.Value"/>.
     /// </summary>
     /// <remarks>
     /// Returned by the application's <see cref="IOpenIdConnectProviderResolver"/> per request, so a provider can be added
-    /// or changed without a restart. It is checked each time it is resolved; a provider breaking a rule is a
-    /// configuration error, reported with every problem at once.
+    /// or changed without a restart. Checked when built: the constructor throws for a provider breaking a rule, so a
+    /// resolver can only return a usable one.
     /// </remarks>
     public sealed class OpenIdConnectProvider
     {
@@ -20,28 +20,65 @@ namespace EasyReasy.Auth.OpenIdConnect
         public const string DefaultScope = "openid profile email";
 
         /// <summary>
-        /// The placeholder a multi-tenant issuer template holds.
+        /// Builds a provider, checking every value.
         /// </summary>
-        public const string TenantIdPlaceholder = "{tenantid}";
+        /// <param name="issuer">The issuer, usually <see cref="OpenIdConnectIssuer.Fixed"/>.</param>
+        /// <param name="clientId">The client id registered at the provider.</param>
+        /// <param name="clientSecret">The client secret.</param>
+        /// <param name="redirectUris">The redirect URIs a flow with this provider may name (see
+        /// <see cref="RedirectUris"/>); at least one, each absolute https (http only on <c>localhost</c>, a name under it,
+        /// or a loopback address) without a fragment.</param>
+        /// <param name="clientAuthentication">How the client secret is sent to the token endpoint.</param>
+        /// <param name="signingAlgorithms">The algorithms an ID token may be signed with (see
+        /// <see cref="SigningAlgorithms"/>), or null for RS256 alone.</param>
+        /// <param name="scope">The space-separated scopes a flow asks for, holding <c>openid</c>.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="issuer"/> is null.</exception>
+        /// <exception cref="ArgumentException">A value breaks its rule, every problem reported at once.</exception>
+        public OpenIdConnectProvider(
+            OpenIdConnectIssuer issuer,
+            string clientId,
+            string clientSecret,
+            IReadOnlyList<string> redirectUris,
+            OpenIdConnectClientAuthentication clientAuthentication = OpenIdConnectClientAuthentication.ClientSecretBasic,
+            IReadOnlyList<string>? signingAlgorithms = null,
+            string scope = DefaultScope)
+        {
+            ArgumentNullException.ThrowIfNull(issuer);
+
+            // Copied, so a caller changing its list afterwards cannot change a checked provider.
+            IReadOnlyList<string> redirectUriCopy = redirectUris?.ToList() ?? [];
+            IReadOnlyList<string> signingAlgorithmCopy = signingAlgorithms?.ToList() ?? [SecurityAlgorithms.RsaSha256];
+
+            IReadOnlyList<string> problems = FindProblems(clientId, clientSecret, redirectUriCopy, clientAuthentication, signingAlgorithmCopy, scope);
+            if (problems.Count > 0)
+            {
+                throw new ArgumentException($"Invalid {nameof(OpenIdConnectProvider)}:\n{string.Join("\n", problems)}");
+            }
+
+            Issuer = issuer;
+            ClientId = clientId;
+            ClientSecret = clientSecret;
+            RedirectUris = redirectUriCopy;
+            ClientAuthentication = clientAuthentication;
+            SigningAlgorithms = signingAlgorithmCopy;
+            Scope = scope;
+        }
 
         /// <summary>
-        /// The issuer identifier, for example <c>https://acme.okta.com</c>. The discovery document's <c>issuer</c> and
-        /// every ID token's <c>iss</c> must equal it exactly, except with a <see cref="TenantClaim"/>: it is then the
-        /// template the discovery document names, and a token's <c>iss</c> is the template with its own tenant filled in.
-        /// Absolute https (http only on a loopback host), without a query or fragment.
+        /// The issuer, and where its discovery document is read from.
         /// </summary>
-        public required string Issuer { get; init; }
+        public OpenIdConnectIssuer Issuer { get; }
 
         /// <summary>
         /// The client id registered at the provider. An ID token's audience must hold it.
         /// </summary>
-        public required string ClientId { get; init; }
+        public string ClientId { get; }
 
         /// <summary>
         /// The client secret, sent to the token endpoint as <see cref="ClientAuthentication"/> says. It never reaches the
         /// browser.
         /// </summary>
-        public required string ClientSecret { get; init; }
+        public string ClientSecret { get; }
 
         /// <summary>
         /// The redirect URIs a flow with this provider may name, each registered at the provider. Give every provider
@@ -49,168 +86,79 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// another redirect URI than the flow named, which is what stops a provider from passing off another's
         /// response (a mix-up), and that only holds while no two providers share one. Matching is exact.
         /// </summary>
-        public required IReadOnlyList<string> RedirectUris { get; init; }
+        public IReadOnlyList<string> RedirectUris { get; }
 
         /// <summary>
         /// How the client secret is sent to the token endpoint. Defaults to
         /// <see cref="OpenIdConnectClientAuthentication.ClientSecretBasic"/>.
         /// </summary>
-        public OpenIdConnectClientAuthentication ClientAuthentication { get; init; } = OpenIdConnectClientAuthentication.ClientSecretBasic;
+        public OpenIdConnectClientAuthentication ClientAuthentication { get; }
 
         /// <summary>
         /// The algorithms an ID token may be signed with, each asymmetric (RS, PS or ES at 256, 384 or 512). Defaults to
         /// RS256 alone, which every provider supports. A token signed otherwise is refused.
         /// </summary>
-        public IReadOnlyList<string> SigningAlgorithms { get; init; } = [SecurityAlgorithms.RsaSha256];
+        public IReadOnlyList<string> SigningAlgorithms { get; }
 
         /// <summary>
-        /// The space-separated scopes a flow asks for. Must hold <c>openid</c>. Defaults to <see cref="DefaultScope"/>.
+        /// The space-separated scopes a flow asks for. Holds <c>openid</c>. Defaults to <see cref="DefaultScope"/>.
         /// </summary>
-        public string Scope { get; init; } = DefaultScope;
+        public string Scope { get; }
 
-        /// <summary>
-        /// Where the discovery document is read from, or null for <see cref="Issuer"/> followed by
-        /// <c>/.well-known/openid-configuration</c>. Its issuer must still equal <see cref="Issuer"/>.
-        /// </summary>
-        /// <remarks>
-        /// For a provider package whose issuer cannot be the address, such as Microsoft Entra ID's multi-tenant endpoint
-        /// (see <see cref="TenantClaim"/>). An application leaves it null.
-        /// </remarks>
-        public string? MetadataAddress { get; init; }
-
-        /// <summary>
-        /// For a multi-tenant provider whose discovery document names an issuer template holding <c>{tenantid}</c>, as
-        /// Microsoft Entra ID's <c>organizations</c> endpoint does: the ID token claim whose value replaces
-        /// <c>{tenantid}</c> to give the issuer that token must carry. <see cref="Issuer"/> is then that template, and
-        /// <see cref="MetadataAddress"/> must be set. Null, the default, for every other provider.
-        /// </summary>
-        public string? TenantClaim { get; init; }
-
-        /// <summary>
-        /// The address the discovery document is read from.
-        /// </summary>
-        internal string ResolvedMetadataAddress => MetadataAddress ?? $"{Issuer.TrimEnd('/')}/.well-known/openid-configuration";
-
-        /// <summary>
-        /// Whether an issuer can be this provider's: <see cref="Issuer"/> itself, or with a <see cref="TenantClaim"/>, the
-        /// template with a tenant (non-empty, with no <c>/</c>) in place of <c>{tenantid}</c>.
-        /// </summary>
-        /// <param name="issuer">The issuer to check.</param>
-        /// <returns>Whether it can be.</returns>
-        internal bool CanIssueAs(string? issuer)
-        {
-            if (issuer == null)
-            {
-                return false;
-            }
-
-            if (TenantClaim == null)
-            {
-                return string.Equals(issuer, Issuer, StringComparison.Ordinal);
-            }
-
-            int placeholder = Issuer.IndexOf(TenantIdPlaceholder, StringComparison.Ordinal);
-            string prefix = Issuer[..placeholder];
-            string suffix = Issuer[(placeholder + TenantIdPlaceholder.Length)..];
-
-            if (issuer.Length <= prefix.Length + suffix.Length
-                || !issuer.StartsWith(prefix, StringComparison.Ordinal)
-                || !issuer.EndsWith(suffix, StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            string tenant = issuer[prefix.Length..^suffix.Length];
-            return !tenant.Contains('/');
-        }
-
-        /// <summary>
-        /// Every problem with this provider, for the flow to report in one exception.
-        /// </summary>
-        /// <returns>One message per problem; empty when the provider is valid.</returns>
-        internal IReadOnlyList<string> FindProblems()
+        private static IReadOnlyList<string> FindProblems(
+            string clientId,
+            string clientSecret,
+            IReadOnlyList<string> redirectUris,
+            OpenIdConnectClientAuthentication clientAuthentication,
+            IReadOnlyList<string> signingAlgorithms,
+            string scope)
         {
             List<string> problems = new List<string>();
-            bool isTemplate = TenantClaim != null;
 
-            if (!OpenIdConnectAddress.TryParseFetchable(isTemplate ? Issuer?.Replace(TenantIdPlaceholder, "tenant", StringComparison.Ordinal) : Issuer, out Uri? issuer)
-                || !string.IsNullOrEmpty(issuer.Query)
-                || !string.IsNullOrEmpty(issuer.Fragment))
+            if (string.IsNullOrWhiteSpace(clientId))
             {
-                problems.Add($"{nameof(Issuer)} '{Issuer}' must be an absolute https URL (or http on a loopback host) without a query or fragment.");
+                problems.Add("The client id must not be blank.");
             }
 
-            if (string.IsNullOrWhiteSpace(ClientId))
+            if (string.IsNullOrWhiteSpace(clientSecret))
             {
-                problems.Add($"{nameof(ClientId)} must not be blank.");
+                problems.Add("The client secret must not be blank.");
             }
 
-            if (string.IsNullOrWhiteSpace(ClientSecret))
+            if (redirectUris.Count == 0)
             {
-                problems.Add($"{nameof(ClientSecret)} must not be blank.");
+                problems.Add("There must be at least one redirect URI.");
             }
 
-            if (RedirectUris == null || RedirectUris.Count == 0)
+            foreach (string? redirectUri in redirectUris)
             {
-                problems.Add($"{nameof(RedirectUris)} must hold at least one redirect URI.");
-            }
-            else
-            {
-                foreach (string? redirectUri in RedirectUris)
+                if (!OpenIdConnectAddress.TryParseBrowserFacing(redirectUri, out Uri? uri) || !string.IsNullOrEmpty(uri.Fragment))
                 {
-                    if (!OpenIdConnectAddress.TryParseBrowserFacing(redirectUri, out Uri? uri) || !string.IsNullOrEmpty(uri.Fragment))
-                    {
-                        problems.Add($"The redirect URI '{redirectUri}' must be an absolute https URL (or http on localhost, a name under it, or a loopback address) without a fragment.");
-                    }
+                    problems.Add($"The redirect URI '{redirectUri}' must be an absolute https URL (or http on localhost, a name under it, or a loopback address) without a fragment.");
                 }
             }
 
-            if (!Enum.IsDefined(ClientAuthentication))
+            if (!Enum.IsDefined(clientAuthentication))
             {
-                problems.Add($"{nameof(ClientAuthentication)} {(int)ClientAuthentication} is not a {nameof(OpenIdConnectClientAuthentication)} member.");
+                problems.Add($"The client authentication {(int)clientAuthentication} is not a {nameof(OpenIdConnectClientAuthentication)} member.");
             }
 
-            if (SigningAlgorithms == null || SigningAlgorithms.Count == 0)
+            if (signingAlgorithms.Count == 0)
             {
-                problems.Add($"{nameof(SigningAlgorithms)} must hold at least one algorithm.");
+                problems.Add("There must be at least one signing algorithm.");
             }
-            else
+
+            foreach (string? algorithm in signingAlgorithms)
             {
-                foreach (string? algorithm in SigningAlgorithms)
+                if (algorithm == null || !OpenIdConnectSigningAlgorithms.Asymmetric.Contains(algorithm))
                 {
-                    if (algorithm == null || !OpenIdConnectSigningAlgorithms.Asymmetric.Contains(algorithm))
-                    {
-                        problems.Add($"The signing algorithm '{algorithm}' is not one of the asymmetric algorithms allowed: {string.Join(", ", OpenIdConnectSigningAlgorithms.Asymmetric)}.");
-                    }
+                    problems.Add($"The signing algorithm '{algorithm}' is not one of the asymmetric algorithms allowed: {string.Join(", ", OpenIdConnectSigningAlgorithms.Asymmetric)}.");
                 }
             }
 
-            if (Scope == null || !Scope.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("openid", StringComparer.Ordinal))
+            if (scope == null || !scope.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains("openid", StringComparer.Ordinal))
             {
-                problems.Add($"{nameof(Scope)} '{Scope}' must hold the 'openid' scope.");
-            }
-
-            if (MetadataAddress != null && !OpenIdConnectAddress.TryParseFetchable(MetadataAddress, out Uri? _))
-            {
-                problems.Add($"{nameof(MetadataAddress)} '{MetadataAddress}' must be an absolute https URL (or http on a loopback host).");
-            }
-
-            if (isTemplate)
-            {
-                if (string.IsNullOrWhiteSpace(TenantClaim))
-                {
-                    problems.Add($"{nameof(TenantClaim)} must be null or non-blank.");
-                }
-
-                if (Issuer == null || !Issuer.Contains(TenantIdPlaceholder, StringComparison.Ordinal))
-                {
-                    problems.Add($"{nameof(Issuer)} must hold '{TenantIdPlaceholder}' when {nameof(TenantClaim)} is set.");
-                }
-
-                if (MetadataAddress == null)
-                {
-                    problems.Add($"{nameof(MetadataAddress)} must be set when {nameof(TenantClaim)} is set, since a template is no address.");
-                }
+                problems.Add($"The scope '{scope}' must hold the 'openid' scope.");
             }
 
             return problems;

@@ -9,7 +9,8 @@ namespace EasyReasy.Auth.OpenIdConnect
     /// </summary>
     /// <remarks>
     /// An application that keeps its own audit of each sign-in writes it from this result: the caller binding, the
-    /// account and, in <see cref="UserInfo"/>, <c>auth_time</c>, <c>acr</c> and <c>amr</c>.
+    /// account and, in <see cref="UserInfo"/>, <c>auth_time</c>, <c>acr</c> and <c>amr</c>, with any required claims in
+    /// its <see cref="OpenIdConnectUserInfo.Claims"/>.
     /// </remarks>
     public sealed class OpenIdConnectAuthCompletionResult
     {

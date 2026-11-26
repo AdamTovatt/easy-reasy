@@ -87,6 +87,12 @@ namespace EasyReasy.Auth.OpenIdConnect
         public IReadOnlyList<string>? AcceptedAmrValues { get; init; }
 
         /// <summary>
+        /// The required claim values, or null.
+        /// </summary>
+        [JsonPropertyName("q")]
+        public IReadOnlyDictionary<string, string>? RequiredClaimValues { get; init; }
+
+        /// <summary>
         /// The expected identity's issuer, or null. Begin checked it can be the provider's.
         /// </summary>
         [JsonPropertyName("x")]

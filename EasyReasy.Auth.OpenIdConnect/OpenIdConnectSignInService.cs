@@ -29,20 +29,17 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// </summary>
         internal const int MaxLoginHintLength = 256;
 
-        private readonly OpenIdConnectCodeFlow _flow;
-        private readonly IOpenIdConnectProviderResolver _resolver;
+        private readonly IOpenIdConnectAuthService _authService;
         private readonly IOpenIdConnectAuthHandler _handler;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="OpenIdConnectSignInService"/> class.
         /// </summary>
-        /// <param name="flow">The application's flow.</param>
-        /// <param name="resolver">The consumer-provided resolver of the providers.</param>
+        /// <param name="authService">The OpenID Connect auth service for beginning and completing the flow.</param>
         /// <param name="handler">The consumer-provided handler for the sign-in's rules and the verified user.</param>
-        public OpenIdConnectSignInService(OpenIdConnectCodeFlow flow, IOpenIdConnectProviderResolver resolver, IOpenIdConnectAuthHandler handler)
+        public OpenIdConnectSignInService(IOpenIdConnectAuthService authService, IOpenIdConnectAuthHandler handler)
         {
-            _flow = flow;
-            _resolver = resolver;
+            _authService = authService;
             _handler = handler;
         }
 
@@ -53,9 +50,10 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// <param name="loginHint">The login hint from the browser, or null. A blank one, or one longer than
         /// <see cref="MaxLoginHintLength"/>, is not sent.</param>
         /// <param name="httpContext">The begin request, which the binding cookie is set on.</param>
-        /// <returns>Where to send the browser, or null when the provider key resolves to no provider.</returns>
+        /// <returns>Where to send the browser, or null when the provider key is blank, not offered for sign-in by the
+        /// handler, or resolves to no provider.</returns>
         /// <exception cref="ArgumentException">The handler's settings are refused by
-        /// <see cref="OpenIdConnectCodeFlow.BeginAsync"/>.</exception>
+        /// <see cref="IOpenIdConnectAuthService.BeginAsync"/>.</exception>
         public async Task<OpenIdConnectSignInBeginResponse?> BeginAsync(string? providerKey, string? loginHint, HttpContext httpContext)
         {
             if (string.IsNullOrWhiteSpace(providerKey))
@@ -63,15 +61,13 @@ namespace EasyReasy.Auth.OpenIdConnect
                 return null;
             }
 
-            OpenIdConnectProvider? provider = await _resolver.FindProviderAsync(providerKey, httpContext.RequestAborted);
-            if (provider == null)
+            OpenIdConnectSignInSettings? settings = await _handler.GetSignInSettingsAsync(providerKey, httpContext);
+            if (settings == null)
             {
                 return null;
             }
 
-            OpenIdConnectSignInSettings settings = await _handler.GetSignInSettingsAsync(providerKey, httpContext);
-
-            OpenIdConnectAuthBeginResult begun = await _flow.BeginAsync(provider, new OpenIdConnectAuthBeginRequest
+            OpenIdConnectAuthBeginResult? begun = await _authService.BeginAsync(new OpenIdConnectAuthBeginRequest
             {
                 ProviderKey = providerKey,
                 RedirectUri = settings.RedirectUri,
@@ -81,9 +77,10 @@ namespace EasyReasy.Auth.OpenIdConnect
                 MaxAuthenticationAge = settings.MaxAuthenticationAge,
                 AcceptedAcrValues = settings.AcceptedAcrValues,
                 AcceptedAmrValues = settings.AcceptedAmrValues,
-            }, httpContext, cancellationToken: httpContext.RequestAborted);
+                RequiredClaimValues = settings.RequiredClaimValues,
+            }, httpContext, httpContext.RequestAborted);
 
-            return new OpenIdConnectSignInBeginResponse(begun.AuthorizationUrl);
+            return begun == null ? null : new OpenIdConnectSignInBeginResponse(begun.AuthorizationUrl);
         }
 
         /// <summary>
@@ -107,8 +104,7 @@ namespace EasyReasy.Auth.OpenIdConnect
             IRefreshTokenService? refreshTokenService,
             HttpContext httpContext)
         {
-            OpenIdConnectAuthCompletionResult completion = OpenIdConnectAuthCompletionResult.From(
-                await _flow.CompleteAsync(response, _resolver, httpContext, httpContext.RequestAborted));
+            OpenIdConnectAuthCompletionResult completion = await _authService.CompleteAsync(response, httpContext, httpContext.RequestAborted);
             string? attemptedSubject = completion.AttemptedIdentity?.ToString();
 
             if (!completion.Success)
@@ -170,7 +166,9 @@ namespace EasyReasy.Auth.OpenIdConnect
                     or OpenIdConnectAuthFailureReason.MissingAcr
                     or OpenIdConnectAuthFailureReason.AcrNotAccepted
                     or OpenIdConnectAuthFailureReason.MissingAmr
-                    or OpenIdConnectAuthFailureReason.AmrNotAccepted => ExternalAuthFailureReason.Rejected,
+                    or OpenIdConnectAuthFailureReason.AmrNotAccepted
+                    or OpenIdConnectAuthFailureReason.MissingRequiredClaim
+                    or OpenIdConnectAuthFailureReason.RequiredClaimMismatch => ExternalAuthFailureReason.Rejected,
                 _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "The refusal reason has no category."),
             };
         }

@@ -12,7 +12,8 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// <summary>
         /// Adds the two OpenID Connect sign-in endpoints. <c>POST /api/auth/oidc/begin</c> takes a JSON body with the
         /// <c>providerKey</c> the person chose and an optional <c>loginHint</c>, sets the flow's binding cookie and returns
-        /// the <c>authorizationUrl</c> to send the browser to, or 400 when the key resolves to no provider.
+        /// the <c>authorizationUrl</c> to send the browser to, or 400 when the key is missing or blank, the handler does not
+        /// offer it for sign-in, or it resolves to no provider.
         /// <c>POST /api/auth/oidc</c> takes a JSON body with the <c>code</c>, <c>state</c> and <c>iss</c> the provider's
         /// redirect brought back and the <c>redirectUri</c> it arrived at, and answers like the other sign-in endpoints:
         /// 200 with the <see cref="AuthResponse"/>, or 401.
@@ -20,7 +21,8 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// <remarks>
         /// Both endpoints are anonymous (so they stay reachable when the application applies a global authorization
         /// policy) and set <c>Cache-Control: no-store</c>, matching the built-in EasyReasy.Auth endpoints. The redirect URI,
-        /// prompt, max authentication age and accepted <c>acr</c> and <c>amr</c> values of a sign-in come from
+        /// prompt, max authentication age, accepted <c>acr</c> and <c>amr</c> values and required claim values of a sign-in
+        /// come from
         /// <see cref="IOpenIdConnectAuthHandler.GetSignInSettingsAsync"/>, never from the browser, which chooses only the
         /// provider.
         /// <para>
@@ -49,26 +51,24 @@ namespace EasyReasy.Auth.OpenIdConnect
 
             app.MapPost("/api/auth/oidc/begin", async (
                 OpenIdConnectSignInBeginRequest request,
-                [FromKeyedServices(OpenIdConnectAuthServiceCollectionExtensions.ApplicationFlowKey)] OpenIdConnectCodeFlow flow,
-                IOpenIdConnectProviderResolver resolver,
+                IOpenIdConnectAuthService authService,
                 IOpenIdConnectAuthHandler handler,
                 HttpContext httpContext) =>
             {
                 httpContext.SetNoStoreCacheControl();
 
-                OpenIdConnectSignInService signInService = new OpenIdConnectSignInService(flow, resolver, handler);
+                OpenIdConnectSignInService signInService = new OpenIdConnectSignInService(authService, handler);
                 OpenIdConnectSignInBeginResponse? response = await signInService.BeginAsync(request.ProviderKey, request.LoginHint, httpContext);
                 return response == null ? Results.BadRequest() : Results.Ok(response);
             }).AllowAnonymous();
 
             app.MapPost("/api/auth/oidc", (
                 OpenIdConnectAuthorizationResponse request,
-                [FromKeyedServices(OpenIdConnectAuthServiceCollectionExtensions.ApplicationFlowKey)] OpenIdConnectCodeFlow flow,
-                IOpenIdConnectProviderResolver resolver,
+                IOpenIdConnectAuthService authService,
                 IOpenIdConnectAuthHandler handler,
                 HttpContext httpContext) =>
             {
-                OpenIdConnectSignInService signInService = new OpenIdConnectSignInService(flow, resolver, handler);
+                OpenIdConnectSignInService signInService = new OpenIdConnectSignInService(authService, handler);
                 return ExternalSignInEndpoint.HandleAsync(httpContext, (jwtTokenService, refreshTokenService) =>
                     signInService.AuthenticateAsync(request, jwtTokenService, refreshTokenService, httpContext));
             }).AllowAnonymous();
@@ -85,7 +85,6 @@ namespace EasyReasy.Auth.OpenIdConnect
             IServiceProviderIsService serviceCheck = app.Services.GetRequiredService<IServiceProviderIsService>();
             List<string> errors = new List<string>();
 
-            // The interface and the keyed flow the endpoints use are registered together by AddEasyReasyOpenIdConnectAuth.
             if (!serviceCheck.IsService(typeof(IOpenIdConnectAuthService)))
             {
                 errors.Add(
@@ -95,10 +94,7 @@ namespace EasyReasy.Auth.OpenIdConnect
 
             if (!serviceCheck.IsService(typeof(IOpenIdConnectProviderResolver)))
             {
-                errors.Add(
-                    $"{nameof(IOpenIdConnectProviderResolver)} is not registered in the DI container. " +
-                    $"Register your resolver before {nameof(AddOpenIdConnectAuthEndpoints)}, e.g.: " +
-                    $"builder.Services.AddScoped<{nameof(IOpenIdConnectProviderResolver)}, MyProviderResolver>();");
+                errors.Add(OpenIdConnectAuthServiceCollectionExtensions.ResolverNotRegisteredMessage);
             }
 
             if (!serviceCheck.IsService(typeof(IOpenIdConnectAuthHandler)))

@@ -35,9 +35,8 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <!-- The same version EasyReasy.Auth references, so the IdentityModel family resolves at one version
-         (IdentityModelVersionAlignmentTests, linked into the test project, fails if they drift apart). -->
-    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.1" />
+    <!-- No IdentityModel reference of its own: EasyReasy.Auth brings the whole family at one version, which
+         IdentityModelVersionAlignmentTests, linked into the test project, guards. -->
   </ItemGroup>
 
   <ItemGroup>

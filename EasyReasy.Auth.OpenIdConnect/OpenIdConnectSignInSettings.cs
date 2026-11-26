@@ -32,5 +32,10 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// The <c>amr</c> values the sign-in accepts, or null. See <see cref="OpenIdConnectAuthBeginRequest.AcceptedAmrValues"/>.
         /// </summary>
         public IReadOnlyList<string>? AcceptedAmrValues { get; init; }
+
+        /// <summary>
+        /// The claim values the sign-in requires, or null. See <see cref="OpenIdConnectAuthBeginRequest.RequiredClaimValues"/>.
+        /// </summary>
+        public IReadOnlyDictionary<string, string>? RequiredClaimValues { get; init; }
     }
 }

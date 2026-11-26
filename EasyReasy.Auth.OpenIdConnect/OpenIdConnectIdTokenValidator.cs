@@ -11,8 +11,8 @@ namespace EasyReasy.Auth.OpenIdConnect
     /// identity out.
     /// </summary>
     /// <remarks>
-    /// Checks the token, not the flow: the identity, sign-in time, <c>acr</c> and <c>amr</c> rules a flow was begun with
-    /// are applied afterwards by <see cref="OpenIdConnectCodeFlow"/>.
+    /// Checks the token, not the flow: the identity, sign-in time, <c>acr</c>, <c>amr</c> and required claim rules a flow
+    /// was begun with are applied afterwards by <see cref="OpenIdConnectCodeFlow"/>.
     /// </remarks>
     internal sealed class OpenIdConnectIdTokenValidator
     {
@@ -85,28 +85,25 @@ namespace EasyReasy.Auth.OpenIdConnect
                 LifetimeValidator = TimeProviderLifetimeValidator.Create(_timeProvider),
             };
 
-            if (provider.TenantClaim is string tenantClaim)
+            if (provider.Issuer.IsTemplate)
             {
-                parameters.IssuerValidator = (issuer, securityToken, _) => ValidateTemplateIssuer(provider.Issuer, tenantClaim, issuer, securityToken);
+                parameters.IssuerValidator = (issuer, securityToken, _) => ValidateTemplateIssuer(provider.Issuer, issuer, securityToken);
             }
             else
             {
-                parameters.ValidIssuer = provider.Issuer;
+                parameters.ValidIssuer = provider.Issuer.Value;
             }
 
             return parameters;
         }
 
         /// <summary>
-        /// The multi-tenant issuer rule: the issuer must be the template with the token's own tenant claim in place of
-        /// <c>{tenantid}</c>, since the discovery document names only the template.
+        /// The multi-tenant issuer rule, which the handler cannot apply itself since the discovery document names only the
+        /// template.
         /// </summary>
-        private static string ValidateTemplateIssuer(string template, string tenantClaim, string issuer, SecurityToken securityToken)
+        private static string ValidateTemplateIssuer(OpenIdConnectIssuer template, string issuer, SecurityToken securityToken)
         {
-            if (securityToken is JsonWebToken token
-                && token.TryGetPayloadValue(tenantClaim, out string? tenantId)
-                && !string.IsNullOrEmpty(tenantId)
-                && string.Equals(issuer, template.Replace(OpenIdConnectProvider.TenantIdPlaceholder, tenantId, StringComparison.Ordinal), StringComparison.Ordinal))
+            if (securityToken is JsonWebToken token && template.IsTokenIssuer(issuer, token))
             {
                 return issuer;
             }

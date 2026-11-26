@@ -9,13 +9,20 @@ namespace EasyReasy.Auth.OpenIdConnect
     public static class OpenIdConnectAuthServiceCollectionExtensions
     {
         /// <summary>
-        /// The service key the application's <see cref="OpenIdConnectCodeFlow"/> is registered under, for the service and
-        /// the sign-in endpoints to share it.
+        /// The service key the application's <see cref="OpenIdConnectCodeFlow"/> is registered under, which only the
+        /// <see cref="IOpenIdConnectAuthService"/> registration uses.
         /// </summary>
-        internal const string ApplicationFlowKey = "EasyReasy.Auth.OpenIdConnect:application";
+        private const string ApplicationFlowKey = "EasyReasy.Auth.OpenIdConnect:application";
 
         /// <summary>
-        /// Registers <see cref="IOpenIdConnectAuthService"/> and what it needs. Register an
+        /// What resolving the service, or adding the endpoints, says when no resolver is registered.
+        /// </summary>
+        internal const string ResolverNotRegisteredMessage =
+            $"{nameof(IOpenIdConnectProviderResolver)} is not registered in the DI container. Register your resolver, e.g.: " +
+            $"builder.Services.AddScoped<{nameof(IOpenIdConnectProviderResolver)}, MyProviderResolver>();";
+
+        /// <summary>
+        /// Registers <see cref="IOpenIdConnectAuthService"/> (scoped) and what it needs. Register an
         /// <see cref="IOpenIdConnectProviderResolver"/> too, which supplies the providers. To also serve the sign-in
         /// endpoints, register an <see cref="IOpenIdConnectAuthHandler"/> and call
         /// <see cref="OpenIdConnectAuthApplicationBuilderExtensions.AddOpenIdConnectAuthEndpoints"/>.
@@ -56,8 +63,9 @@ namespace EasyReasy.Auth.OpenIdConnect
                 copy,
                 serviceProvider.GetRequiredService<IHttpClientFactory>(),
                 serviceProvider.GetRequiredService<TimeProvider>()));
-            services.AddSingleton<IOpenIdConnectAuthService>(serviceProvider =>
-                new OpenIdConnectAuthService(serviceProvider.GetRequiredKeyedService<OpenIdConnectCodeFlow>(ApplicationFlowKey)));
+            services.AddScoped<IOpenIdConnectAuthService>(serviceProvider => new OpenIdConnectAuthService(
+                serviceProvider.GetRequiredKeyedService<OpenIdConnectCodeFlow>(ApplicationFlowKey),
+                serviceProvider.GetService<IOpenIdConnectProviderResolver>() ?? throw new InvalidOperationException(ResolverNotRegisteredMessage)));
 
             return services;
         }

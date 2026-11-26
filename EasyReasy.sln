@@ -41,6 +41,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.Testing.Test
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.OpenIdConnect", "EasyReasy.Auth.OpenIdConnect\EasyReasy.Auth.OpenIdConnect.csproj", "{EE0E6061-5B1C-488E-8A65-FF9728F1189F}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EasyReasy.Auth.OpenIdConnect.Tests", "EasyReasy.Auth.OpenIdConnect.Tests\EasyReasy.Auth.OpenIdConnect.Tests.csproj", "{12B36DA6-FC26-449A-A426-0730D4F32592}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -123,6 +125,10 @@ Global
 		{EE0E6061-5B1C-488E-8A65-FF9728F1189F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EE0E6061-5B1C-488E-8A65-FF9728F1189F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EE0E6061-5B1C-488E-8A65-FF9728F1189F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{12B36DA6-FC26-449A-A426-0730D4F32592}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{12B36DA6-FC26-449A-A426-0730D4F32592}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{12B36DA6-FC26-449A-A426-0730D4F32592}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{12B36DA6-FC26-449A-A426-0730D4F32592}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
