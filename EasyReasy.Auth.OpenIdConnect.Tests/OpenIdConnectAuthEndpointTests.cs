@@ -128,7 +128,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
         public async Task Begin_LoginHintOverTheLimitIsNotSentAndOneAtTheLimitIs()
         {
             await using OpenIdConnectAuthEndpointHost host = await OpenIdConnectAuthEndpointHost.StartAsync();
-            string atLimit = new string('a', OpenIdConnectSignInService.MaxLoginHintLength);
+            string atLimit = new string('a', OpenIdConnectLoginHint.MaxLength);
 
             string withLongHint = await host.BeginAsync(host.CreateBrowser(), atLimit + "a");
             string withHintAtLimit = await host.BeginAsync(host.CreateBrowser(), atLimit);

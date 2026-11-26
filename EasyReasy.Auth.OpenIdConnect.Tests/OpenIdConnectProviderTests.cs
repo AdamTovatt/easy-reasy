@@ -35,7 +35,12 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
         [DataRow("http://app.example/callback")]
         [DataRow("https://app.example/callback#fragment")]
         [DataRow("/callback")]
-        public void Constructor_RedirectUriNotAnHttpsUrlWithoutFragment_ThrowsNamingIt(string redirectUri)
+        [DataRow("https://app.example/callback?x=y")]
+        [DataRow("https://App.example/callback")]
+        [DataRow("https://app.example:443/callback")]
+        [DataRow("https://user@app.example/callback")]
+        [DataRow("https://app.example")]
+        public void Constructor_RedirectUriNotAnHttpsOriginPlusPath_ThrowsNamingIt(string redirectUri)
         {
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => Create(redirectUris: [redirectUri]));
 

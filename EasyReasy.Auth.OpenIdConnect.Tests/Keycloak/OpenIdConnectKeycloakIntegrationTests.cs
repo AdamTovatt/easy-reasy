@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 
 namespace EasyReasy.Auth.OpenIdConnect.Tests
 {
@@ -49,6 +50,10 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
             Assert.IsNotNull(result.UserInfo.AuthenticationTime);
             Assert.AreEqual(Realm.Issuer, response.Issuer);
             Assert.AreEqual(0, OpenIdConnectAuthHarness.CountBindingCookies(browser));
+            // Keycloak publishes its signing certificate, so the returned key carries it for checking the token later.
+            using JsonDocument key = JsonDocument.Parse(result.IdTokenSigningKey);
+            Assert.AreEqual("RSA", key.RootElement.GetProperty("kty").GetString());
+            Assert.IsTrue(key.RootElement.GetProperty("x5c").GetArrayLength() > 0, result.IdTokenSigningKey);
         }
 
         [TestMethod]

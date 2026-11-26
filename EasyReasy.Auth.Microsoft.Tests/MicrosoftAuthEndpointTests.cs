@@ -83,7 +83,7 @@ namespace EasyReasy.Auth.Microsoft.Tests
         public async Task Begin_LoginHintOverTheLimit_SendsNoneAndOneAtTheLimitIsSent()
         {
             await using MicrosoftAuthEndpointHost host = await MicrosoftAuthEndpointHost.StartAsync();
-            string atTheLimit = new string('a', MicrosoftSignInService.MaxLoginHintLength);
+            string atTheLimit = new string('a', OpenIdConnectLoginHint.MaxLength);
 
             string withLongHint = await host.BeginAsync(host.CreateBrowser(), new { loginHint = atTheLimit + "a" });
             string withHintAtTheLimit = await host.BeginAsync(host.CreateBrowser(), new { loginHint = atTheLimit });

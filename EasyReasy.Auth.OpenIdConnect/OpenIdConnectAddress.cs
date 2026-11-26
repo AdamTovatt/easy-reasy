@@ -3,15 +3,15 @@ using System.Diagnostics.CodeAnalysis;
 namespace EasyReasy.Auth.OpenIdConnect
 {
     /// <summary>
-    /// The two rules for an address this package uses, both absolute and https, differing only in which plain-http hosts
-    /// they allow: the server's own fetches stay on loopback, and an address the browser goes to follows the browser's
-    /// secure-context rule.
+    /// The rules for an address this package uses, all absolute and https, differing only in which plain-http hosts they
+    /// allow: the server's own fetches stay on loopback, an address a provider's document names may use it only for a
+    /// local provider, and an address the browser goes to follows the browser's secure-context rule.
     /// </summary>
     internal static class OpenIdConnectAddress
     {
         /// <summary>
-        /// Whether the server may fetch from or post to an address (an issuer, a discovery document, a key set, a token
-        /// endpoint): https, or http on a loopback address or <c>localhost</c>, which resolve to this machine alone.
+        /// Whether the server may fetch from an address the application configured (an issuer, a discovery document):
+        /// https, or http on a loopback address or <c>localhost</c>, which resolve to this machine alone.
         /// </summary>
         /// <param name="address">The address to check.</param>
         /// <param name="uri">The parsed address, when it is allowed.</param>
@@ -19,6 +19,21 @@ namespace EasyReasy.Auth.OpenIdConnect
         public static bool TryParseFetchable(string? address, [NotNullWhen(true)] out Uri? uri)
         {
             return TryParse(address, parsed => parsed.IsLoopback, out uri);
+        }
+
+        /// <summary>
+        /// Whether the server may fetch from or post to an address a provider's discovery document named (a key set, a
+        /// token endpoint): https, and http on a loopback host only for a provider whose own discovery address is such
+        /// a local one. A remote provider's document cannot point the server at this machine's own plain-http services.
+        /// </summary>
+        /// <param name="address">The address the document named.</param>
+        /// <param name="metadataAddress">The provider's discovery address, which the application configured.</param>
+        /// <param name="uri">The parsed address, when it is allowed.</param>
+        /// <returns><c>true</c> when the address is allowed.</returns>
+        public static bool TryParseFetchableFrom(string? address, string metadataAddress, [NotNullWhen(true)] out Uri? uri)
+        {
+            bool providerIsLocal = TryParseFetchable(metadataAddress, out Uri? metadata) && metadata.Scheme == Uri.UriSchemeHttp;
+            return TryParse(address, parsed => providerIsLocal && parsed.IsLoopback, out uri);
         }
 
         /// <summary>

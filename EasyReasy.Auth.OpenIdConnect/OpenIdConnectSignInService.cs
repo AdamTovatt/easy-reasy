@@ -22,13 +22,6 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// </summary>
         internal const string SignInCallerBinding = "easyreasy.auth.openidconnect:sign-in";
 
-        /// <summary>
-        /// The longest login hint the begin endpoint passes on; a longer one is ignored. Longer than any sign-in name (an
-        /// email address is at most 254 characters), so it only stops an anonymous caller from having an arbitrarily large
-        /// authorize URL built and returned.
-        /// </summary>
-        internal const int MaxLoginHintLength = 256;
-
         private readonly IOpenIdConnectAuthService _authService;
         private readonly IOpenIdConnectAuthHandler _handler;
 
@@ -48,7 +41,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// </summary>
         /// <param name="providerKey">The provider key from the browser.</param>
         /// <param name="loginHint">The login hint from the browser, or null. A blank one, or one longer than
-        /// <see cref="MaxLoginHintLength"/>, is not sent.</param>
+        /// <see cref="OpenIdConnectLoginHint.MaxLength"/>, is not sent.</param>
         /// <param name="httpContext">The begin request, which the binding cookie is set on.</param>
         /// <returns>Where to send the browser, or null when the provider key is blank, not offered for sign-in by the
         /// handler, or resolves to no provider.</returns>
@@ -73,7 +66,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 RedirectUri = settings.RedirectUri,
                 CallerBinding = SignInCallerBinding,
                 Prompt = settings.Prompt,
-                LoginHint = string.IsNullOrWhiteSpace(loginHint) || loginHint.Length > MaxLoginHintLength ? null : loginHint,
+                LoginHint = OpenIdConnectLoginHint.FromBrowser(loginHint),
                 MaxAuthenticationAge = settings.MaxAuthenticationAge,
                 AcceptedAcrValues = settings.AcceptedAcrValues,
                 AcceptedAmrValues = settings.AcceptedAmrValues,

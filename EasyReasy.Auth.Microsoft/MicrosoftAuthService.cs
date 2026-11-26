@@ -45,9 +45,7 @@ namespace EasyReasy.Auth.Microsoft
                 Nonce = request.Nonce,
                 LoginHint = request.LoginHint,
                 MaxAuthenticationAge = request.MaxAuthenticationAge,
-                RequiredClaimValues = request.RequiredAuthenticationContextId is string contextId
-                    ? new Dictionary<string, string> { [MicrosoftAuthority.AuthenticationContextClaim] = contextId }
-                    : null,
+                RequiredClaimValues = MicrosoftAuthenticationContextRule.ToRequiredClaims(request.RequiredAuthenticationContextId),
             };
 
             return await _flow.BeginAsync(flowRequest, _resolver, httpContext, cancellationToken)
@@ -84,9 +82,9 @@ namespace EasyReasy.Auth.Microsoft
 
             if (!result.Success)
             {
-                // The authentication context is the one required claim this package asks for, so a refusal of it is
-                // the context's own Entra reason; every other rule's refusal passes through as the flow gave it.
-                return result.FailureReason is OpenIdConnectAuthFailureReason.MissingRequiredClaim or OpenIdConnectAuthFailureReason.RequiredClaimMismatch
+                // A refusal of the authentication context is the context's own Entra reason; every other rule's
+                // refusal passes through as the flow gave it.
+                return MicrosoftAuthenticationContextRule.IsRefusalOfTheContext(result.FailureReason.Value)
                     ? MicrosoftAuthCompletionResult.Refused(MicrosoftAuthFailureReason.MissingAuthenticationContext, userInfo)
                     : MicrosoftAuthCompletionResult.Refused(result.FailureReason.Value, userInfo);
             }
@@ -123,12 +121,12 @@ namespace EasyReasy.Auth.Microsoft
         /// </summary>
         private static MicrosoftUserInfo? ReadIdentity(OpenIdConnectUserInfo token)
         {
-            if (!Guid.TryParse(FindClaim(token, MicrosoftAuthority.TenantClaim), out Guid tenantId))
+            if (!Guid.TryParse(token.FindClaimValue(MicrosoftAuthority.TenantClaim), out Guid tenantId))
             {
                 return null;
             }
 
-            string? objectId = FindClaim(token, MicrosoftAuthority.ObjectIdClaim);
+            string? objectId = token.FindClaimValue(MicrosoftAuthority.ObjectIdClaim);
             if (string.IsNullOrWhiteSpace(objectId))
             {
                 return null;
@@ -140,16 +138,11 @@ namespace EasyReasy.Auth.Microsoft
                 ObjectId = objectId,
                 AuthenticationTime = token.AuthenticationTime,
                 Nonce = token.Nonce,
-                PreferredUsername = FindClaim(token, MicrosoftAuthority.PreferredUsernameClaim),
+                PreferredUsername = token.FindClaimValue(MicrosoftAuthority.PreferredUsernameClaim),
                 Name = token.Name,
                 AuthenticationMethods = token.AuthenticationMethods,
-                AuthenticationContextIds = token.Claims.Where(claim => claim.Type == MicrosoftAuthority.AuthenticationContextClaim).Select(claim => claim.Value).ToList(),
+                AuthenticationContextIds = token.GetClaimValues(MicrosoftAuthority.AuthenticationContextClaim),
             };
-        }
-
-        private static string? FindClaim(OpenIdConnectUserInfo token, string type)
-        {
-            return token.Claims.FirstOrDefault(claim => claim.Type == type)?.Value;
         }
 
         private static void ValidateEntraRules(MicrosoftAuthBeginRequest request)

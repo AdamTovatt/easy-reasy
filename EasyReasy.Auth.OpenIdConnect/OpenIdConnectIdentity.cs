@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace EasyReasy.Auth.OpenIdConnect
 {
@@ -15,6 +16,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// <param name="issuer">The issuer (the ID token's <c>iss</c>).</param>
         /// <param name="subject">The subject (the ID token's <c>sub</c>).</param>
         /// <exception cref="ArgumentException">Either part is null or blank.</exception>
+        [JsonConstructor]
         public OpenIdConnectIdentity(string issuer, string subject)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(issuer);

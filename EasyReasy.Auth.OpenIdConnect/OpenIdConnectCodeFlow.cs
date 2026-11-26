@@ -44,6 +44,11 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// </summary>
         private static readonly IReadOnlySet<string> ReservedClaimRequests = new HashSet<string>(StringComparer.Ordinal) { "auth_time", "acr", "amr" };
 
+        /// <summary>
+        /// The required claim values of a request or state that names none.
+        /// </summary>
+        private static readonly IReadOnlyDictionary<string, string> NoRequiredClaims = new Dictionary<string, string>();
+
         private readonly TimeSpan _stateLifetime;
         private readonly JsonSealer _stateSealer;
         private readonly OpenIdConnectDiscovery _discovery;
@@ -146,8 +151,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 AcceptedAcrValues = request.AcceptedAcrValues?.ToList(),
                 AcceptedAmrValues = request.AcceptedAmrValues?.ToList(),
                 RequiredClaimValues = request.RequiredClaimValues?.ToDictionary(StringComparer.Ordinal),
-                ExpectedIssuer = request.ExpectedIdentity?.Issuer,
-                ExpectedSubject = request.ExpectedIdentity?.Subject,
+                ExpectedIdentity = request.ExpectedIdentity,
             };
             string protectedState = _stateSealer.Seal(state);
 
@@ -326,9 +330,7 @@ namespace EasyReasy.Auth.OpenIdConnect
         private OpenIdConnectAuthFailureReason? CheckFlowRules(OpenIdConnectUserInfo userInfo, OpenIdConnectState flow)
         {
             // The whole identity: with a multi-tenant provider the issuer names the tenant, so it is part of the account.
-            if (flow.ExpectedIssuer != null
-                && flow.ExpectedSubject != null
-                && userInfo.Identity != new OpenIdConnectIdentity(flow.ExpectedIssuer, flow.ExpectedSubject))
+            if (flow.ExpectedIdentity is OpenIdConnectIdentity expected && userInfo.Identity != expected)
             {
                 return OpenIdConnectAuthFailureReason.IdentityMismatch;
             }
@@ -359,10 +361,10 @@ namespace EasyReasy.Auth.OpenIdConnect
                 }
             }
 
-            foreach (KeyValuePair<string, string> required in flow.RequiredClaimValues ?? new Dictionary<string, string>())
+            foreach (KeyValuePair<string, string> required in flow.RequiredClaimValues ?? NoRequiredClaims)
             {
                 // The token's claims hold an array claim as one claim per element, so "equals or, as an array, holds".
-                List<string> values = userInfo.Claims.Where(claim => claim.Type == required.Key).Select(claim => claim.Value).ToList();
+                IReadOnlyList<string> values = userInfo.GetClaimValues(required.Key);
                 if (values.Count == 0)
                 {
                     return OpenIdConnectAuthFailureReason.MissingRequiredClaim;
@@ -427,7 +429,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 errors.Add($"{nameof(OpenIdConnectAuthBeginRequest.ExpectedIdentity)}'s issuer '{expected.Issuer}' cannot be the provider's issuer '{provider.Issuer}', so no sign-in could pass.");
             }
 
-            foreach (KeyValuePair<string, string> claim in request.RequiredClaimValues ?? new Dictionary<string, string>())
+            foreach (KeyValuePair<string, string> claim in request.RequiredClaimValues ?? NoRequiredClaims)
             {
                 if (string.IsNullOrWhiteSpace(claim.Key) || ReservedClaimRequests.Contains(claim.Key) || string.IsNullOrWhiteSpace(claim.Value))
                 {
@@ -476,7 +478,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 idTokenClaims["amr"] = new JsonObject { ["essential"] = true };
             }
 
-            foreach (KeyValuePair<string, string> claim in request.RequiredClaimValues ?? new Dictionary<string, string>())
+            foreach (KeyValuePair<string, string> claim in request.RequiredClaimValues ?? NoRequiredClaims)
             {
                 idTokenClaims[claim.Key] = new JsonObject { ["essential"] = true, ["value"] = claim.Value };
             }

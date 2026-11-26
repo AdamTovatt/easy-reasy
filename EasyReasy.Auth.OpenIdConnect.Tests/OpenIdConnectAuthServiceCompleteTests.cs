@@ -34,7 +34,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
             Assert.AreEqual("ada@example.test", result.UserInfo.Email);
             Assert.IsTrue(result.UserInfo.EmailVerified);
             Assert.AreEqual("Ada Lovelace", result.UserInfo.Name);
-            Assert.IsTrue(result.UserInfo.Claims.Any(claim => claim.Type == "nonce" && claim.Value == "record-hash"));
+            CollectionAssert.AreEqual(new[] { "record-hash" }, result.UserInfo.GetClaimValues("nonce").ToArray());
             Assert.AreEqual(harness.Primary.RedeemedIdTokens.Single(), result.IdToken);
         }
 
@@ -670,6 +670,31 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
         }
 
         [TestMethod]
+        public async Task Complete_RemoteDiscoveryNamingAPlainHttpLoopbackKeySet_RefusesToFetchItAndThrows()
+        {
+            using OpenIdConnectAuthHarness harness = OpenIdConnectAuthHarness.Create();
+            harness.Primary.JwksUri = "http://127.0.0.1/keys";
+
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => harness.SignInAsync(OpenIdConnectAuthHarness.CreateRequest()));
+
+            Assert.AreEqual(0, harness.Network.UnroutedRequests.Count, string.Join(", ", harness.Network.UnroutedRequests));
+        }
+
+        [TestMethod]
+        [DataRow("http://primary.fake.test/token")]
+        [DataRow("http://127.0.0.1/token")]
+        public async Task Complete_RemoteDiscoveryNamingAPlainHttpTokenEndpoint_RefusesToSendTheCodeAndThrows(string tokenEndpoint)
+        {
+            using OpenIdConnectAuthHarness harness = OpenIdConnectAuthHarness.Create();
+            harness.Primary.TokenEndpoint = tokenEndpoint;
+
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => harness.SignInAsync(OpenIdConnectAuthHarness.CreateRequest()));
+
+            Assert.AreEqual(0, harness.Primary.TokenRequests.Count);
+            Assert.AreEqual(0, harness.Network.UnroutedRequests.Count, string.Join(", ", harness.Network.UnroutedRequests));
+        }
+
+        [TestMethod]
         public async Task Complete_SeveralFlows_FetchTheDiscoveryDocumentAndKeysOnce()
         {
             using OpenIdConnectAuthHarness harness = OpenIdConnectAuthHarness.Create();
@@ -948,7 +973,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
 
             Assert.IsTrue(result.Success, result.FailureReason?.ToString());
             Assert.AreEqual(harness.Tenants.IssuerForTenant(FakeOpenIdConnectIssuer.TenantId), result.UserInfo.Identity.Issuer);
-            Assert.IsTrue(result.UserInfo.Claims.Any(claim => claim.Type == "tid" && claim.Value == FakeOpenIdConnectIssuer.TenantId));
+            Assert.AreEqual(FakeOpenIdConnectIssuer.TenantId, result.UserInfo.FindClaimValue("tid"));
         }
 
         [TestMethod]

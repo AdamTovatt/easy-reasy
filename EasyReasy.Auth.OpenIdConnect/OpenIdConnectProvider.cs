@@ -145,9 +145,13 @@ namespace EasyReasy.Auth.OpenIdConnect
 
             foreach (string? redirectUri in redirectUris)
             {
-                if (!OpenIdConnectAddress.TryParseBrowserFacing(redirectUri, out Uri? uri) || !string.IsNullOrEmpty(uri.Fragment))
+                // Completion compares the address the page posts, its origin plus path, exactly; the browser lowercases
+                // the host and drops a default port, query and fragment, so any other form could never match.
+                if (!OpenIdConnectAddress.TryParseBrowserFacing(redirectUri, out Uri? uri)
+                    || !string.IsNullOrEmpty(uri.UserInfo)
+                    || !string.Equals(uri.GetLeftPart(UriPartial.Path), redirectUri, StringComparison.Ordinal))
                 {
-                    problems.Add($"The redirect URI '{redirectUri}' must be an absolute https URL (or http on localhost, a name under it, or a loopback address) without a fragment.");
+                    problems.Add($"The redirect URI '{redirectUri}' must be an absolute https URL (or http on localhost, a name under it, or a loopback address) written as the page's origin plus path: a lowercase host, no default port, user info, query or fragment.");
                 }
             }
 
