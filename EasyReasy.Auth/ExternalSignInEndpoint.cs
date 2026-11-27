@@ -12,6 +12,38 @@ namespace EasyReasy.Auth
     public static class ExternalSignInEndpoint
     {
         /// <summary>
+        /// Checks at startup, without instantiating anything, that a provider package's sign-in endpoints can run: its
+        /// own services, the application's implementations, and what <see cref="HandleAsync"/> needs
+        /// (<see cref="FindMissingServices"/>), so a misconfiguration fails fast with every missing service named instead
+        /// of as a per-request 500.
+        /// </summary>
+        /// <param name="services">The application's root service provider.</param>
+        /// <param name="mapMethodName">The provider's endpoint-mapping method, named in each message.</param>
+        /// <param name="dependencies">The services the provider's endpoints need.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="services"/> or <paramref name="dependencies"/> is
+        /// null.</exception>
+        /// <exception cref="ArgumentException"><paramref name="mapMethodName"/> is blank.</exception>
+        /// <exception cref="InvalidOperationException">Any service is missing; every one is reported.</exception>
+        public static void ThrowIfServicesMissing(IServiceProvider services, string mapMethodName, params IReadOnlyList<ExternalSignInDependency> dependencies)
+        {
+            ArgumentNullException.ThrowIfNull(services);
+            ArgumentException.ThrowIfNullOrWhiteSpace(mapMethodName);
+            ArgumentNullException.ThrowIfNull(dependencies);
+
+            IServiceProviderIsService serviceCheck = services.GetRequiredService<IServiceProviderIsService>();
+            List<string> errors = dependencies
+                .Where(dependency => !serviceCheck.IsService(dependency.ServiceType))
+                .Select(dependency => $"{dependency.ServiceType.Name} is not registered in the DI container. {dependency.HowToRegister(mapMethodName)}")
+                .ToList();
+            errors.AddRange(FindMissingServices(services, mapMethodName));
+
+            if (errors.Count > 0)
+            {
+                throw new InvalidOperationException(string.Join("\n", errors));
+            }
+        }
+
+        /// <summary>
         /// Finds, without instantiating anything, the services <see cref="HandleAsync"/> needs that are not
         /// registered, for a provider package's startup check to report along with its own.
         /// </summary>

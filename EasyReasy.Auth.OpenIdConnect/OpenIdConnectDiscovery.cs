@@ -115,7 +115,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                     problems.Add($"its issuer '{configuration.Issuer}' is not the provider's issuer '{_issuer}'");
                 }
 
-                if (!OpenIdConnectAddress.TryParseBrowserFacing(configuration.AuthorizationEndpoint, out Uri? _))
+                if (!SecureBrowserAddress.TryParse(configuration.AuthorizationEndpoint, out Uri? _))
                 {
                     problems.Add($"its authorization_endpoint '{configuration.AuthorizationEndpoint}' is not an absolute https URL (or http on a local host)");
                 }

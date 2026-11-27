@@ -34,8 +34,9 @@ namespace EasyReasy.Auth.Saml
         /// The application page the assertion consumer service redirects the browser to with the completion code, as a
         /// path on this site: it starts with one <c>/</c>, never <c>//</c> or a backslash, so the redirect cannot leave the
         /// site, and holds no <c>#</c>, since the code is appended as a query parameter that a fragment would swallow. It
-        /// may carry a query string of its own, which the code joins. The page posts the code to the completing endpoint, same-site, which is what sends the browser binding
-        /// cookie a cross-site post from the identity provider never carries.
+        /// may carry a query string of its own, which the code joins. The page posts the code to the completing endpoint,
+        /// same-site, which is what sends the browser binding cookie a cross-site post from the identity provider never
+        /// carries.
         /// </summary>
         public required string CompletionPath { get; init; }
 

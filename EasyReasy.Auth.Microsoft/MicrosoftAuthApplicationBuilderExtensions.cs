@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace EasyReasy.Auth.Microsoft
 {
@@ -47,7 +46,11 @@ namespace EasyReasy.Auth.Microsoft
         /// </exception>
         public static MicrosoftAuthEndpoints AddMicrosoftAuthEndpoints(this WebApplication app)
         {
-            EnsureRequiredServicesRegistered(app);
+            ExternalSignInEndpoint.ThrowIfServicesMissing(
+                app.Services,
+                nameof(AddMicrosoftAuthEndpoints),
+                ExternalSignInDependency.RegisteredBy(typeof(IMicrosoftAuthService), nameof(MicrosoftAuthServiceCollectionExtensions.AddEasyReasyMicrosoftAuth)),
+                ExternalSignInDependency.ImplementedByApplication(typeof(IMicrosoftAuthHandler), "handler", "MyMicrosoftAuthHandler"));
 
             RouteHandlerBuilder begin = app.MapPost("/api/auth/microsoft/begin", async (
                 [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] MicrosoftSignInBeginRequest? request,
@@ -78,38 +81,6 @@ namespace EasyReasy.Auth.Microsoft
                 Begin = begin,
                 SignIn = signIn,
             };
-        }
-
-        /// <summary>
-        /// Verifies, without instantiating them, that the services the Microsoft endpoints depend on are registered,
-        /// so a misconfiguration surfaces as a clear startup error rather than a per-request 500.
-        /// </summary>
-        private static void EnsureRequiredServicesRegistered(WebApplication app)
-        {
-            IServiceProviderIsService serviceCheck = app.Services.GetRequiredService<IServiceProviderIsService>();
-            List<string> errors = new List<string>();
-
-            if (!serviceCheck.IsService(typeof(IMicrosoftAuthService)))
-            {
-                errors.Add(
-                    $"{nameof(IMicrosoftAuthService)} is not registered in the DI container. " +
-                    $"Call builder.Services.AddEasyReasyMicrosoftAuth(...) before {nameof(AddMicrosoftAuthEndpoints)}.");
-            }
-
-            if (!serviceCheck.IsService(typeof(IMicrosoftAuthHandler)))
-            {
-                errors.Add(
-                    $"{nameof(IMicrosoftAuthHandler)} is not registered in the DI container. " +
-                    $"Register your handler before {nameof(AddMicrosoftAuthEndpoints)}, e.g.: " +
-                    $"builder.Services.AddScoped<{nameof(IMicrosoftAuthHandler)}, MyMicrosoftAuthHandler>();");
-            }
-
-            errors.AddRange(ExternalSignInEndpoint.FindMissingServices(app.Services, nameof(AddMicrosoftAuthEndpoints)));
-
-            if (errors.Count > 0)
-            {
-                throw new InvalidOperationException(string.Join("\n", errors));
-            }
         }
     }
 }

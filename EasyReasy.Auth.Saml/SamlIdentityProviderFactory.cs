@@ -4,8 +4,8 @@ namespace EasyReasy.Auth.Saml
 {
     /// <summary>
     /// Builds the <see cref="SamlIdentityProvider"/>s an <see cref="ISamlIdentityProviderResolver"/> returns, from the
-    /// metadata XML the application supplies. A singleton <see cref="SamlAuthServiceCollectionExtensions.AddEasyReasySamlAuth"/>
-    /// registers, for the resolver to inject.
+    /// metadata XML the application supplies. A singleton
+    /// <see cref="SamlAuthServiceCollectionExtensions.AddEasyReasySamlAuth"/> registers, for the resolver to inject.
     /// </summary>
     /// <remarks>
     /// Metadata is parsed once per distinct XML and kept by its hash, so a resolver can build the provider on every call:

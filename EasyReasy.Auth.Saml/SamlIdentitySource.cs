@@ -51,9 +51,15 @@ namespace EasyReasy.Auth.Saml
 
         /// <summary>
         /// Reads the subject from a verified assertion, or returns null when the assertion does not carry one this source
-        /// accepts.
+        /// accepts, or carries one longer than <see cref="SamlIdentity.MaxSubjectLength"/>.
         /// </summary>
         internal string? ReadSubject(SamlValidatedAssertion assertion, string serviceProviderEntityId)
+        {
+            string? subject = ReadAnySubject(assertion, serviceProviderEntityId);
+            return subject?.Length <= SamlIdentity.MaxSubjectLength ? subject : null;
+        }
+
+        private string? ReadAnySubject(SamlValidatedAssertion assertion, string serviceProviderEntityId)
         {
             if (AttributeName != null)
             {

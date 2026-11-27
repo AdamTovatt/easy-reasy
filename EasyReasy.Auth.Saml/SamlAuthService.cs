@@ -21,6 +21,13 @@ namespace EasyReasy.Auth.Saml
 
         private static readonly FlowBindingCookie BindingCookie = new FlowBindingCookie(BindingCookieNamePrefix);
 
+        /// <summary>
+        /// The longest <c>SAMLResponse</c> form value read, in characters: far beyond a real response with its
+        /// certificates, encryption and attributes, and small enough that what a response's outcome stores stays small
+        /// whoever sends it.
+        /// </summary>
+        internal const int MaxSamlResponseLength = 256 * 1024;
+
         private readonly SamlAuthOptions _options;
         private readonly JsonSealer _sealer;
         private readonly SamlResponseValidator _validator;
@@ -61,7 +68,7 @@ namespace EasyReasy.Auth.Saml
         {
             ArgumentNullException.ThrowIfNull(request);
             ArgumentNullException.ThrowIfNull(httpContext);
-            ThrowIfInvalid(request);
+            ArgumentProblems.ThrowIfAny(request.FindProblems(), nameof(SamlAuthBeginRequest), nameof(request));
 
             SamlIdentityProvider? identityProvider = await _resolver.FindIdentityProviderAsync(request.IdentityProviderKey, cancellationToken);
             if (identityProvider == null)
@@ -87,7 +94,9 @@ namespace EasyReasy.Auth.Saml
             Saml2RedirectBinding binding = new Saml2RedirectBinding().Bind(authnRequest);
 
             DateTimeOffset now = _timeProvider.GetUtcNow();
-            FlowBinding flowBinding = BindingCookie.Issue(httpContext, _options.RequestLifetime);
+            // The cookie outlives the request by the completion's lifetime: a response arriving just before the request expires
+            // leaves a code that is redeemed after it.
+            FlowBinding flowBinding = BindingCookie.Issue(httpContext, _options.RequestLifetime + _options.CompletionLifetime);
             SamlPendingState state = new SamlPendingState
             {
                 FlowId = flowBinding.FlowId,
@@ -150,7 +159,7 @@ namespace EasyReasy.Auth.Saml
                     Identity = success.Identity,
                     AuthenticationInstant = success.AuthenticationInstant,
                     AuthnContextClassRef = success.AuthnContextClassRef,
-                    Attributes = success.Attributes.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<string>)pair.Value, StringComparer.Ordinal),
+                    Attributes = success.Attributes,
                 }),
                 SamlCompletionRefusal refusal => SamlAuthCompletionResult.Refused(refusal.Reason, refusal.Identity),
                 _ => throw new InvalidOperationException($"Unknown {nameof(SamlCompletionOutcome)} '{outcome.GetType().Name}'."),
@@ -166,6 +175,12 @@ namespace EasyReasy.Auth.Saml
         /// no pending request this server began, which leaves nowhere to send the browser.</returns>
         internal async Task<string?> ConsumeResponseAsync(string samlResponse, CancellationToken cancellationToken)
         {
+            if (samlResponse.Length > MaxSamlResponseLength)
+            {
+                _logger.LogWarning("A SAML response of {Length} characters was refused unread; at most {MaxLength} are read.", samlResponse.Length, MaxSamlResponseLength);
+                return null;
+            }
+
             string? claimedRequestId;
             try
             {
@@ -202,15 +217,6 @@ namespace EasyReasy.Auth.Saml
 
             string separator = state.CompletionPath.Contains('?') ? "&" : "?";
             return $"{state.CompletionPath}{separator}code={Uri.EscapeDataString(code)}";
-        }
-
-        private static void ThrowIfInvalid(SamlAuthBeginRequest request)
-        {
-            IReadOnlyList<string> problems = request.FindProblems();
-            if (problems.Count > 0)
-            {
-                throw new ArgumentException($"Invalid {nameof(SamlAuthBeginRequest)}:\n{string.Join("\n", problems)}", nameof(request));
-            }
         }
 
         private Saml2AuthnRequest CreateAuthnRequest(SamlAuthBeginRequest request, SamlIdentityProviderMetadata metadata, SamlIdentitySource identitySource)
@@ -293,7 +299,7 @@ namespace EasyReasy.Auth.Saml
                 Identity = identity,
                 AuthenticationInstant = assertion.AuthenticationInstant,
                 AuthnContextClassRef = assertion.AuthnContextClassRef,
-                Attributes = assertion.Attributes.ToDictionary(pair => pair.Key, pair => pair.Value.ToList(), StringComparer.Ordinal),
+                Attributes = assertion.Attributes,
             };
         }
 

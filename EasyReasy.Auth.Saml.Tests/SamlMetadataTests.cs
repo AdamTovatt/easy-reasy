@@ -87,9 +87,31 @@ namespace EasyReasy.Auth.Saml.Tests
 
             IReadOnlyList<string> problems = SamlIdentityProvider.FindMetadataProblems(metadata.OuterXml);
 
-            Assert.AreEqual(2, problems.Count);
-            Assert.IsTrue(problems.Any(problem => problem.Contains("HTTP-Redirect", StringComparison.Ordinal)));
-            Assert.IsTrue(problems.Any(problem => problem.Contains("signing", StringComparison.Ordinal)));
+            Assert.AreEqual(2, problems.Count, string.Join("\n", problems));
+            StringAssert.Contains(problems[0], "HTTP-Redirect");
+            StringAssert.Contains(problems[1], "signing KeyDescriptor");
+        }
+
+        [TestMethod]
+        [DataRow("javascript:alert(document.domain)")]
+        [DataRow("http://idp.example.test/sso")]
+        [DataRow("ftp://idp.example.test/sso")]
+        public void FindMetadataProblems_SingleSignOnUrlTheBrowserMustNotBeSentTo_ReportsIt(string location)
+        {
+            string metadata = _identityProvider.MetadataXml().Replace(_identityProvider.SingleSignOnUrl.AbsoluteUri, location, StringComparison.Ordinal);
+
+            StringAssert.Contains(SamlIdentityProvider.FindMetadataProblems(metadata).Single(), "HTTP-Redirect binding and an https Location");
+        }
+
+        [TestMethod]
+        [DataRow("http://127.0.0.1:8080/metadata")]
+        [DataRow("http://localhost:8080/metadata")]
+        [DataRow("http://idp.localhost/metadata")]
+        public void FindMetadataProblems_PlainHttpSingleSignOnOnALocalHost_FindsNone(string entityId)
+        {
+            FakeSamlIdentityProvider local = new FakeSamlIdentityProvider(entityId, SamlTestCertificates.IdentityProvider);
+
+            Assert.AreEqual(0, SamlIdentityProvider.FindMetadataProblems(local.MetadataXml()).Count);
         }
 
         [TestMethod]
@@ -176,6 +198,22 @@ namespace EasyReasy.Auth.Saml.Tests
             Assert.IsNotNull(metadata.SelectSingleNode("//md:KeyDescriptor[@use='signing']", namespaces));
             Assert.IsNotNull(metadata.SelectSingleNode("//md:KeyDescriptor[@use='encryption']", namespaces));
             Assert.IsFalse(xml.Contains("PRIVATE", StringComparison.Ordinal));
+        }
+
+        [TestMethod]
+        public void ServiceProviderMetadata_InvalidOptions_ThrowsListingTheProblems()
+        {
+            SamlAuthOptions options = new SamlAuthOptions
+            {
+                ServiceProviderEntityId = " ",
+                AssertionConsumerServiceUrl = new Uri(SamlValidationHarness.AssertionConsumerServiceUrl),
+                StateKey = new byte[32],
+            };
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => SamlServiceProviderMetadata.Create(options));
+
+            StringAssert.Contains(exception.Message, nameof(SamlAuthOptions.ServiceProviderEntityId));
+            Assert.AreEqual("options", exception.ParamName);
         }
 
         [TestMethod]

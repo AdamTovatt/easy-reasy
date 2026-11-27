@@ -49,11 +49,7 @@ namespace EasyReasy.Auth.OpenIdConnect
             IReadOnlyList<string> redirectUriCopy = redirectUris?.ToList() ?? [];
             IReadOnlyList<string> signingAlgorithmCopy = signingAlgorithms?.ToList() ?? [SecurityAlgorithms.RsaSha256];
 
-            IReadOnlyList<string> problems = FindProblems(clientId, clientSecret, redirectUriCopy, clientAuthentication, signingAlgorithmCopy, scope);
-            if (problems.Count > 0)
-            {
-                throw new ArgumentException($"Invalid {nameof(OpenIdConnectProvider)}:\n{string.Join("\n", problems)}");
-            }
+            ArgumentProblems.ThrowIfAny(FindProblems(clientId, clientSecret, redirectUriCopy, clientAuthentication, signingAlgorithmCopy, scope), nameof(OpenIdConnectProvider));
 
             Issuer = issuer;
             ClientId = clientId;
@@ -147,7 +143,7 @@ namespace EasyReasy.Auth.OpenIdConnect
             {
                 // Completion compares the address the page posts, its origin plus path, exactly; the browser lowercases
                 // the host and drops a default port, query and fragment, so any other form could never match.
-                if (!OpenIdConnectAddress.TryParseBrowserFacing(redirectUri, out Uri? uri)
+                if (!SecureBrowserAddress.TryParse(redirectUri, out Uri? uri)
                     || !string.IsNullOrEmpty(uri.UserInfo)
                     || !string.Equals(uri.GetLeftPart(UriPartial.Path), redirectUri, StringComparison.Ordinal))
                 {

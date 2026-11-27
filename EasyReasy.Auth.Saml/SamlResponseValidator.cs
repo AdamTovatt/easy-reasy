@@ -159,9 +159,7 @@ namespace EasyReasy.Auth.Saml
             try
             {
                 string xml = Encoding.UTF8.GetString(Convert.FromBase64String(samlResponse));
-                XmlReaderSettings settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
-                using StringReader stringReader = new StringReader(xml);
-                using XmlReader reader = XmlReader.Create(stringReader, settings);
+                using XmlReader reader = SamlXmlReading.CreateReader(xml);
                 XmlDocument document = new XmlDocument { XmlResolver = null };
                 document.Load(reader);
                 return document;
@@ -329,19 +327,15 @@ namespace EasyReasy.Auth.Saml
 
         private static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadAttributes(Saml2Assertion assertion)
         {
-            Dictionary<string, List<string>> attributes = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-            foreach (Saml2Attribute attribute in assertion.Statements.OfType<Saml2AttributeStatement>().SelectMany(statement => statement.Attributes))
-            {
-                if (!attributes.TryGetValue(attribute.Name, out List<string>? values))
-                {
-                    values = new List<string>();
-                    attributes[attribute.Name] = values;
-                }
-
-                values.AddRange(attribute.Values.Where(value => value != null));
-            }
-
-            return attributes.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<string>)pair.Value, StringComparer.Ordinal);
+            // One name in several AttributeStatements is one attribute with all their values, so a single-valued identity
+            // attribute cannot be split across statements to pass as two.
+            return assertion.Statements.OfType<Saml2AttributeStatement>()
+                .SelectMany(statement => statement.Attributes)
+                .GroupBy(attribute => attribute.Name, StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => (IReadOnlyList<string>)group.SelectMany(attribute => attribute.Values).Where(value => value != null).ToList(),
+                    StringComparer.Ordinal);
         }
 
         private static void RequireNotExpired(string what, DateTime? notOnOrAfter, DateTimeOffset now)

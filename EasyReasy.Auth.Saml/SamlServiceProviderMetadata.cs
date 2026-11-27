@@ -23,11 +23,7 @@ namespace EasyReasy.Auth.Saml
         {
             ArgumentNullException.ThrowIfNull(options);
 
-            IReadOnlyList<string> problems = options.FindProblems();
-            if (problems.Count > 0)
-            {
-                throw new ArgumentException($"Invalid {nameof(SamlAuthOptions)}:\n{string.Join("\n", problems)}", nameof(options));
-            }
+            ArgumentProblems.ThrowIfAny(options.FindProblems(), nameof(SamlAuthOptions), nameof(options));
 
             Saml2Configuration configuration = new Saml2Configuration { Issuer = options.ServiceProviderEntityId };
             EntityDescriptor descriptor = new EntityDescriptor(configuration, signMetadata: false)

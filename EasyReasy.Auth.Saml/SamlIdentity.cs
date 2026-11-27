@@ -20,19 +20,32 @@ namespace EasyReasy.Auth.Saml
     public readonly struct SamlIdentity : IEquatable<SamlIdentity>
     {
         /// <summary>
+        /// The longest subject accepted, in characters: SAML's limit on a persistent NameID, applied to an attribute
+        /// identity too, so an application can size the column it stores the account link in. A response asserting a
+        /// longer one is refused as <see cref="SamlAuthFailureReason.MissingIdentity"/>.
+        /// </summary>
+        public const int MaxSubjectLength = 256;
+
+        /// <summary>
         /// Initializes an identity.
         /// </summary>
         /// <param name="identityProviderKey">The key the application's <see cref="ISamlIdentityProviderResolver"/> resolved
         /// the identity provider by.</param>
         /// <param name="identityProviderEntityId">The identity provider's entity id.</param>
-        /// <param name="subject">The subject the identity provider asserted.</param>
-        /// <exception cref="ArgumentException">Any part is null or blank.</exception>
+        /// <param name="subject">The subject the identity provider asserted, at most <see cref="MaxSubjectLength"/>
+        /// characters.</param>
+        /// <exception cref="ArgumentException">Any part is null or blank, or the subject is longer than
+        /// <see cref="MaxSubjectLength"/>.</exception>
         [JsonConstructor]
         public SamlIdentity(string identityProviderKey, string identityProviderEntityId, string subject)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(identityProviderKey);
             ArgumentException.ThrowIfNullOrWhiteSpace(identityProviderEntityId);
             ArgumentException.ThrowIfNullOrWhiteSpace(subject);
+            if (subject.Length > MaxSubjectLength)
+            {
+                throw new ArgumentException($"The subject must be at most {MaxSubjectLength} characters; got {subject.Length}.", nameof(subject));
+            }
 
             IdentityProviderKey = identityProviderKey;
             IdentityProviderEntityId = identityProviderEntityId;

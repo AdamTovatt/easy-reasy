@@ -72,11 +72,7 @@ namespace EasyReasy.Auth.OpenIdConnect
             ArgumentNullException.ThrowIfNull(httpClientFactory);
             ArgumentNullException.ThrowIfNull(timeProvider);
 
-            IReadOnlyList<string> problems = options.FindProblems();
-            if (problems.Count > 0)
-            {
-                throw new ArgumentException($"Invalid {nameof(OpenIdConnectAuthOptions)}:\n{string.Join("\n", problems)}", nameof(options));
-            }
+            ArgumentProblems.ThrowIfAny(options.FindProblems(), nameof(OpenIdConnectAuthOptions), nameof(options));
 
             _stateLifetime = options.StateLifetime;
             // Its own sealer under the state key, never a cipher from DI, which may be the one protecting MFA secrets.

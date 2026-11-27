@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Net;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 
 namespace EasyReasy.Auth.Saml.Tests
@@ -215,7 +217,9 @@ namespace EasyReasy.Auth.Saml.Tests
                 AssertionConsumerServiceUrl = new Uri("/acs", UriKind.Relative),
                 StateKey = new byte[16],
                 RequestLifetime = TimeSpan.Zero,
+                CompletionLifetime = TimeSpan.Zero,
                 SweepInterval = TimeSpan.FromDays(50),
+                DecryptionCertificates = null!,
             };
 
             ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => services.AddEasyReasySamlAuth(options));
@@ -224,7 +228,56 @@ namespace EasyReasy.Auth.Saml.Tests
             StringAssert.Contains(exception.Message, nameof(SamlAuthOptions.AssertionConsumerServiceUrl));
             StringAssert.Contains(exception.Message, nameof(SamlAuthOptions.StateKey));
             StringAssert.Contains(exception.Message, nameof(SamlAuthOptions.RequestLifetime));
+            StringAssert.Contains(exception.Message, nameof(SamlAuthOptions.CompletionLifetime));
             StringAssert.Contains(exception.Message, nameof(SamlAuthOptions.SweepInterval));
+            StringAssert.Contains(exception.Message, nameof(SamlAuthOptions.DecryptionCertificates));
+        }
+
+        [TestMethod]
+        [DataRow("http://app.example.test/auth/saml/acs")]
+        [DataRow("javascript:alert(1)")]
+        public void AddEasyReasySamlAuth_AssertionConsumerServiceTheBrowserMustNotPostTo_Throws(string url)
+        {
+            SamlAuthOptions options = OptionsWith(new Uri(url), RandomNumberGenerator.GetBytes(32), []);
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => new ServiceCollection().AddEasyReasySamlAuth(options));
+
+            StringAssert.Contains(exception.Message, nameof(SamlAuthOptions.AssertionConsumerServiceUrl));
+        }
+
+        [TestMethod]
+        public void AddEasyReasySamlAuth_PlainHttpAssertionConsumerServiceOnLoopback_IsAccepted()
+        {
+            SamlAuthOptions options = OptionsWith(new Uri("http://localhost:5000/api/auth/saml/acs"), RandomNumberGenerator.GetBytes(32), []);
+
+            new ServiceCollection().AddEasyReasySamlAuth(options);
+        }
+
+        [TestMethod]
+        public void AddEasyReasySamlAuth_DecryptionCertificateWithoutPrivateKey_Throws()
+        {
+            SamlAuthOptions options = SamlValidationHarness.CreateOptions([SamlTestCertificates.PublicOnly(SamlTestCertificates.ServiceProviderDecryption)]);
+
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => new ServiceCollection().AddEasyReasySamlAuth(options));
+
+            StringAssert.Contains(exception.Message, nameof(SamlAuthOptions.DecryptionCertificates));
+        }
+
+        [TestMethod]
+        public void AddEasyReasySamlAuth_OptionsChangedAfterRegistering_KeepsTheRegisteredCopy()
+        {
+            byte[] stateKey = RandomNumberGenerator.GetBytes(32);
+            byte[] registeredKey = stateKey.ToArray();
+            List<X509Certificate2> decryptionCertificates = [SamlTestCertificates.ServiceProviderDecryption];
+            ServiceCollection services = new ServiceCollection();
+            services.AddEasyReasySamlAuth(OptionsWith(new Uri(SamlValidationHarness.AssertionConsumerServiceUrl), stateKey, decryptionCertificates));
+
+            stateKey[0] ^= 0xFF;
+            decryptionCertificates.Clear();
+
+            SamlAuthOptions registered = (SamlAuthOptions)services.Single(descriptor => descriptor.ServiceType == typeof(SamlAuthOptions)).ImplementationInstance!;
+            CollectionAssert.AreEqual(registeredKey, registered.StateKey);
+            Assert.AreEqual(1, registered.DecryptionCertificates.Count);
         }
 
         [TestMethod]
@@ -258,7 +311,8 @@ namespace EasyReasy.Auth.Saml.Tests
         [TestMethod]
         public async Task Sweep_IntervalPasses_SweepsWithoutACall()
         {
-            // The rows' time is the test clock; the sweep's timer runs on real time, so the interval is short.
+            // The rows' time is the test clock; the sweep's timer runs on real time, since FakeTimeProvider leaves
+            // CreateTimer to TimeProvider's own, so the interval is short.
             await using SamlFlowHost host = await SamlFlowHost.StartAsync(sweepInterval: TimeSpan.FromMilliseconds(20));
             await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest());
             host.Clock.Advance(host.Options.RequestLifetime);
@@ -314,6 +368,17 @@ namespace EasyReasy.Auth.Saml.Tests
             });
 
             EndpointBuilderMarks.AssertEachReachesOnlyItsEndpoint(host.App.Services, byEndpoint.Keys);
+        }
+
+        private static SamlAuthOptions OptionsWith(Uri assertionConsumerServiceUrl, byte[] stateKey, IReadOnlyList<X509Certificate2> decryptionCertificates)
+        {
+            return new SamlAuthOptions
+            {
+                ServiceProviderEntityId = SamlValidationHarness.ServiceProviderEntityId,
+                AssertionConsumerServiceUrl = assertionConsumerServiceUrl,
+                StateKey = stateKey,
+                DecryptionCertificates = decryptionCertificates,
+            };
         }
 
         private static SamlAuthSweep HostedSweep(SamlFlowHost host)
