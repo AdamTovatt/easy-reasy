@@ -44,6 +44,7 @@ jobs:
           auth-google)   PROJECT="EasyReasy.Auth.Google";         TEST_PROJECT="EasyReasy.Auth.Google.Tests" ;;
           auth-microsoft) PROJECT="EasyReasy.Auth.Microsoft";     TEST_PROJECT="EasyReasy.Auth.Microsoft.Tests" ;;
           auth-openidconnect) PROJECT="EasyReasy.Auth.OpenIdConnect"; TEST_PROJECT="EasyReasy.Auth.OpenIdConnect.Tests" ;;
+          auth-saml)     PROJECT="EasyReasy.Auth.Saml";           TEST_PROJECT="EasyReasy.Auth.Saml.Tests" ;;
           auth-testing)  PROJECT="EasyReasy.Auth.Testing";        TEST_PROJECT="EasyReasy.Auth.Testing.Tests" ;;
           byteshelf)     PROJECT="EasyReasy.ByteShelfProvider";   TEST_PROJECT="EasyReasy.ByteShelfProvider.Tests" ;;
           env)           PROJECT="EasyReasy.EnvironmentVariables"; TEST_PROJECT="EasyReasy.EnvironmentVariables.Tests" ;;
@@ -52,9 +53,10 @@ jobs:
         esac
         # A package whose sign-in flow runs on a shared engine is released only after the engine's real flows pass
         # against Keycloak, as the keycloak job in tests.yml runs them: EasyReasy.Auth.Microsoft runs on
-        # EasyReasy.Auth.OpenIdConnect's code flow.
+        # EasyReasy.Auth.OpenIdConnect's code flow. EasyReasy.Auth.Saml's flow is its own.
         case "$PACKAGE" in
           auth-openidconnect|auth-microsoft) KEYCLOAK_TEST_PROJECT="EasyReasy.Auth.OpenIdConnect.Tests" ;;
+          auth-saml)                         KEYCLOAK_TEST_PROJECT="EasyReasy.Auth.Saml.Tests" ;;
           *)                                 KEYCLOAK_TEST_PROJECT="" ;;
         esac
         echo "PROJECT=${PROJECT}" >> $GITHUB_OUTPUT

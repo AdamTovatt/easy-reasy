@@ -69,8 +69,8 @@ namespace EasyReasy.Auth.Saml.Tests
         }
 
         [TestMethod]
-        [DataRow(FakeXmlEncryptor.Aes128Gcm)]
-        [DataRow(FakeXmlEncryptor.Aes256Gcm)]
+        [DataRow(SamlAlgorithms.Aes128Gcm)]
+        [DataRow(SamlAlgorithms.Aes256Gcm)]
         public void Validate_EncryptedSignedAssertion_IsDecryptedAndAccepted(string dataEncryptionMethod)
         {
             SamlValidationHarness harness = new SamlValidationHarness(decryptionCertificates: [SamlTestCertificates.ServiceProviderDecryption]);

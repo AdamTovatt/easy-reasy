@@ -68,7 +68,8 @@ namespace EasyReasy.Auth.Saml.Tests
             IReadOnlyList<X509Certificate2>? decryptionCertificates = null,
             IAuthAuditLogger? auditLogger = null,
             TimeSpan? sweepInterval = null,
-            Action<SamlAuthEndpoints>? configureEndpoints = null)
+            Action<SamlAuthEndpoints>? configureEndpoints = null,
+            ILoggerProvider? loggerProvider = null)
         {
             FakeTimeProvider clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
             SamlAuthOptions options = SamlValidationHarness.CreateOptions(decryptionCertificates ?? [], signingCertificate, sweepInterval);
@@ -85,6 +86,11 @@ namespace EasyReasy.Auth.Saml.Tests
             WebApplicationBuilder builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
             builder.Logging.ClearProviders();
+            if (loggerProvider != null)
+            {
+                builder.Logging.AddProvider(loggerProvider);
+            }
+
             builder.Services.AddSingleton<TimeProvider>(clock);
             builder.Services.AddEasyReasyAuth(JwtSecret);
             builder.Services.AddEasyReasySamlAuth(options);
@@ -106,7 +112,7 @@ namespace EasyReasy.Auth.Saml.Tests
             return new SamlFlowHost(app, server.CreateClient(), clock, options, store, resolver, handler);
         }
 
-        public async Task<HttpResponseMessage> PostBeginAsync(SamlBrowser browser, string? identityProviderKey = IdentityProviderKey)
+        public async Task<HttpResponseMessage> PostBeginAsync(BrowserCookieJar browser, string? identityProviderKey = IdentityProviderKey)
         {
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, SamlAuthPaths.Begin)
             {
@@ -115,10 +121,13 @@ namespace EasyReasy.Auth.Saml.Tests
             return await SendAsync(request, browser);
         }
 
-        public async Task<string> BeginAsync(SamlBrowser browser)
+        /// <summary>
+        /// Begins a sign-in through the begin endpoint and returns the URL it sends the browser to.
+        /// </summary>
+        public async Task<string> BeginAsync(BrowserCookieJar browser, string identityProviderKey = IdentityProviderKey)
         {
-            HttpResponseMessage response = await PostBeginAsync(browser);
-            response.EnsureSuccessStatusCode();
+            HttpResponseMessage response = await PostBeginAsync(browser, identityProviderKey);
+            Assert.AreEqual(System.Net.HttpStatusCode.OK, response.StatusCode, await response.Content.ReadAsStringAsync());
             using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             return json.RootElement.GetProperty("redirectUrl").GetString()!;
         }
@@ -142,7 +151,16 @@ namespace EasyReasy.Auth.Saml.Tests
         /// </summary>
         public async Task<string> AnswerAsync(string redirectUrl, Action<FakeSamlResponse>? customize = null)
         {
-            HttpResponseMessage response = await PostAssertionAsync(Respond(redirectUrl, customize));
+            return await PostAssertionForCodeAsync(Respond(redirectUrl, customize));
+        }
+
+        /// <summary>
+        /// Posts a response to the assertion consumer service, asserts it redirects to the completion page, and returns
+        /// the completion code from the redirect.
+        /// </summary>
+        public async Task<string> PostAssertionForCodeAsync(string samlResponse)
+        {
+            HttpResponseMessage response = await PostAssertionAsync(samlResponse);
             Assert.AreEqual(System.Net.HttpStatusCode.SeeOther, response.StatusCode, await response.Content.ReadAsStringAsync());
             return ReadCode(response.Headers.Location!);
         }
@@ -165,7 +183,7 @@ namespace EasyReasy.Auth.Saml.Tests
             return QueryHelpers.ParseQuery(absolute.Query)["code"].ToString();
         }
 
-        public async Task<HttpResponseMessage> PostSignInAsync(SamlBrowser browser, string code)
+        public async Task<HttpResponseMessage> PostSignInAsync(BrowserCookieJar browser, string code)
         {
             HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, SamlAuthPaths.SignIn)
             {
@@ -178,7 +196,7 @@ namespace EasyReasy.Auth.Saml.Tests
         /// Begins a sign-in through <see cref="ISamlAuthService"/>, as an application's own endpoint does, with the
         /// browser's cookies; the binding cookie it sets lands in the browser.
         /// </summary>
-        public async Task<SamlAuthBeginResult?> ServiceBeginAsync(SamlBrowser browser, SamlAuthBeginRequest request)
+        public async Task<SamlAuthBeginResult?> ServiceBeginAsync(BrowserCookieJar browser, SamlAuthBeginRequest request)
         {
             await using AsyncServiceScope scope = App.Services.CreateAsyncScope();
             DefaultHttpContext httpContext = CreateHttpContext(browser, scope.ServiceProvider);
@@ -191,11 +209,11 @@ namespace EasyReasy.Auth.Saml.Tests
         /// Completes a sign-in through <see cref="ISamlAuthService"/> with the browser's cookies; what it clears leaves the
         /// browser.
         /// </summary>
-        public async Task<SamlAuthCompletionResult> ServiceCompleteAsync(SamlBrowser browser, string code)
+        public async Task<SamlAuthCompletionResult> ServiceCompleteAsync(BrowserCookieJar browser, string code, string expectedCallerBinding = SamlAuthBeginRequestBuilder.DefaultCallerBinding)
         {
             await using AsyncServiceScope scope = App.Services.CreateAsyncScope();
             DefaultHttpContext httpContext = CreateHttpContext(browser, scope.ServiceProvider);
-            SamlAuthCompletionResult result = await scope.ServiceProvider.GetRequiredService<ISamlAuthService>().CompleteAsync(code, httpContext);
+            SamlAuthCompletionResult result = await scope.ServiceProvider.GetRequiredService<ISamlAuthService>().CompleteAsync(code, expectedCallerBinding, httpContext);
             browser.Receive(httpContext.Response.Headers.SetCookie.Select(value => value!));
             return result;
         }
@@ -205,12 +223,21 @@ namespace EasyReasy.Auth.Saml.Tests
         /// identity provider, and returns the completion code, which <paramref name="browser"/> holds the binding cookie for.
         /// </summary>
         public async Task<string> BeginAndAnswerAsync(
-            SamlBrowser browser,
+            BrowserCookieJar browser,
             Action<SamlAuthBeginRequestBuilder>? customizeRequest = null,
             Action<FakeSamlResponse>? customizeResponse = null)
         {
-            SamlAuthBeginResult? begun = await ServiceBeginAsync(browser, AppRequest(customizeRequest));
-            Assert.IsNotNull(begun, "The fake identity provider's key resolved to no identity provider.");
+            return await BeginAndAnswerAsync(browser, AppRequest(customizeRequest), customizeResponse);
+        }
+
+        /// <summary>
+        /// Begins a sign-in through <see cref="ISamlAuthService"/> with <paramref name="request"/>, answers it with the fake
+        /// identity provider, and returns the completion code, which <paramref name="browser"/> holds the binding cookie for.
+        /// </summary>
+        public async Task<string> BeginAndAnswerAsync(BrowserCookieJar browser, SamlAuthBeginRequest request, Action<FakeSamlResponse>? customizeResponse = null)
+        {
+            SamlAuthBeginResult? begun = await ServiceBeginAsync(browser, request);
+            Assert.IsNotNull(begun, "The request's key resolved to no identity provider.");
             return await AnswerAsync(begun.RedirectUrl, customizeResponse);
         }
 
@@ -222,9 +249,10 @@ namespace EasyReasy.Auth.Saml.Tests
             Action<SamlAuthBeginRequestBuilder>? customizeRequest = null,
             Action<FakeSamlResponse>? customizeResponse = null)
         {
-            SamlBrowser browser = new SamlBrowser();
-            string code = await BeginAndAnswerAsync(browser, customizeRequest, customizeResponse);
-            return await ServiceCompleteAsync(browser, code);
+            BrowserCookieJar browser = new BrowserCookieJar();
+            SamlAuthBeginRequest request = AppRequest(customizeRequest);
+            string code = await BeginAndAnswerAsync(browser, request, customizeResponse);
+            return await ServiceCompleteAsync(browser, code, request.CallerBinding);
         }
 
         /// <summary>
@@ -243,7 +271,7 @@ namespace EasyReasy.Auth.Saml.Tests
             await App.DisposeAsync();
         }
 
-        private static DefaultHttpContext CreateHttpContext(SamlBrowser browser, IServiceProvider services)
+        private static DefaultHttpContext CreateHttpContext(BrowserCookieJar browser, IServiceProvider services)
         {
             DefaultHttpContext httpContext = new DefaultHttpContext { RequestServices = services };
             if (browser.CookieHeader is string header)
@@ -254,7 +282,7 @@ namespace EasyReasy.Auth.Saml.Tests
             return httpContext;
         }
 
-        private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, SamlBrowser browser)
+        private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, BrowserCookieJar browser)
         {
             browser.Apply(request);
             HttpResponseMessage response = await Client.SendAsync(request);

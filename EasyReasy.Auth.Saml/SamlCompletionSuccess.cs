@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace EasyReasy.Auth.Saml
 {
     /// <summary>
@@ -6,6 +8,10 @@ namespace EasyReasy.Auth.Saml
     internal sealed class SamlCompletionSuccess : SamlCompletionOutcome
     {
         public required SamlIdentity Identity { get; init; }
+
+        /// <inheritdoc />
+        [JsonIgnore]
+        public override SamlIdentity? AttemptedIdentity => Identity;
 
         public required DateTimeOffset AuthenticationInstant { get; init; }
 

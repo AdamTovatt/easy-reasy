@@ -78,8 +78,20 @@ namespace EasyReasy.Auth.Saml.Tests
 
         /// <summary>When set, the signed assertion is encrypted for this certificate.</summary>
         public X509Certificate2? EncryptFor { get; set; }
-        public string DataEncryptionMethod { get; set; } = FakeXmlEncryptor.Aes256Gcm;
+        public string DataEncryptionMethod { get; set; } = SamlAlgorithms.Aes256Gcm;
         public string KeyTransportMethod { get; set; } = EncryptedXml.XmlEncRSAOAEPUrl;
+
+        /// <summary>
+        /// For <see cref="SamlAlgorithms.RsaOaep11"/>: the OAEP digest the key is wrapped with and the element names, or
+        /// null to name none, which means SHA-1. SHA-256 by default, as Keycloak sends it.
+        /// </summary>
+        public string? Oaep11DigestMethod { get; set; } = SignedXml.XmlDsigSHA256Url;
+
+        /// <summary>
+        /// For <see cref="SamlAlgorithms.RsaOaep11"/>: the mask generation function the element names, or null to name
+        /// none, which means MGF1-SHA1. Not used to wrap the key, so a test can name one that does not match.
+        /// </summary>
+        public string? Oaep11MaskGenerationFunction { get; set; } = FakeXmlEncryptor.Mgf1Sha256;
 
         /// <summary>
         /// Changes the assertion after it is built and before it is signed, as an identity provider that sends it that
@@ -136,7 +148,7 @@ namespace EasyReasy.Auth.Saml.Tests
 
             if (EncryptFor != null)
             {
-                FakeXmlEncryptor.EncryptAssertion(assertion, EncryptFor, DataEncryptionMethod, KeyTransportMethod);
+                FakeXmlEncryptor.EncryptAssertion(assertion, EncryptFor, DataEncryptionMethod, KeyTransportMethod, Oaep11DigestMethod, Oaep11MaskGenerationFunction);
             }
 
             if (SignResponse)

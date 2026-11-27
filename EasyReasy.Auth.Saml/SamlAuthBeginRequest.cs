@@ -23,9 +23,10 @@ namespace EasyReasy.Auth.Saml
         public required string IdentityProviderKey { get; init; }
 
         /// <summary>
-        /// An opaque value the application chooses, returned by completion untouched so the application can check the
-        /// completed sign-in is the one it began (for example "user X, signing record Y"). The package only carries it;
-        /// comparing it is the application's job.
+        /// An opaque value the application chooses, naming what the sign-in is for (for example "user X, signing record
+        /// Y"). It is sealed with the sign-in, never sent to the identity provider, and completion refuses the code unless
+        /// the completing endpoint passes the same value to <see cref="ISamlAuthService.CompleteAsync"/>, so one endpoint's
+        /// code never satisfies another's rules.
         /// </summary>
         public required string CallerBinding { get; init; }
 

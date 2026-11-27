@@ -38,13 +38,20 @@ namespace EasyReasy.Auth.Saml
 
         /// <summary>
         /// Completes a sign-in from the code the assertion consumer service redirected the browser with: redeems the code
-        /// once, checks and clears the browser's binding cookie, and returns the outcome of the response.
+        /// once, checks and clears the browser's binding cookie, refuses a sign-in begun with another caller binding, and
+        /// returns the outcome of the response.
         /// </summary>
         /// <param name="code">The completion code from the redirect, as the completion page posted it.</param>
+        /// <param name="expectedCallerBinding">The <see cref="SamlAuthBeginRequest.CallerBinding"/> this endpoint began
+        /// its sign-ins with. A code from any other sign-in is refused as
+        /// <see cref="SamlAuthFailureReason.CallerBindingMismatch"/>, so a re-check endpoint never accepts a plain sign-in
+        /// that carried none of its rules.</param>
         /// <param name="httpContext">The request from the browser completing the sign-in; its binding cookie is read from
         /// the request and cleared on the response.</param>
         /// <param name="cancellationToken">Cancels redeeming the code.</param>
-        /// <returns>The verified user and the caller binding, or the reason the sign-in was refused.</returns>
-        Task<SamlAuthCompletionResult> CompleteAsync(string code, HttpContext httpContext, CancellationToken cancellationToken = default);
+        /// <returns>The verified user, or the reason the sign-in was refused.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="expectedCallerBinding"/> or
+        /// <paramref name="httpContext"/> is null.</exception>
+        Task<SamlAuthCompletionResult> CompleteAsync(string code, string expectedCallerBinding, HttpContext httpContext, CancellationToken cancellationToken = default);
     }
 }

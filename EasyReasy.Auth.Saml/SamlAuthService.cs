@@ -57,19 +57,34 @@ namespace EasyReasy.Auth.Saml
         {
             ArgumentNullException.ThrowIfNull(request);
             ArgumentNullException.ThrowIfNull(httpContext);
-
-            IReadOnlyList<string> problems = request.FindProblems();
-            if (problems.Count > 0)
-            {
-                throw new ArgumentException($"Invalid {nameof(SamlAuthBeginRequest)}:\n{string.Join("\n", problems)}", nameof(request));
-            }
+            ThrowIfInvalid(request);
 
             SamlIdentityProvider? identityProvider = await _resolver.FindIdentityProviderAsync(request.IdentityProviderKey, cancellationToken);
-            if (identityProvider == null)
-            {
-                return null;
-            }
+            return identityProvider == null ? null : await BeginCheckedAsync(identityProvider, request, httpContext, cancellationToken);
+        }
 
+        /// <summary>
+        /// Begins a sign-in with an identity provider the caller already resolved for
+        /// <see cref="SamlAuthBeginRequest.IdentityProviderKey"/>, so a caller that needs the provider before it can build
+        /// the request (the sign-in endpoint asks the handler only about a key that exists) resolves it once.
+        /// </summary>
+        /// <param name="identityProvider">What the application's resolver returned for the request's key.</param>
+        /// <param name="request">The begin request.</param>
+        /// <param name="httpContext">The request the binding cookie is set on.</param>
+        /// <param name="cancellationToken">Cancels storing the request.</param>
+        /// <returns>The URL to send the browser to.</returns>
+        internal async Task<SamlAuthBeginResult> BeginWithResolvedAsync(SamlIdentityProvider identityProvider, SamlAuthBeginRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+        {
+            ThrowIfInvalid(request);
+            return await BeginCheckedAsync(identityProvider, request, httpContext, cancellationToken);
+        }
+
+        /// <summary>
+        /// Begins a sign-in for a request its entry point checked with <see cref="ThrowIfInvalid"/>, each exactly once: the
+        /// public begin before resolving, the sign-in endpoint after building the request from the handler's settings.
+        /// </summary>
+        private async Task<SamlAuthBeginResult> BeginCheckedAsync(SamlIdentityProvider identityProvider, SamlAuthBeginRequest request, HttpContext httpContext, CancellationToken cancellationToken)
+        {
             if (request.ExpectedIdentity is SamlIdentity expected && expected.IdentityProviderEntityId != identityProvider.EntityId)
             {
                 throw new ArgumentException(
@@ -109,8 +124,9 @@ namespace EasyReasy.Auth.Saml
         }
 
         /// <inheritdoc />
-        public async Task<SamlAuthCompletionResult> CompleteAsync(string code, HttpContext httpContext, CancellationToken cancellationToken = default)
+        public async Task<SamlAuthCompletionResult> CompleteAsync(string code, string expectedCallerBinding, HttpContext httpContext, CancellationToken cancellationToken = default)
         {
+            ArgumentNullException.ThrowIfNull(expectedCallerBinding);
             ArgumentNullException.ThrowIfNull(httpContext);
 
             if (string.IsNullOrWhiteSpace(code))
@@ -132,18 +148,22 @@ namespace EasyReasy.Auth.Saml
                 return SamlAuthCompletionResult.Refused(cookieReason, null);
             }
 
+            if (!string.Equals(outcome.CallerBinding, expectedCallerBinding, StringComparison.Ordinal))
+            {
+                // Begun for another purpose, so it carried another caller's rules (or none): the outcome is not this one's.
+                return SamlAuthCompletionResult.Refused(SamlAuthFailureReason.CallerBindingMismatch, outcome.AttemptedIdentity);
+            }
+
             return outcome switch
             {
-                SamlCompletionSuccess success => SamlAuthCompletionResult.Succeeded(
-                    new SamlUserInfo
-                    {
-                        Identity = success.Identity,
-                        AuthenticationInstant = success.AuthenticationInstant,
-                        AuthnContextClassRef = success.AuthnContextClassRef,
-                        Attributes = success.Attributes.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<string>)pair.Value, StringComparer.Ordinal),
-                    },
-                    success.CallerBinding),
-                SamlCompletionRefusal refusal => SamlAuthCompletionResult.Refused(refusal.Reason, refusal.AttemptedIdentity),
+                SamlCompletionSuccess success => SamlAuthCompletionResult.Succeeded(new SamlUserInfo
+                {
+                    Identity = success.Identity,
+                    AuthenticationInstant = success.AuthenticationInstant,
+                    AuthnContextClassRef = success.AuthnContextClassRef,
+                    Attributes = success.Attributes.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<string>)pair.Value, StringComparer.Ordinal),
+                }),
+                SamlCompletionRefusal refusal => SamlAuthCompletionResult.Refused(refusal.Reason, refusal.Identity),
                 _ => throw new InvalidOperationException($"Unknown {nameof(SamlCompletionOutcome)} '{outcome.GetType().Name}'."),
             };
         }
@@ -193,6 +213,15 @@ namespace EasyReasy.Auth.Saml
 
             string separator = state.CompletionPath.Contains('?') ? "&" : "?";
             return $"{state.CompletionPath}{separator}code={Uri.EscapeDataString(code)}";
+        }
+
+        private static void ThrowIfInvalid(SamlAuthBeginRequest request)
+        {
+            IReadOnlyList<string> problems = request.FindProblems();
+            if (problems.Count > 0)
+            {
+                throw new ArgumentException($"Invalid {nameof(SamlAuthBeginRequest)}:\n{string.Join("\n", problems)}", nameof(request));
+            }
         }
 
         private Saml2AuthnRequest CreateAuthnRequest(SamlAuthBeginRequest request, SamlIdentityProvider identityProvider)
@@ -314,7 +343,7 @@ namespace EasyReasy.Auth.Saml
                 BindingCookieHash = state.BindingCookieHash,
                 CallerBinding = state.CallerBinding,
                 Reason = reason,
-                AttemptedIdentity = attemptedIdentity,
+                Identity = attemptedIdentity,
             };
         }
     }

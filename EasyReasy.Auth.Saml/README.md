@@ -239,8 +239,8 @@ SamlAuthBeginResult? begun = await samlAuth.BeginAsync(new SamlAuthBeginRequest
 // null when the key resolves to no identity provider
 
 // The completion page posts the code to your endpoint, which calls:
-SamlAuthCompletionResult result = await samlAuth.CompleteAsync(code, httpContext);
-if (result.Success && result.CallerBinding == $"sign:{user.Id}:{record.Id}")
+SamlAuthCompletionResult result = await samlAuth.CompleteAsync(code, $"sign:{user.Id}:{record.Id}", httpContext);
+if (result.Success)
 {
     // result.UserInfo: the verified identity, AuthenticationInstant, AuthnContextClassRef, attributes
 }
@@ -253,7 +253,7 @@ if (result.Success && result.CallerBinding == $"sign:{user.Id}:{record.Id}")
 - `ExpectedIdentity` refuses any other account. Its key must be the request's `IdentityProviderKey`, or Begin throws.
 - `CompletionPath` is a path on your site: one leading `/`, no `//`, no backslash and no `#`. It may carry a query string; the code joins it.
 
-The sign-in endpoint refuses a code from your own flows, as `CallerBindingMismatch`, so it cannot sign anyone in.
+`CompleteAsync` takes the caller binding your endpoint began with and refuses a code begun with any other as `CallerBindingMismatch`. So a re-check endpoint never accepts a plain sign-in, which carried none of its rules, and the sign-in endpoint never accepts a code from your own flows.
 
 **These are the identity provider's assertions.** Whether an identity provider honours `ForceAuthn`, and whether a class it reports proves that a second factor ran for this act, is up to the identity provider. The package checks neither, for any provider. Choose classes your identity provider documents, and test that it refuses what it cannot meet.
 
@@ -296,7 +296,7 @@ ITfoxtec parses the response, refuses DTDs, decrypts it and verifies every signa
 
 **Encryption**
 - When you configure decryption keys, a plaintext assertion is refused.
-- Every encrypted part must use AES-GCM with an RSA-OAEP key transport, checked before anything is decrypted. AES-CBC and RSA PKCS#1 v1.5 are refused.
+- Every encrypted part must use AES-GCM with an RSA-OAEP key transport, checked before anything is decrypted. RSA-OAEP is accepted under XML Encryption 1.0's identifier and 1.1's, which names its digest and mask function. A 1.1 key that names neither, leaving them to the specification's SHA-1 defaults, fails to decrypt and is refused, since ITfoxtec reads a missing mask function as MGF1-SHA256. AES-CBC and RSA PKCS#1 v1.5 are refused.
 
 **Times and content**
 - The status is Success.
@@ -316,6 +316,25 @@ The suite drives an in-process fake identity provider through hostile responses:
 - expiry
 - encryption downgrades
 
+A separate CI job runs the real flow against Keycloak, in a container. It covers a signed AuthnRequest, Keycloak's login, a persistent NameID, a session reused and then forced again with `ForceAuthn`, a replayed response, an encrypted assertion, an attribute identity, and a realm signing with RSA-SHA1 being refused.
+
+## Identity provider settings
+
+The identity provider must sign the assertion with RSA and SHA-256, SHA-384 or SHA-512, with a digest from the same three and exclusive canonicalization. When it encrypts, it must use AES-GCM and RSA-OAEP, naming the digest when it uses XML Encryption 1.1's identifier. A response from settings that fail this still reaches the completion page with a code, since the assertion consumer service keeps the refusal under it. Completing the code gives `InvalidResponse` (401 from the sign-in endpoint), and the warning logged at the assertion consumer service names the check that failed in its exception.
+
+In Keycloak, the SAML client settings the tests use are:
+
+| Setting | Value |
+|---|---|
+| Client ID | your `ServiceProviderEntityId` |
+| Assertion Consumer Service POST Binding URL, and Valid redirect URIs | your `AssertionConsumerServiceUrl` |
+| Sign documents, Sign assertions | on |
+| Signature algorithm | `RSA_SHA256` |
+| SAML signature canonicalization method | Exclusive |
+| Client signature required | on, with your `SigningCertificate`. Keycloak's metadata sets `WantAuthnRequestsSigned`, so the package requires a signing certificate for it |
+| Force name ID format, Name ID format | on, `persistent` |
+| Encrypt assertions (optional) | on, with a certificate from your `DecryptionCertificates`; encryption algorithm AES-256-GCM (`http://www.w3.org/2009/xmlenc11#aes256-gcm`), key algorithm XML Encryption 1.1's RSA-OAEP (`http://www.w3.org/2009/xmlenc11#rsa-oaep`), digest method SHA-256 (`http://www.w3.org/2001/04/xmlenc#sha256`) |
+
 ## Failure reasons
 
 | `SamlAuthFailureReason` | Category | When |
@@ -326,7 +345,7 @@ The suite drives an in-process fake identity provider through hostile responses:
 | `UnknownIdentityProvider` | `InvalidToken` | The identity provider no longer resolves at the assertion consumer service |
 | `IdentityProviderChanged` | `InvalidToken` | Its entity id changed after Begin |
 | `InvalidResponse` | `InvalidToken` | The response failed a check above; the reason is logged as a warning |
-| `CallerBindingMismatch` | `InvalidToken` | A code from your own flow was posted to the sign-in endpoint |
+| `CallerBindingMismatch` | `InvalidToken` | The code was begun with another caller binding than the completing endpoint passed: a code from your own flow posted to the sign-in endpoint, or a plain sign-in's code posted to your re-check |
 | `MissingIdentity` | `Rejected` | No identity the identity source accepts |
 | `IdentityMismatch` | `Rejected` | Another account than `ExpectedIdentity` |
 | `StaleAuthentication` | `Rejected` | `AuthnInstant` older than `MaxAuthenticationAge` |

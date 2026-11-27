@@ -84,7 +84,7 @@ namespace EasyReasy.Auth.Saml
 
             RouteHandlerBuilder begin = app.MapPost(SamlAuthPaths.Begin, async (
                 SamlSignInBeginRequest request,
-                ISamlAuthService authService,
+                SamlAuthService authService,
                 ISamlIdentityProviderResolver resolver,
                 ISamlAuthHandler handler,
                 HttpContext httpContext) =>
@@ -98,7 +98,7 @@ namespace EasyReasy.Auth.Saml
 
             RouteHandlerBuilder signIn = app.MapPost(SamlAuthPaths.SignIn, (
                 SamlSignInRequest request,
-                ISamlAuthService authService,
+                SamlAuthService authService,
                 ISamlIdentityProviderResolver resolver,
                 ISamlAuthHandler handler,
                 HttpContext httpContext) =>
