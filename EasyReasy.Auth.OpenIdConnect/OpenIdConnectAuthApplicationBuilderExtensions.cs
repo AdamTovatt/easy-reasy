@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace EasyReasy.Auth.OpenIdConnect
 {
@@ -47,7 +46,12 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// </exception>
         public static OpenIdConnectAuthEndpoints AddOpenIdConnectAuthEndpoints(this WebApplication app)
         {
-            EnsureRequiredServicesRegistered(app);
+            ExternalSignInEndpoint.ThrowIfServicesMissing(
+                app.Services,
+                nameof(AddOpenIdConnectAuthEndpoints),
+                ExternalSignInDependency.RegisteredBy(typeof(IOpenIdConnectAuthService), nameof(OpenIdConnectAuthServiceCollectionExtensions.AddEasyReasyOpenIdConnectAuth)),
+                ExternalSignInDependency.ImplementedByApplication(typeof(IOpenIdConnectProviderResolver), "resolver", "MyProviderResolver"),
+                ExternalSignInDependency.ImplementedByApplication(typeof(IOpenIdConnectAuthHandler), "handler", "MyOpenIdConnectAuthHandler"));
 
             RouteHandlerBuilder begin = app.MapPost("/api/auth/oidc/begin", async (
                 OpenIdConnectSignInBeginRequest request,
@@ -78,43 +82,6 @@ namespace EasyReasy.Auth.OpenIdConnect
                 Begin = begin,
                 SignIn = signIn,
             };
-        }
-
-        /// <summary>
-        /// Verifies, without instantiating them, that the services the endpoints depend on are registered, so a
-        /// misconfiguration surfaces as a clear startup error rather than a per-request 500.
-        /// </summary>
-        private static void EnsureRequiredServicesRegistered(WebApplication app)
-        {
-            IServiceProviderIsService serviceCheck = app.Services.GetRequiredService<IServiceProviderIsService>();
-            List<string> errors = new List<string>();
-
-            if (!serviceCheck.IsService(typeof(IOpenIdConnectAuthService)))
-            {
-                errors.Add(
-                    $"{nameof(IOpenIdConnectAuthService)} is not registered in the DI container. " +
-                    $"Call builder.Services.AddEasyReasyOpenIdConnectAuth(...) before {nameof(AddOpenIdConnectAuthEndpoints)}.");
-            }
-
-            if (!serviceCheck.IsService(typeof(IOpenIdConnectProviderResolver)))
-            {
-                errors.Add(OpenIdConnectAuthServiceCollectionExtensions.ResolverNotRegisteredMessage);
-            }
-
-            if (!serviceCheck.IsService(typeof(IOpenIdConnectAuthHandler)))
-            {
-                errors.Add(
-                    $"{nameof(IOpenIdConnectAuthHandler)} is not registered in the DI container. " +
-                    $"Register your handler before {nameof(AddOpenIdConnectAuthEndpoints)}, e.g.: " +
-                    $"builder.Services.AddScoped<{nameof(IOpenIdConnectAuthHandler)}, MyOpenIdConnectAuthHandler>();");
-            }
-
-            errors.AddRange(ExternalSignInEndpoint.FindMissingServices(app.Services, nameof(AddOpenIdConnectAuthEndpoints)));
-
-            if (errors.Count > 0)
-            {
-                throw new InvalidOperationException(string.Join("\n", errors));
-            }
         }
     }
 }

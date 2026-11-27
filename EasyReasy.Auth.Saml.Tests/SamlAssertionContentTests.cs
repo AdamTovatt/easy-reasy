@@ -15,6 +15,26 @@ namespace EasyReasy.Auth.Saml.Tests
         private const string HolderOfKeyMethod = "urn:oasis:names:tc:SAML:2.0:cm:holder-of-key";
 
         [TestMethod]
+        public void Validate_OneAttributeAcrossTwoStatements_IsOneAttributeWithEveryValue()
+        {
+            // So an attribute identity, which must hold one value, cannot pass with a second value in another statement.
+            SamlValidationHarness harness = new SamlValidationHarness();
+            FakeSamlResponse response = harness.Respond();
+            response.Attributes["groups"] = ["admins"];
+            response.EditAssertionBeforeSigning = assertion =>
+            {
+                XmlElement statement = SamlXmlEdit.AssertionChild(assertion, "AttributeStatement");
+                XmlElement second = (XmlElement)statement.CloneNode(true);
+                second.GetElementsByTagName("AttributeValue", FakeSamlResponse.AssertionNamespace)[0]!.InnerText = "auditors";
+                assertion.InsertAfter(second, statement);
+            };
+
+            SamlValidatedAssertion result = harness.Validate(response.ToFormValue());
+
+            CollectionAssert.AreEqual(new[] { "admins", "auditors" }, result.Attributes["groups"].ToArray());
+        }
+
+        [TestMethod]
         public void Validate_NoAuthnStatement_IsRefused()
         {
             SamlValidationHarness harness = new SamlValidationHarness();

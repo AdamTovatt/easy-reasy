@@ -18,7 +18,8 @@ namespace EasyReasy.Auth.Saml
 
         /// <summary>
         /// The absolute URL of the assertion consumer service: <see cref="SamlAuthPaths.AssertionConsumerService"/> as the
-        /// browser reaches it. Every response's <c>Destination</c> and bearer <c>Recipient</c> must equal it.
+        /// browser reaches it, https (or http on a loopback or localhost host, as <see cref="SecureBrowserAddress"/>
+        /// allows). Every response's <c>Destination</c> and bearer <c>Recipient</c> must equal it.
         /// </summary>
         public required Uri AssertionConsumerServiceUrl { get; init; }
 
@@ -30,8 +31,9 @@ namespace EasyReasy.Auth.Saml
         public required byte[] StateKey { get; init; }
 
         /// <summary>
-        /// How long a begun sign-in stays completable at the assertion consumer service, and how long its browser binding
-        /// cookie lives. Defaults to 10 minutes, which leaves room for a slow second factor at the identity provider.
+        /// How long a begun sign-in stays completable at the assertion consumer service. Defaults to 10 minutes, which
+        /// leaves room for a slow second factor at the identity provider. Its browser binding cookie lives this plus
+        /// <see cref="CompletionLifetime"/>, so a response that arrives just in time can still be completed.
         /// </summary>
         public TimeSpan RequestLifetime { get; init; } = TimeSpan.FromMinutes(10);
 
@@ -74,9 +76,9 @@ namespace EasyReasy.Auth.Saml
                 problems.Add($"{nameof(ServiceProviderEntityId)} is required.");
             }
 
-            if (AssertionConsumerServiceUrl == null || !AssertionConsumerServiceUrl.IsAbsoluteUri)
+            if (!SecureBrowserAddress.IsAllowed(AssertionConsumerServiceUrl))
             {
-                problems.Add($"{nameof(AssertionConsumerServiceUrl)} must be an absolute URL; got '{AssertionConsumerServiceUrl}'.");
+                problems.Add($"{nameof(AssertionConsumerServiceUrl)} must be an absolute https URL (or http on a loopback or localhost host); got '{AssertionConsumerServiceUrl}'.");
             }
 
             if (StateKey == null || StateKey.Length != 32)

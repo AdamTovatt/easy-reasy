@@ -43,11 +43,7 @@ namespace EasyReasy.Auth.OpenIdConnect
             ArgumentNullException.ThrowIfNull(services);
             ArgumentNullException.ThrowIfNull(options);
 
-            IReadOnlyList<string> problems = options.FindProblems();
-            if (problems.Count > 0)
-            {
-                throw new ArgumentException($"Invalid {nameof(OpenIdConnectAuthOptions)}:\n{string.Join("\n", problems)}", nameof(options));
-            }
+            ArgumentProblems.ThrowIfAny(options.FindProblems(), nameof(OpenIdConnectAuthOptions), nameof(options));
 
             // Copied now, as the options document; the flow is built when first resolved.
             OpenIdConnectAuthOptions copy = new OpenIdConnectAuthOptions

@@ -228,6 +228,36 @@ namespace EasyReasy.Auth.Saml.Tests
         }
 
         [TestMethod]
+        [DataRow(SamlIdentity.MaxSubjectLength, true)]
+        [DataRow(SamlIdentity.MaxSubjectLength + 1, false)]
+        public async Task Complete_SubjectLength_IsAcceptedUpToTheMostAnAccountLinkHolds(int length, bool accepted)
+        {
+            await using SamlFlowHost host = await SamlFlowHost.StartAsync();
+
+            SamlAuthCompletionResult result = await host.SignInThroughServiceAsync(customizeResponse: response => response.NameId = new string('s', length));
+
+            Assert.AreEqual(accepted, result.Success, result.ToString());
+            if (!accepted)
+            {
+                AssertRefused(result, SamlAuthFailureReason.MissingIdentity, attemptedIdentity: null);
+            }
+        }
+
+        [TestMethod]
+        public async Task AssertionConsumer_ResponseLongerThanTheMostRead_IsRefusedUnreadAndLeavesItsRequestPending()
+        {
+            await using SamlFlowHost host = await SamlFlowHost.StartAsync();
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest());
+            string stuffed = host.Respond(begun!.RedirectUrl, response => response.Attributes["padding"] = [new string('p', SamlAuthService.MaxSamlResponseLength)]);
+
+            HttpResponseMessage posted = await host.PostAssertionAsync(stuffed);
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, posted.StatusCode);
+            Assert.AreEqual(1, host.Store.PendingRequests.Count, "The response was read: its pending request was consumed.");
+            Assert.AreEqual(0, host.Store.Completions.Count);
+        }
+
+        [TestMethod]
         public async Task Complete_PersistentNameIdQualifiedForThisPair_IsAcceptedAsTheSameAccountAsUnqualified()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();

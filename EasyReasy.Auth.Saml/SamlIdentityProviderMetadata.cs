@@ -76,10 +76,10 @@ namespace EasyReasy.Auth.Saml
             Uri? singleSignOnUrl = (idp.SingleSignOnServices ?? [])
                 .Where(service => service.Binding?.OriginalString == RedirectBinding)
                 .Select(service => service.Location)
-                .FirstOrDefault(location => location != null && location.IsAbsoluteUri);
+                .FirstOrDefault(SecureBrowserAddress.IsAllowed);
             if (singleSignOnUrl == null)
             {
-                found.Add("The metadata has no SingleSignOnService with the HTTP-Redirect binding and an absolute Location.");
+                found.Add("The metadata has no SingleSignOnService with the HTTP-Redirect binding and an https Location (or http on a loopback or localhost host), the browser being sent there.");
             }
 
             List<X509Certificate2> signingCertificates = (idp.SigningCertificates ?? [])
@@ -104,16 +104,14 @@ namespace EasyReasy.Auth.Saml
         public static SamlIdentityProviderMetadata Read(string metadataXml)
         {
             return Parse(metadataXml, out IReadOnlyList<string> problems)
-                ?? throw new ArgumentException($"Invalid identity provider metadata:\n{string.Join("\n", problems)}", nameof(metadataXml));
+                ?? throw ArgumentProblems.CreateException(problems, "identity provider metadata", nameof(metadataXml));
         }
 
         private static bool IsSingleEntityDescriptor(string metadataXml, List<string> problems)
         {
             try
             {
-                XmlReaderSettings settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
-                using StringReader stringReader = new StringReader(metadataXml);
-                using XmlReader reader = XmlReader.Create(stringReader, settings);
+                using XmlReader reader = SamlXmlReading.CreateReader(metadataXml);
                 reader.MoveToContent();
                 if (reader.NamespaceURI != MetadataNamespace || reader.LocalName != "EntityDescriptor")
                 {

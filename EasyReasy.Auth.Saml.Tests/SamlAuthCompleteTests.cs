@@ -78,6 +78,25 @@ namespace EasyReasy.Auth.Saml.Tests
         }
 
         [TestMethod]
+        public async Task CompleteAsync_ResponseArrivingJustBeforeTheRequestExpires_IsRedeemedAfterIt()
+        {
+            // The binding cookie outlives the request by the completion's lifetime, so the code is still redeemable. The
+            // sign-in begins in the test clock's past, since ITfoxtec checks the response's times on the real clock.
+            await using SamlFlowHost host = await SamlFlowHost.StartAsync();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
+            DateTimeOffset responseArrives = DateTimeOffset.UtcNow;
+            host.Clock.SetUtcNow(responseArrives - host.Options.RequestLifetime + TimeSpan.FromSeconds(5));
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
+            host.Clock.SetUtcNow(responseArrives);
+            string code = await host.AnswerAsync(begun!.RedirectUrl);
+            host.Clock.Advance(host.Options.CompletionLifetime - TimeSpan.FromSeconds(5));
+
+            SamlAuthCompletionResult result = await host.ServiceCompleteAsync(browser, code);
+
+            Assert.IsTrue(result.Success, result.ToString());
+        }
+
+        [TestMethod]
         [DataRow("")]
         [DataRow("never-issued")]
         public async Task CompleteAsync_CodeNeverIssued_IsRefused(string code)

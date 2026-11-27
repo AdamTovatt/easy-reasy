@@ -3,9 +3,10 @@ using System.Diagnostics.CodeAnalysis;
 namespace EasyReasy.Auth.OpenIdConnect
 {
     /// <summary>
-    /// The rules for an address this package uses, all absolute and https, differing only in which plain-http hosts they
-    /// allow: the server's own fetches stay on loopback, an address a provider's document names may use it only for a
-    /// local provider, and an address the browser goes to follows the browser's secure-context rule.
+    /// The rules for an address the server fetches from or posts to, both absolute and https, differing only in which
+    /// plain-http hosts they allow: the server's own fetches stay on loopback, and an address a provider's document names
+    /// may use it only for a local provider. An address the browser goes to follows
+    /// <see cref="SecureBrowserAddress"/>.
     /// </summary>
     internal static class OpenIdConnectAddress
     {
@@ -34,20 +35,6 @@ namespace EasyReasy.Auth.OpenIdConnect
         {
             bool providerIsLocal = TryParseFetchable(metadataAddress, out Uri? metadata) && metadata.Scheme == Uri.UriSchemeHttp;
             return TryParse(address, parsed => providerIsLocal && parsed.IsLoopback, out uri);
-        }
-
-        /// <summary>
-        /// Whether the browser may be sent to an address (a redirect URI, an authorize endpoint): https, or http on a host
-        /// the browser treats as a secure context without TLS, the loopback addresses, <c>localhost</c> and any name under
-        /// it such as <c>app.localhost</c>. The binding cookie is <c>Secure</c>, so the browser must hold the page to be
-        /// secure.
-        /// </summary>
-        /// <param name="address">The address to check.</param>
-        /// <param name="uri">The parsed address, when it is allowed.</param>
-        /// <returns><c>true</c> when the address is allowed.</returns>
-        public static bool TryParseBrowserFacing(string? address, [NotNullWhen(true)] out Uri? uri)
-        {
-            return TryParse(address, parsed => parsed.IsLoopback || parsed.IdnHost.ToLowerInvariant().EndsWith(".localhost", StringComparison.Ordinal), out uri);
         }
 
         private static bool TryParse(string? address, Func<Uri, bool> allowsPlainHttp, [NotNullWhen(true)] out Uri? uri)

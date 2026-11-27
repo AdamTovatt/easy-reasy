@@ -1749,6 +1749,28 @@ Give each purpose its own key, never your MFA-secret cipher's. Sealing says the 
 
 `SecureToken.Generate()` is the library's one way to make a bearer secret: 256 random bits as base64url. `SecureToken.Hash` (lowercase hex) and `HashBytes` are the SHA-256 it stores one under, and `MatchesHash` the constant-time check against it. A client's PKCE verifier is a `SecureToken.Generate()` value, and `OAuthPkce.CreateS256Challenge(verifier)` is its S256 challenge (RFC 7636). The OAuth server checks a challenge's form with `IsS256Challenge` and a verifier against it with `VerifierMatchesChallenge`, on the same rule; `ChallengeLength`, `MinVerifierLength` and `MaxVerifierLength` are the RFC's lengths.
 
+#### `SecureBrowserAddress`
+
+The rule for an address a sign-in sends the browser to, or has it post to: a redirect URI, an authorization or single sign-on endpoint, an assertion consumer service. It must be https, or plain http on a loopback host, `localhost` or a name under it, which the browser treats as a secure context. Any other scheme, such as `javascript:`, is refused, so an address a provider's document or metadata names cannot run script on your origin.
+
+```csharp
+if (!SecureBrowserAddress.TryParse(redirectUri, out Uri? uri)) { /* refuse it */ }
+```
+
+#### `ArgumentProblems` and the startup check
+
+`ArgumentProblems.ThrowIfAny(problems, nameof(MyOptions), nameof(options))` throws one `ArgumentException` listing every problem a validation found, under `Invalid MyOptions:`, so the caller fixes them all at once.
+
+A provider package checks at startup that its endpoints can run with `ExternalSignInEndpoint.ThrowIfServicesMissing`. It names every missing service with how to register it, and adds what `FindMissingServices` finds:
+
+```csharp
+ExternalSignInEndpoint.ThrowIfServicesMissing(
+    app.Services,
+    nameof(AddMyProviderEndpoints),
+    ExternalSignInDependency.RegisteredBy(typeof(IMyProviderService), "AddMyProvider"),
+    ExternalSignInDependency.ImplementedByApplication(typeof(IMyProviderHandler), "handler", "MyProviderHandler"));
+```
+
 ## Advanced Configuration
 
 ### Service Registration Options
@@ -1944,6 +1966,11 @@ Version 5.19.0 adds the building blocks the browser-redirect sign-in packages ar
 - **`SecureToken`** (`Generate`, `Hash`, `HashBytes`, `MatchesHash`) generates a 256-bit random value and hashes it for storage. It was internal; its behaviour is unchanged.
 - **`OAuthPkce`** (`VerifierMatchesChallenge`, `IsS256Challenge` and the three length constants) is the OAuth server's S256 rule. It was internal; its behaviour is unchanged.
 - **`OAuthPkce.CreateS256Challenge`** is new: it computes a client's S256 challenge from its verifier.
+
+### New: `SecureBrowserAddress`, `ArgumentProblems`, `ExternalSignInDependency` and `ExternalSignInEndpoint.ThrowIfServicesMissing`
+- **`SecureBrowserAddress`** is the rule for an address a sign-in sends the browser to: https, or plain http on a loopback host, `localhost` or a name under it. Any other scheme, such as `javascript:`, is refused.
+- **`ArgumentProblems.ThrowIfAny`** reports every problem a validation found in one `ArgumentException`, under `Invalid {subject}:`.
+- **`ExternalSignInEndpoint.ThrowIfServicesMissing`** checks at startup that a provider package's endpoints can run, given its `ExternalSignInDependency` list: services its registration adds, and the application's own implementations. It names every missing one, with how to register it, and adds what `FindMissingServices` finds.
 
 ### New: `StoreSweep`
 - **The hosted service the OAuth server's sweep is built on, now public.** Derive from it to delete expired rows from a store of your own. See [Sweeping Expired Rows](#sweeping-expired-rows-from-a-store-of-your-own-storesweep). The OAuth server's sweep behaves as before.

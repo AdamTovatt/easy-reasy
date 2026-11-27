@@ -164,6 +164,35 @@ namespace EasyReasy.Auth.Tests
         }
 
         [TestMethod]
+        public void ThrowIfServicesMissing_SomeMissing_NamesEveryOneWithHowToRegisterIt()
+        {
+            using ServiceProvider services = new ServiceCollection().AddSingleton<IAuthAuditLogger, RecordingAuditLogger>().BuildServiceProvider();
+
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => ExternalSignInEndpoint.ThrowIfServicesMissing(
+                services,
+                "AddProviderEndpoints",
+                ExternalSignInDependency.RegisteredBy(typeof(IPasswordHasher), "AddEasyReasyProvider"),
+                ExternalSignInDependency.ImplementedByApplication(typeof(IRefreshTokenStore), "store", "MyStore"),
+                ExternalSignInDependency.ImplementedByApplication(typeof(IAuthAuditLogger), "logger", "MyLogger")));
+
+            string[] lines = exception.Message.Split('\n');
+            Assert.AreEqual(3, lines.Length, exception.Message);
+            Assert.AreEqual($"{nameof(IPasswordHasher)} is not registered in the DI container. Call builder.Services.AddEasyReasyProvider(...) before AddProviderEndpoints.", lines[0]);
+            Assert.AreEqual($"{nameof(IRefreshTokenStore)} is not registered in the DI container. Register your store before AddProviderEndpoints, e.g.: builder.Services.AddScoped<{nameof(IRefreshTokenStore)}, MyStore>();", lines[1]);
+            StringAssert.Contains(lines[2], nameof(IJwtTokenService));
+        }
+
+        [TestMethod]
+        public void ThrowIfServicesMissing_EveryOneRegistered_DoesNotThrow()
+        {
+            ServiceCollection collection = new ServiceCollection();
+            collection.AddEasyReasyAuth(Secret);
+            using ServiceProvider services = collection.BuildServiceProvider();
+
+            ExternalSignInEndpoint.ThrowIfServicesMissing(services, "AddProviderEndpoints", ExternalSignInDependency.RegisteredBy(typeof(IJwtTokenService), "AddEasyReasyAuth"));
+        }
+
+        [TestMethod]
         public void SetNoStoreCacheControl_SetsTheHeader()
         {
             DefaultHttpContext httpContext = new DefaultHttpContext();

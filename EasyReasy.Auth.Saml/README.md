@@ -41,7 +41,8 @@ builder.Services.AddEasyReasySamlAuth(new SamlAuthOptions
     // Optional:
     // SigningCertificate = ...,       // signs AuthnRequests; required by an identity provider that wants them signed
     // DecryptionCertificates = [...], // decrypts assertions; when set, a plaintext assertion is refused
-    // RequestLifetime = TimeSpan.FromMinutes(10),   // how long the person has at the identity provider, a second factor included
+    // RequestLifetime = TimeSpan.FromMinutes(10),   // how long the person has at the identity provider, a second factor included;
+    //                                               // the binding cookie lives this plus CompletionLifetime
     // CompletionLifetime = TimeSpan.FromMinutes(2), // how long the completion page has to redeem its code
     // SweepInterval = TimeSpan.FromHours(1),        // how often expired rows are deleted
 });
@@ -55,7 +56,7 @@ SamlAuthEndpoints samlEndpoints = app.AddSamlAuthEndpoints();
 samlEndpoints.AssertionConsumerService.RequireRateLimiting("saml-acs"); // a policy you define with AddRateLimiter
 ```
 
-The application has one service provider entity id and one assertion consumer service URL. `AssertionConsumerServiceUrl` is `SamlAuthPaths.AssertionConsumerService` (`/api/auth/saml/acs`) as the browser reaches it.
+The application has one service provider entity id and one assertion consumer service URL. `AssertionConsumerServiceUrl` is `SamlAuthPaths.AssertionConsumerService` (`/api/auth/saml/acs`) as the browser reaches it, over https. Plain http is accepted only on a loopback host, `localhost` or a name under it, which the browser treats as secure.
 
 `AddSamlAuthEndpoints` returns one builder per endpoint, so you can add a rate limit or other metadata to one of them. Rate-limit the assertion consumer service at least: anyone can post to it, and it parses the XML before it can tell whether the response answers a request this server began.
 
@@ -83,16 +84,21 @@ public class MyIdentityProviderResolver : ISamlIdentityProviderResolver
             return null;
         }
 
-        // An attribute that never changes for the person, when the IdP cannot send a persistent NameID:
-        // SamlIdentitySource identitySource = SamlIdentitySource.Attribute("http://schemas.example/employeeid");
-        return _identityProviders.Create(customer.SamlMetadataXml);
+        // The default reads a persistent NameID. When the IdP cannot send one, name an attribute that never changes
+        // for the person instead, such as SamlIdentitySource.Attribute("http://schemas.example/employeeid").
+        SamlIdentitySource identitySource = customer.SamlIdentityAttribute == null
+            ? SamlIdentitySource.PersistentNameId
+            : SamlIdentitySource.Attribute(customer.SamlIdentityAttribute);
+        return _identityProviders.Create(customer.SamlMetadataXml, identitySource);
     }
 }
 ```
 
 **Supplying the metadata**
 - `SamlIdentityProviderFactory`, which `AddEasyReasySamlAuth` registers as a singleton, builds a `SamlIdentityProvider` from the identity provider's metadata XML. **You supply and refresh the XML**: the package never fetches it.
-- The factory reads one `md:EntityDescriptor` from it (an aggregate is refused): its entity id, its HTTP-Redirect single sign-on URL and its signing certificates.
+- The factory reads one `md:EntityDescriptor` from it (an aggregate is refused): its entity id, its HTTP-Redirect single sign-on URL and its RSA signing certificates.
+  - The single sign-on URL is where the browser is sent, so it must be https. Plain http is accepted only on a loopback host, `localhost` or a name under it. Any other scheme, such as `javascript:`, is refused.
+  - A signing certificate without an RSA key is ignored, and metadata with no RSA signing certificate is refused.
 - It keeps the metadata parsed per distinct XML, so building the provider on every call is cheap, an unchanged configuration is not parsed again, and a changed one takes effect at once.
 - Metadata it cannot use makes `Create` throw one `ArgumentException` listing every problem, so every `SamlIdentityProvider` can be signed in with. An exception from your resolver fails the request it serves with a 500, so check metadata when you accept it, to report the problems to whoever supplied it:
 
@@ -145,7 +151,14 @@ public class MySamlAuthHandler : ISamlAuthHandler
     {
         // The key is the browser's: return null for one you do not offer for sign-in, such as a provider kept only for
         // linking accounts, and the begin endpoint answers 400.
-        return Task.FromResult<SamlSignInSettings?>(new SamlSignInSettings { CompletionPath = "/auth/saml/done" });
+        return Task.FromResult<SamlSignInSettings?>(new SamlSignInSettings
+        {
+            CompletionPath = "/auth/saml/done",
+            // Optional, the same rules as a begin request of your own (see "The rules a begin request can set"):
+            // ForceAuthentication = true,
+            // MaxAuthenticationAge = TimeSpan.FromHours(8),
+            // AcceptedAuthnContextClassRefs = ["urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"],
+        });
     }
 
     public async Task<AuthResponse?> HandleSamlUserAsync(
@@ -225,7 +238,7 @@ The metadata names your entity id and assertion consumer service (HTTP-POST). It
 | Endpoint | Body | Answer |
 |---|---|---|
 | `POST /api/auth/saml/begin` | `{ "identityProviderKey": "…" }` | 200 `{ "redirectUrl": "…" }`, or 400 when your handler returns no settings for the key or it resolves to no identity provider |
-| `POST /api/auth/saml/acs` | the identity provider's form post (`SAMLResponse`) | 303 to the sign-in's completion path with `?code=`; 400 when the post is not a form or has no `SAMLResponse`, when that is not base64 XML or names no `InResponseTo`, or when it answers no pending request (unknown, already answered or expired) |
+| `POST /api/auth/saml/acs` | the identity provider's form post (`SAMLResponse`) | 303 to the sign-in's completion path with `?code=`; 400 when the post is not a form or has no `SAMLResponse`, when that is over 256 KiB or not base64 XML or names no `InResponseTo`, or when it answers no pending request (unknown, already answered or expired) |
 | `POST /api/auth/saml` | `{ "code": "…" }` | 200 with the `AuthResponse`, or 401 |
 
 - All three are anonymous and `no-store`. Their paths are constants on `SamlAuthPaths`.
@@ -252,7 +265,8 @@ SamlAuthBeginResult? begun = await samlAuth.BeginAsync(new SamlAuthBeginRequest
     AcceptedAuthnContextClassRefs = ["http://schemas.microsoft.com/claims/multipleauthn"],
     ExpectedIdentity = user.SamlIdentity,
 }, httpContext);
-// null when the key resolves to no identity provider
+// null when the key resolves to no identity provider. Throws ArgumentException for a request breaking the rules below,
+// and InvalidOperationException when the identity provider wants signed requests and SigningCertificate is not set.
 
 // The completion page posts the code to your endpoint, which calls:
 SamlAuthCompletionResult result = await samlAuth.CompleteAsync(code, $"sign:{user.Id}:{record.Id}", httpContext);
@@ -264,9 +278,9 @@ if (result.Success)
 
 **The rules a begin request can set**
 - `ForceAuthentication` sends `ForceAuthn`.
-- `MaxAuthenticationAge` refuses an `AuthnInstant` older than that.
+- `MaxAuthenticationAge` refuses an `AuthnInstant` older than that, measured on the server's clock with no clock skew allowance. An `AuthnInstant` ahead of the server's clock counts as no age.
 - `AcceptedAuthnContextClassRefs` is sent as an exact `RequestedAuthnContext`. It refuses an assertion with no class or with another class. A missing value is refused, never assumed.
-- `ExpectedIdentity` refuses any other account. Its key must be the request's `IdentityProviderKey`, or Begin throws.
+- `ExpectedIdentity` refuses any other account. Its key must be the request's `IdentityProviderKey`, and its entity id the resolved identity provider's, or Begin throws, since no sign-in could pass.
 - `CompletionPath` is a path on your site: one leading `/`, no `//`, no backslash and no `#`. It may carry a query string; the code joins it.
 
 `CompleteAsync` takes the caller binding your endpoint began with and refuses a code begun with any other as `CallerBindingMismatch`. So a re-check endpoint never accepts a plain sign-in, which carried none of its rules, and the sign-in endpoint never accepts a code from your own flows.
@@ -287,7 +301,9 @@ The subject comes from the provider's `SamlIdentitySource`:
   - Transient, email and unspecified NameIDs are refused.
 - **`SamlIdentitySource.Attribute(name)`**.
   - One attribute whose value never changes for the person replaces the NameID.
-  - A missing or multi-valued attribute is refused.
+  - A missing or multi-valued attribute is refused. One name in several `AttributeStatement`s is one attribute with all their values.
+
+A subject is at most `SamlIdentity.MaxSubjectLength` (256) characters, SAML's limit on a persistent NameID, so you can size the column you store it in. A longer one is refused as `MissingIdentity`.
 
 An email address is never an identity. Attributes are in `SamlUserInfo.Attributes`, for display and the like.
 
@@ -315,6 +331,7 @@ ITfoxtec parses the response, refuses DTDs, decrypts it and verifies every signa
 - Every encrypted part must use AES-GCM with an RSA-OAEP key transport, checked before anything is decrypted. RSA-OAEP is accepted under XML Encryption 1.0's identifier and 1.1's, which names its digest and mask function. A 1.1 key that names neither, leaving them to the specification's SHA-1 defaults, fails to decrypt and is refused, since ITfoxtec reads a missing mask function as MGF1-SHA256. AES-CBC and RSA PKCS#1 v1.5 are refused.
 
 **Times and content**
+- The `SAMLResponse` is at most 256 KiB, far beyond a real response. A longer one is refused unread with a 400, so what an outcome stores stays small whoever posts it.
 - The status is Success.
 - There is exactly one bearer confirmation, with no `NotBefore`.
 - The assertion is within its conditions' and confirmation's times, with 2 minutes of clock skew.

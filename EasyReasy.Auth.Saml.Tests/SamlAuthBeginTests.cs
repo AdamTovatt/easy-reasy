@@ -47,7 +47,7 @@ namespace EasyReasy.Auth.Saml.Tests
             Assert.IsTrue(cookie.HttpOnly);
             Assert.AreEqual(Microsoft.Net.Http.Headers.SameSiteMode.Lax, cookie.SameSite);
             Assert.AreEqual("/", cookie.Path.Value);
-            Assert.AreEqual(host.Options.RequestLifetime, cookie.MaxAge);
+            Assert.AreEqual(host.Options.RequestLifetime + host.Options.CompletionLifetime, cookie.MaxAge);
         }
 
         [TestMethod]
@@ -169,6 +169,24 @@ namespace EasyReasy.Auth.Saml.Tests
             StringAssert.Contains(exception.Message, nameof(SamlAuthBeginRequest.CompletionPath));
             StringAssert.Contains(exception.Message, nameof(SamlAuthBeginRequest.MaxAuthenticationAge));
             StringAssert.Contains(exception.Message, nameof(SamlAuthBeginRequest.AcceptedAuthnContextClassRefs));
+        }
+
+        [TestMethod]
+        public async Task BeginAsync_BlankKeyNullCallerBindingAndNoAcceptedClasses_ReportsEachWithoutResolving()
+        {
+            await using SamlFlowHost host = await SamlFlowHost.StartAsync();
+
+            ArgumentException exception = await Assert.ThrowsExceptionAsync<ArgumentException>(() => host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest(request =>
+            {
+                request.IdentityProviderKey = " ";
+                request.CallerBinding = null!;
+                request.AcceptedAuthnContextClassRefs = [];
+            })));
+
+            StringAssert.Contains(exception.Message, nameof(SamlAuthBeginRequest.IdentityProviderKey));
+            StringAssert.Contains(exception.Message, nameof(SamlAuthBeginRequest.CallerBinding));
+            StringAssert.Contains(exception.Message, nameof(SamlAuthBeginRequest.AcceptedAuthnContextClassRefs));
+            Assert.AreEqual(0, host.Resolver.Calls);
         }
 
         [TestMethod]

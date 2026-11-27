@@ -17,6 +17,6 @@ namespace EasyReasy.Auth.Saml
 
         public required string? AuthnContextClassRef { get; init; }
 
-        public required Dictionary<string, List<string>> Attributes { get; init; }
+        public required IReadOnlyDictionary<string, IReadOnlyList<string>> Attributes { get; init; }
     }
 }

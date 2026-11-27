@@ -30,11 +30,7 @@ namespace EasyReasy.Auth.Saml
             ArgumentNullException.ThrowIfNull(services);
             ArgumentNullException.ThrowIfNull(options);
 
-            IReadOnlyList<string> problems = options.FindProblems();
-            if (problems.Count > 0)
-            {
-                throw new ArgumentException($"Invalid {nameof(SamlAuthOptions)}:\n{string.Join("\n", problems)}", nameof(options));
-            }
+            ArgumentProblems.ThrowIfAny(options.FindProblems(), nameof(SamlAuthOptions), nameof(options));
 
             // Copied now, so the caller changing its arrays or lists later does not change the registration.
             SamlAuthOptions copy = new SamlAuthOptions

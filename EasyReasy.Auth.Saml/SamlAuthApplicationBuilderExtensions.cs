@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
+using ItfoxtecSaml2Constants = ITfoxtec.Identity.Saml2.Schemas.Saml2Constants;
 
 namespace EasyReasy.Auth.Saml
 {
@@ -15,15 +15,17 @@ namespace EasyReasy.Auth.Saml
         /// <item><see cref="SamlAuthPaths.AssertionConsumerService"/> (<c>POST /api/auth/saml/acs</c>): takes the
         /// identity provider's form post, checks the response, keeps the outcome under a single-use code and answers 303 to
         /// the sign-in's completion path with <c>?code=</c>. It answers 400, with no code, when the post is not a form or
-        /// has no <c>SAMLResponse</c>, when that is not base64 XML or names no <c>InResponseTo</c>, and when it answers no
-        /// pending request this server began (unknown, already answered or expired): then there is no sign-in to send the
-        /// browser back to. It serves every sign-in, the application's own flows through <see cref="ISamlAuthService"/>
+        /// has no <c>SAMLResponse</c>, when that is over 256 KiB, is not base64 XML or names no <c>InResponseTo</c>, and
+        /// when it answers no pending request this server began (unknown, already answered or expired): then there is no
+        /// sign-in to send the browser back to. It serves every sign-in, the application's own flows through <see cref="ISamlAuthService"/>
         /// included.</item>
-        /// <item><see cref="SamlAuthPaths.Begin"/> (<c>POST /api/auth/saml/begin</c>) takes a JSON body with the <c>identityProviderKey</c> the person chose,
-        /// sets the sign-in's binding cookie and returns the <c>redirectUrl</c> to send the browser to, or 400 when the
-        /// handler does not offer the key for sign-in or it resolves to no identity provider.</item>
-        /// <item><see cref="SamlAuthPaths.SignIn"/> (<c>POST /api/auth/saml</c>) takes a JSON body with the <c>code</c> the completion page received, and
-        /// answers like the other sign-in endpoints: 200 with the <see cref="AuthResponse"/>, or 401.</item>
+        /// <item><see cref="SamlAuthPaths.Begin"/> (<c>POST /api/auth/saml/begin</c>) takes a JSON body with the
+        /// <c>identityProviderKey</c> the person chose, sets the sign-in's binding cookie and returns the
+        /// <c>redirectUrl</c> to send the browser to, or 400 when the handler does not offer the key for sign-in or it
+        /// resolves to no identity provider.</item>
+        /// <item><see cref="SamlAuthPaths.SignIn"/> (<c>POST /api/auth/saml</c>) takes a JSON body with the <c>code</c>
+        /// the completion page received, and answers like the other sign-in endpoints: 200 with the
+        /// <see cref="AuthResponse"/>, or 401.</item>
         /// </list>
         /// </summary>
         /// <remarks>
@@ -52,7 +54,13 @@ namespace EasyReasy.Auth.Saml
         /// </exception>
         public static SamlAuthEndpoints AddSamlAuthEndpoints(this WebApplication app)
         {
-            EnsureRequiredServicesRegistered(app);
+            ExternalSignInEndpoint.ThrowIfServicesMissing(
+                app.Services,
+                nameof(AddSamlAuthEndpoints),
+                ExternalSignInDependency.RegisteredBy(typeof(ISamlAuthService), nameof(SamlAuthServiceCollectionExtensions.AddEasyReasySamlAuth)),
+                ExternalSignInDependency.ImplementedByApplication(typeof(ISamlIdentityProviderResolver), "resolver", "MyIdentityProviderResolver"),
+                ExternalSignInDependency.ImplementedByApplication(typeof(ISamlAuthStore), "store", "MySamlAuthStore"),
+                ExternalSignInDependency.ImplementedByApplication(typeof(ISamlAuthHandler), "handler", "MySamlAuthHandler"));
 
             RouteHandlerBuilder assertionConsumerService = app.MapPost(SamlAuthPaths.AssertionConsumerService, async (SamlAuthService authService, HttpContext httpContext) =>
             {
@@ -64,7 +72,7 @@ namespace EasyReasy.Auth.Saml
                 }
 
                 IFormCollection form = await httpContext.Request.ReadFormAsync(httpContext.RequestAborted);
-                string? samlResponse = form["SAMLResponse"];
+                string? samlResponse = form[ItfoxtecSaml2Constants.Message.SamlResponse];
                 if (string.IsNullOrEmpty(samlResponse))
                 {
                     return Results.BadRequest();
@@ -112,54 +120,6 @@ namespace EasyReasy.Auth.Saml
                 Begin = begin,
                 SignIn = signIn,
             };
-        }
-
-        /// <summary>
-        /// Verifies, without instantiating them, that the services the endpoints depend on are registered, so a
-        /// misconfiguration surfaces as a clear startup error rather than a per-request 500.
-        /// </summary>
-        private static void EnsureRequiredServicesRegistered(WebApplication app)
-        {
-            IServiceProviderIsService serviceCheck = app.Services.GetRequiredService<IServiceProviderIsService>();
-            List<string> errors = new List<string>();
-
-            if (!serviceCheck.IsService(typeof(ISamlAuthService)))
-            {
-                errors.Add(
-                    $"{nameof(ISamlAuthService)} is not registered in the DI container. " +
-                    $"Call builder.Services.AddEasyReasySamlAuth(...) before {nameof(AddSamlAuthEndpoints)}.");
-            }
-
-            if (!serviceCheck.IsService(typeof(ISamlIdentityProviderResolver)))
-            {
-                errors.Add(
-                    $"{nameof(ISamlIdentityProviderResolver)} is not registered in the DI container. " +
-                    $"Register your resolver before {nameof(AddSamlAuthEndpoints)}, e.g.: " +
-                    $"builder.Services.AddScoped<{nameof(ISamlIdentityProviderResolver)}, MyIdentityProviderResolver>();");
-            }
-
-            if (!serviceCheck.IsService(typeof(ISamlAuthStore)))
-            {
-                errors.Add(
-                    $"{nameof(ISamlAuthStore)} is not registered in the DI container. " +
-                    $"Register your store before {nameof(AddSamlAuthEndpoints)}, e.g.: " +
-                    $"builder.Services.AddScoped<{nameof(ISamlAuthStore)}, MySamlAuthStore>();");
-            }
-
-            if (!serviceCheck.IsService(typeof(ISamlAuthHandler)))
-            {
-                errors.Add(
-                    $"{nameof(ISamlAuthHandler)} is not registered in the DI container. " +
-                    $"Register your handler before {nameof(AddSamlAuthEndpoints)}, e.g.: " +
-                    $"builder.Services.AddScoped<{nameof(ISamlAuthHandler)}, MySamlAuthHandler>();");
-            }
-
-            errors.AddRange(ExternalSignInEndpoint.FindMissingServices(app.Services, nameof(AddSamlAuthEndpoints)));
-
-            if (errors.Count > 0)
-            {
-                throw new InvalidOperationException(string.Join("\n", errors));
-            }
         }
     }
 }

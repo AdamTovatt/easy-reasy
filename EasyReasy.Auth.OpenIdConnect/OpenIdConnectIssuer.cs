@@ -116,10 +116,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 problems.Add($"The metadata address '{metadataAddress}' must be an absolute https URL (or http on a loopback host).");
             }
 
-            if (problems.Count > 0)
-            {
-                throw new ArgumentException($"Invalid issuer template:\n{string.Join("\n", problems)}");
-            }
+            ArgumentProblems.ThrowIfAny(problems, "issuer template");
 
             return new OpenIdConnectIssuer(template, metadataAddress, tenantClaim);
         }
