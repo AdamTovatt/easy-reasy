@@ -7,7 +7,10 @@ namespace EasyReasy.Auth.Saml.Tests
     /// </summary>
     internal sealed class FakeSamlAuthHandler : ISamlAuthHandler
     {
-        public SamlSignInSettings Settings { get; set; } = new SamlSignInSettings { CompletionPath = "/signed-in" };
+        /// <summary>
+        /// The settings every key gets, or null to offer no key for sign-in.
+        /// </summary>
+        public SamlSignInSettings? Settings { get; set; } = new SamlSignInSettings { CompletionPath = "/signed-in" };
 
         public AuthResponse? ResponseToReturn { get; set; }
 
@@ -15,7 +18,7 @@ namespace EasyReasy.Auth.Saml.Tests
 
         public List<SamlUserInfo> HandledUsers { get; } = new List<SamlUserInfo>();
 
-        public Task<SamlSignInSettings> GetSignInSettingsAsync(string identityProviderKey, HttpContext httpContext)
+        public Task<SamlSignInSettings?> GetSignInSettingsAsync(string identityProviderKey, HttpContext httpContext)
         {
             SettingsRequestedFor.Add(identityProviderKey);
             return Task.FromResult(Settings);

@@ -12,7 +12,7 @@ namespace EasyReasy.Auth.Saml.Tests
             SamlValidationHarness harness = new SamlValidationHarness();
             string samlResponse = harness.Respond().ToFormValue();
 
-            Assert.ThrowsException<ArgumentException>(() => harness.Validator.Validate(samlResponse, " ", harness.IdentityProvider.Provider));
+            Assert.ThrowsException<ArgumentException>(() => harness.Validator.Validate(samlResponse, " ", harness.IdentityProvider.Metadata));
         }
     }
 }

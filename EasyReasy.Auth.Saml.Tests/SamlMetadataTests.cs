@@ -1,11 +1,13 @@
+using Microsoft.Extensions.DependencyInjection;
 using System.Security.Cryptography.X509Certificates;
 using System.Xml;
 
 namespace EasyReasy.Auth.Saml.Tests
 {
     /// <summary>
-    /// Identity provider metadata the application supplies is usable or refused at construction, and the service
-    /// provider's metadata carries what an identity provider administrator needs and no private key.
+    /// Identity provider metadata the application supplies is usable or refused with every problem, parsed once per
+    /// distinct XML for one registration, and the service provider's metadata carries what an identity provider
+    /// administrator needs and no private key.
     /// </summary>
     [TestClass]
     public class SamlMetadataTests
@@ -13,59 +15,67 @@ namespace EasyReasy.Auth.Saml.Tests
         private static readonly FakeSamlIdentityProvider _identityProvider = new FakeSamlIdentityProvider("https://idp.example.test/metadata", SamlTestCertificates.IdentityProvider);
 
         [TestMethod]
-        public void SamlIdentityProvider_ValidMetadata_ReadsEntityIdSingleSignOnUrlAndEveryPinnedCertificate()
+        public void Read_ValidMetadata_ReadsEntityIdSingleSignOnUrlAndEveryPinnedCertificate()
         {
-            SamlIdentityProvider provider = new SamlIdentityProvider(_identityProvider.MetadataXml(SamlTestCertificates.IdentityProvider, SamlTestCertificates.IdentityProviderRollover));
+            SamlIdentityProviderMetadata metadata = SamlIdentityProviderMetadata.Read(_identityProvider.MetadataXml(SamlTestCertificates.IdentityProvider, SamlTestCertificates.IdentityProviderRollover));
 
-            Assert.AreEqual(_identityProvider.EntityId, provider.EntityId);
-            Assert.AreEqual(_identityProvider.SingleSignOnUrl, provider.SingleSignOnUrl);
+            Assert.AreEqual(_identityProvider.EntityId, metadata.EntityId);
+            Assert.AreEqual(_identityProvider.SingleSignOnUrl, metadata.SingleSignOnUrl);
             CollectionAssert.AreEqual(
                 new[] { SamlTestCertificates.IdentityProvider.Thumbprint, SamlTestCertificates.IdentityProviderRollover.Thumbprint },
-                provider.SigningCertificates.Select(certificate => certificate.Thumbprint).ToArray());
-            Assert.IsFalse(provider.SigningCertificates.Any(certificate => certificate.HasPrivateKey));
+                metadata.SigningCertificates.Select(certificate => certificate.Thumbprint).ToArray());
+            Assert.IsFalse(metadata.SigningCertificates.Any(certificate => certificate.HasPrivateKey));
+            Assert.IsFalse(metadata.WantsSignedRequests);
+        }
+
+        [TestMethod]
+        public void Read_WantAuthnRequestsSigned_IsRead()
+        {
+            SamlIdentityProviderMetadata metadata = SamlIdentityProviderMetadata.Read(_identityProvider.MetadataXml(wantsSignedRequests: true));
+
+            Assert.IsTrue(metadata.WantsSignedRequests);
+        }
+
+        [TestMethod]
+        public void Create_NoIdentitySource_TakesThePersistentNameId()
+        {
+            SamlIdentityProvider provider = new SamlIdentityProviderFactory().Create(_identityProvider.MetadataXml());
+
             Assert.AreSame(SamlIdentitySource.PersistentNameId, provider.IdentitySource);
-            Assert.IsFalse(provider.WantsSignedRequests);
         }
 
         [TestMethod]
-        public void SamlIdentityProvider_SameMetadataTwice_IsParsedOnce()
+        [DataRow("")]
+        [DataRow("   ")]
+        public void Create_BlankMetadata_Throws(string metadataXml)
         {
-            string metadata = _identityProvider.MetadataXml(SamlTestCertificates.IdentityProviderRollover);
-
-            SamlIdentityProvider first = new SamlIdentityProvider(metadata);
-            SamlIdentityProvider second = new SamlIdentityProvider(metadata);
-
-            Assert.AreSame(first.SigningCertificates, second.SigningCertificates);
+            Assert.ThrowsException<ArgumentException>(() => new SamlIdentityProviderFactory().Create(metadataXml));
         }
 
         [TestMethod]
-        public void SamlIdentityProvider_MoreDistinctMetadataThanTheCacheHolds_ParsesTheFirstAgain()
+        public void Create_UnusableMetadata_ThrowsListingEveryProblem()
         {
-            string first = _identityProvider.MetadataXml(SamlTestCertificates.IdentityProvider, SamlTestCertificates.IdentityProviderRollover);
-            SamlIdentityProvider before = new SamlIdentityProvider(first);
-            for (int index = 0; index < SamlIdentityProviderMetadata.MaxCachedDocuments; index++)
-            {
-                _ = new SamlIdentityProvider(new FakeSamlIdentityProvider($"https://idp-{index}.example.test/metadata", SamlTestCertificates.IdentityProvider).MetadataXml());
-            }
-
-            SamlIdentityProvider after = new SamlIdentityProvider(first);
-
-            Assert.AreNotSame(before.SigningCertificates, after.SigningCertificates);
-            Assert.AreSame(after.SigningCertificates, new SamlIdentityProvider(first).SigningCertificates);
-        }
-
-        [TestMethod]
-        public void SamlIdentityProvider_AggregateOfEntities_IsRefused()
-        {
-            string aggregate = $"<md:EntitiesDescriptor xmlns:md=\"urn:oasis:names:tc:SAML:2.0:metadata\">{_identityProvider.MetadataXml()}</md:EntitiesDescriptor>";
-
-            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => new SamlIdentityProvider(aggregate));
+            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => new SamlIdentityProviderFactory().Create("<not-metadata/>"));
 
             StringAssert.Contains(exception.Message, "EntityDescriptor");
         }
 
         [TestMethod]
-        public void SamlIdentityProvider_NoRedirectSingleSignOnAndNoSigningCertificate_ReportsBoth()
+        public void FindMetadataProblems_UsableMetadata_FindsNone()
+        {
+            Assert.AreEqual(0, SamlIdentityProvider.FindMetadataProblems(_identityProvider.MetadataXml()).Count);
+        }
+
+        [TestMethod]
+        public void FindMetadataProblems_AggregateOfEntities_ReportsIt()
+        {
+            string aggregate = $"<md:EntitiesDescriptor xmlns:md=\"urn:oasis:names:tc:SAML:2.0:metadata\">{_identityProvider.MetadataXml()}</md:EntitiesDescriptor>";
+
+            StringAssert.Contains(SamlIdentityProvider.FindMetadataProblems(aggregate).Single(), "EntityDescriptor");
+        }
+
+        [TestMethod]
+        public void FindMetadataProblems_NoRedirectSingleSignOnAndNoSigningCertificate_ReportsBoth()
         {
             XmlDocument metadata = new XmlDocument();
             metadata.LoadXml(_identityProvider.MetadataXml());
@@ -75,28 +85,58 @@ namespace EasyReasy.Auth.Saml.Tests
             XmlNode keyDescriptor = metadata.SelectSingleNode("//md:KeyDescriptor", namespaces)!;
             keyDescriptor.ParentNode!.RemoveChild(keyDescriptor);
 
-            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => new SamlIdentityProvider(metadata.OuterXml));
+            IReadOnlyList<string> problems = SamlIdentityProvider.FindMetadataProblems(metadata.OuterXml);
 
-            StringAssert.Contains(exception.Message, "HTTP-Redirect");
-            StringAssert.Contains(exception.Message, "signing");
+            Assert.AreEqual(2, problems.Count);
+            Assert.IsTrue(problems.Any(problem => problem.Contains("HTTP-Redirect", StringComparison.Ordinal)));
+            Assert.IsTrue(problems.Any(problem => problem.Contains("signing", StringComparison.Ordinal)));
         }
 
         [TestMethod]
-        public void SamlIdentityProvider_MetadataWithDtd_IsRefused()
+        public void FindMetadataProblems_MetadataWithDtd_ReportsIt()
         {
             string withDtd = "<!DOCTYPE md:EntityDescriptor [<!ENTITY x \"y\">]>" + _identityProvider.MetadataXml();
 
-            ArgumentException exception = Assert.ThrowsException<ArgumentException>(() => new SamlIdentityProvider(withDtd));
-
-            StringAssert.Contains(exception.Message, "DTD");
+            StringAssert.Contains(SamlIdentityProvider.FindMetadataProblems(withDtd).Single(), "DTD");
         }
 
         [TestMethod]
-        public void SamlIdentityProvider_WantAuthnRequestsSigned_IsRead()
+        public void Create_SameMetadataTwice_IsParsedOnce()
         {
-            SamlIdentityProvider provider = new SamlIdentityProvider(_identityProvider.MetadataXml(wantsSignedRequests: true));
+            SamlIdentityProviderFactory factory = new SamlIdentityProviderFactory();
+            string metadata = _identityProvider.MetadataXml(SamlTestCertificates.IdentityProviderRollover);
 
-            Assert.IsTrue(provider.WantsSignedRequests);
+            Assert.AreSame(factory.Create(metadata).Metadata, factory.Create(metadata).Metadata);
+        }
+
+        [TestMethod]
+        public async Task Create_TwoRegistrations_ShareNothing()
+        {
+            await using SamlFlowHost first = await SamlFlowHost.StartAsync();
+            await using SamlFlowHost second = await SamlFlowHost.StartAsync();
+            string metadata = _identityProvider.MetadataXml();
+
+            SamlIdentityProvider fromFirst = first.App.Services.GetRequiredService<SamlIdentityProviderFactory>().Create(metadata);
+            SamlIdentityProvider fromSecond = second.App.Services.GetRequiredService<SamlIdentityProviderFactory>().Create(metadata);
+
+            Assert.AreNotSame(fromFirst.Metadata, fromSecond.Metadata);
+        }
+
+        [TestMethod]
+        public void Create_MoreDistinctMetadataThanItHolds_ParsesTheFirstAgain()
+        {
+            SamlIdentityProviderFactory factory = new SamlIdentityProviderFactory();
+            string first = _identityProvider.MetadataXml(SamlTestCertificates.IdentityProvider, SamlTestCertificates.IdentityProviderRollover);
+            SamlIdentityProviderMetadata before = factory.Create(first).Metadata;
+            for (int index = 0; index < SamlIdentityProviderFactory.MaxCachedDocuments; index++)
+            {
+                factory.Create(new FakeSamlIdentityProvider($"https://idp-{index}.example.test/metadata", SamlTestCertificates.IdentityProvider).MetadataXml());
+            }
+
+            SamlIdentityProviderMetadata after = factory.Create(first).Metadata;
+
+            Assert.AreNotSame(before, after);
+            Assert.AreSame(after, factory.Create(first).Metadata);
         }
 
         [TestMethod]

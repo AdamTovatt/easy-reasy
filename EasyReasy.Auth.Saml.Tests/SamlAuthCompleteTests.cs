@@ -93,14 +93,29 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task CompleteAsync_StoredRecordNotSealedByThisKey_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            await host.Store.StoreCompletionAsync(new SamlCompletionRecord(
-                System.Buffers.Text.Base64Url.EncodeToString(System.Security.Cryptography.SHA256.HashData("planted"u8)),
+            await host.Store.StoreAsync(new SamlAuthRecord(
+                SamlAuthRecordKind.Completion,
+                SecureToken.Hash("planted"),
                 "bm90LXNlYWxlZA",
                 host.Clock.GetUtcNow().UtcDateTime.AddMinutes(1)));
 
             SamlAuthCompletionResult result = await host.ServiceCompleteAsync(new FakeBrowser(host.Clock), "planted");
 
             Assert.AreEqual(SamlAuthFailureReason.UnknownCompletionCode, result.FailureReason);
+            Assert.AreEqual(0, host.Store.Completions.Count, "The planted record was never found, so the sealer was not what refused it.");
+        }
+
+        [TestMethod]
+        public async Task CompleteAsync_CodeThatIsAPendingRequestsHash_FindsNoCompletion()
+        {
+            await using SamlFlowHost host = await SamlFlowHost.StartAsync();
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest());
+            string requestId = new SamlRedirectReader(begun!.RedirectUrl).RequestId;
+
+            SamlAuthCompletionResult result = await host.ServiceCompleteAsync(new FakeBrowser(host.Clock), requestId);
+
+            Assert.AreEqual(SamlAuthFailureReason.UnknownCompletionCode, result.FailureReason);
+            Assert.AreEqual(1, host.Store.PendingRequests.Count);
         }
 
         [TestMethod]

@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -31,23 +30,12 @@ namespace EasyReasy.Auth.Tests
                 ["POST " + OAuthServerPaths.AuthorizationRequestsPrefix + "/{request}/approve"] = endpoints.ConsentApproval,
                 ["POST " + OAuthServerPaths.AuthorizationRequestsPrefix + "/{request}/deny"] = endpoints.ConsentDenial,
             };
-            foreach (KeyValuePair<string, RouteHandlerBuilder> entry in byName)
-            {
-                entry.Value.WithMetadata(new EndpointMarker(entry.Key));
-            }
+            EndpointBuilderMarks.Mark(byName);
 
             await using (app)
             {
                 await app.StartAsync();
-                List<RouteEndpoint> mapped = app.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>().ToList();
-
-                foreach (string name in byName.Keys)
-                {
-                    RouteEndpoint marked = mapped.Single(endpoint => endpoint.Metadata.GetOrderedMetadata<EndpointMarker>().Any(marker => marker.Name == name));
-                    string method = marked.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Single();
-                    Assert.AreEqual(name, method + " " + marked.RoutePattern.RawText, "The builder for " + name + " belongs to another endpoint.");
-                    Assert.AreEqual(1, marked.Metadata.GetOrderedMetadata<EndpointMarker>().Count, name + "'s endpoint carries another builder's metadata.");
-                }
+                EndpointBuilderMarks.AssertEachReachesOnlyItsEndpoint(app.Services, byName.Keys);
             }
         }
 
@@ -94,7 +82,5 @@ namespace EasyReasy.Auth.Tests
             app.UseEasyReasyAuth(delay => delay.Enabled = false);
             return app;
         }
-
-        private sealed record EndpointMarker(string Name);
     }
 }

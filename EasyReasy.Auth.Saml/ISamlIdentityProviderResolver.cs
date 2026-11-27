@@ -10,6 +10,13 @@ namespace EasyReasy.Auth.Saml
     /// configured now: the response is checked against the metadata of that moment, and a sign-in whose provider's entity
     /// id changed after it began is refused as <see cref="SamlAuthFailureReason.IdentityProviderChanged"/>.
     /// <para>
+    /// Build each provider with the injected <see cref="SamlIdentityProviderFactory"/>, which keeps the metadata parsed,
+    /// so building one per call is cheap. It throws for metadata the package cannot use; check metadata with
+    /// <see cref="SamlIdentityProvider.FindMetadataProblems"/> when the application accepts it, so the resolver is never
+    /// handed any. An exception from the resolver fails the request it serves, so a provider the application can no
+    /// longer use should resolve to null instead.
+    /// </para>
+    /// <para>
     /// The key is part of every <see cref="SamlIdentity"/> the provider yields, because its configuration is what the
     /// response was verified against. Never give a key to another identity provider or customer, and never change the key
     /// of one in use, or the accounts linked through it stop matching.

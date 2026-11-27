@@ -31,9 +31,14 @@ namespace EasyReasy.Auth.Saml.Tests
         public X509Certificate2 SigningCertificate { get; }
 
         /// <summary>
-        /// Gets this identity provider as an app trusts it: from its metadata, pinning its signing certificate.
+        /// Gets this identity provider as an app configures it: its metadata, pinning its signing certificate.
         /// </summary>
-        public SamlIdentityProvider Provider => new SamlIdentityProvider(MetadataXml());
+        public ConfiguredSamlIdentityProvider Configured => new ConfiguredSamlIdentityProvider(MetadataXml());
+
+        /// <summary>
+        /// Gets this identity provider's metadata as the package parses it.
+        /// </summary>
+        public SamlIdentityProviderMetadata Metadata => SamlIdentityProviderMetadata.Read(MetadataXml());
 
         /// <summary>
         /// Returns the identity provider's metadata, with <paramref name="signingCertificates"/> as its signing keys (by

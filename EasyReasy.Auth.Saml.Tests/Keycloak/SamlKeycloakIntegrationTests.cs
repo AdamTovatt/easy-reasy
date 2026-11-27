@@ -181,7 +181,7 @@ namespace EasyReasy.Auth.Saml.Tests
                 signingCertificate: SamlTestCertificates.ServiceProviderSigning,
                 decryptionCertificates: decrypt ? [SamlTestCertificates.ServiceProviderDecryption] : [],
                 loggerProvider: _logs);
-            host.Resolver.IdentityProviders[KeycloakKey] = new SamlIdentityProvider(realm.MetadataXml, identitySource);
+            host.Resolver.IdentityProviders[KeycloakKey] = new ConfiguredSamlIdentityProvider(realm.MetadataXml, identitySource);
             return host;
         }
 

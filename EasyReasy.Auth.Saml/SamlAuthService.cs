@@ -64,45 +64,26 @@ namespace EasyReasy.Auth.Saml
             ThrowIfInvalid(request);
 
             SamlIdentityProvider? identityProvider = await _resolver.FindIdentityProviderAsync(request.IdentityProviderKey, cancellationToken);
-            return identityProvider == null ? null : await BeginCheckedAsync(identityProvider, request, httpContext, cancellationToken);
-        }
+            if (identityProvider == null)
+            {
+                return null;
+            }
 
-        /// <summary>
-        /// Begins a sign-in with an identity provider the caller already resolved for
-        /// <see cref="SamlAuthBeginRequest.IdentityProviderKey"/>, so a caller that needs the provider before it can build
-        /// the request (the sign-in endpoint asks the handler only about a key that exists) resolves it once.
-        /// </summary>
-        /// <param name="identityProvider">What the application's resolver returned for the request's key.</param>
-        /// <param name="request">The begin request.</param>
-        /// <param name="httpContext">The request the binding cookie is set on.</param>
-        /// <param name="cancellationToken">Cancels storing the request.</param>
-        /// <returns>The URL to send the browser to.</returns>
-        internal async Task<SamlAuthBeginResult> BeginWithResolvedAsync(SamlIdentityProvider identityProvider, SamlAuthBeginRequest request, HttpContext httpContext, CancellationToken cancellationToken)
-        {
-            ThrowIfInvalid(request);
-            return await BeginCheckedAsync(identityProvider, request, httpContext, cancellationToken);
-        }
-
-        /// <summary>
-        /// Begins a sign-in for a request its entry point checked with <see cref="ThrowIfInvalid"/>, each exactly once: the
-        /// public begin before resolving, the sign-in endpoint after building the request from the handler's settings.
-        /// </summary>
-        private async Task<SamlAuthBeginResult> BeginCheckedAsync(SamlIdentityProvider identityProvider, SamlAuthBeginRequest request, HttpContext httpContext, CancellationToken cancellationToken)
-        {
-            if (request.ExpectedIdentity is SamlIdentity expected && expected.IdentityProviderEntityId != identityProvider.EntityId)
+            SamlIdentityProviderMetadata metadata = identityProvider.Metadata;
+            if (request.ExpectedIdentity is SamlIdentity expected && expected.IdentityProviderEntityId != metadata.EntityId)
             {
                 throw new ArgumentException(
-                    $"{nameof(SamlAuthBeginRequest.ExpectedIdentity)} is at '{expected.IdentityProviderEntityId}', but the identity provider is '{identityProvider.EntityId}', so no sign-in could pass.",
+                    $"{nameof(SamlAuthBeginRequest.ExpectedIdentity)} is at '{expected.IdentityProviderEntityId}', but the identity provider is '{metadata.EntityId}', so no sign-in could pass.",
                     nameof(request));
             }
 
-            if (identityProvider.WantsSignedRequests && _options.SigningCertificate == null)
+            if (metadata.WantsSignedRequests && _options.SigningCertificate == null)
             {
                 throw new InvalidOperationException(
-                    $"The identity provider '{identityProvider.EntityId}' wants signed AuthnRequests, and {nameof(SamlAuthOptions)}.{nameof(SamlAuthOptions.SigningCertificate)} is not set.");
+                    $"The identity provider '{metadata.EntityId}' wants signed AuthnRequests, and {nameof(SamlAuthOptions)}.{nameof(SamlAuthOptions.SigningCertificate)} is not set.");
             }
 
-            Saml2AuthnRequest authnRequest = CreateAuthnRequest(request, identityProvider);
+            Saml2AuthnRequest authnRequest = CreateAuthnRequest(request, metadata, identityProvider.IdentitySource);
             Saml2RedirectBinding binding = new Saml2RedirectBinding().Bind(authnRequest);
 
             DateTimeOffset now = _timeProvider.GetUtcNow();
@@ -112,7 +93,7 @@ namespace EasyReasy.Auth.Saml
                 FlowId = flowBinding.FlowId,
                 BindingCookieHash = flowBinding.ValueHash,
                 IdentityProviderKey = request.IdentityProviderKey,
-                IdentityProviderEntityId = identityProvider.EntityId,
+                IdentityProviderEntityId = metadata.EntityId,
                 CallerBinding = request.CallerBinding,
                 CompletionPath = request.CompletionPath,
                 MaxAuthenticationAge = request.MaxAuthenticationAge,
@@ -120,8 +101,8 @@ namespace EasyReasy.Auth.Saml
                 ExpectedIdentity = request.ExpectedIdentity,
             };
 
-            await _store.StorePendingRequestAsync(
-                new SamlPendingRequestRecord(SecureToken.Hash(authnRequest.IdAsString), _sealer.Seal(state), (now + _options.RequestLifetime).UtcDateTime),
+            await _store.StoreAsync(
+                new SamlAuthRecord(SamlAuthRecordKind.PendingRequest, SecureToken.Hash(authnRequest.IdAsString), _sealer.Seal(state), (now + _options.RequestLifetime).UtcDateTime),
                 cancellationToken);
 
             return new SamlAuthBeginResult(binding.RedirectLocation.OriginalString);
@@ -138,7 +119,7 @@ namespace EasyReasy.Auth.Saml
                 return SamlAuthCompletionResult.Refused(SamlAuthFailureReason.UnknownCompletionCode, null);
             }
 
-            string? sealedOutcome = await _store.ConsumeCompletionAsync(SecureToken.Hash(code), _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+            string? sealedOutcome = await _store.ConsumeAsync(SamlAuthRecordKind.Completion, SecureToken.Hash(code), _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
             SamlCompletionOutcome? outcome = sealedOutcome == null ? null : _sealer.Open<SamlCompletionOutcome>(sealedOutcome);
             if (outcome == null)
             {
@@ -203,7 +184,7 @@ namespace EasyReasy.Auth.Saml
             }
 
             // Consumed before anything else: whatever the response turns out to be, its request is answered once.
-            string? sealedState = await _store.ConsumePendingRequestAsync(SecureToken.Hash(claimedRequestId), _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+            string? sealedState = await _store.ConsumeAsync(SamlAuthRecordKind.PendingRequest, SecureToken.Hash(claimedRequestId), _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
             SamlPendingState? state = sealedState == null ? null : _sealer.Open<SamlPendingState>(sealedState);
             if (state == null)
             {
@@ -215,8 +196,8 @@ namespace EasyReasy.Auth.Saml
 
             string code = SecureToken.Generate();
             DateTimeOffset now = _timeProvider.GetUtcNow();
-            await _store.StoreCompletionAsync(
-                new SamlCompletionRecord(SecureToken.Hash(code), _sealer.Seal(outcome), (now + _options.CompletionLifetime).UtcDateTime),
+            await _store.StoreAsync(
+                new SamlAuthRecord(SamlAuthRecordKind.Completion, SecureToken.Hash(code), _sealer.Seal(outcome), (now + _options.CompletionLifetime).UtcDateTime),
                 cancellationToken);
 
             string separator = state.CompletionPath.Contains('?') ? "&" : "?";
@@ -232,25 +213,25 @@ namespace EasyReasy.Auth.Saml
             }
         }
 
-        private Saml2AuthnRequest CreateAuthnRequest(SamlAuthBeginRequest request, SamlIdentityProvider identityProvider)
+        private Saml2AuthnRequest CreateAuthnRequest(SamlAuthBeginRequest request, SamlIdentityProviderMetadata metadata, SamlIdentitySource identitySource)
         {
             Saml2Configuration configuration = new Saml2Configuration
             {
                 Issuer = _options.ServiceProviderEntityId,
-                SingleSignOnDestination = identityProvider.SingleSignOnUrl,
+                SingleSignOnDestination = metadata.SingleSignOnUrl,
                 SigningCertificate = _options.SigningCertificate,
                 SignAuthnRequest = _options.SigningCertificate != null,
             };
 
             Saml2AuthnRequest authnRequest = new Saml2AuthnRequest(configuration)
             {
-                Destination = identityProvider.SingleSignOnUrl,
+                Destination = metadata.SingleSignOnUrl,
                 AssertionConsumerServiceUrl = _options.AssertionConsumerServiceUrl,
                 ProtocolBinding = ProtocolBindings.HttpPost,
                 ForceAuthn = request.ForceAuthentication ? true : null,
             };
 
-            if (identityProvider.IdentitySource.RequestedNameIdFormat is string nameIdFormat)
+            if (identitySource.RequestedNameIdFormat is string nameIdFormat)
             {
                 authnRequest.NameIdPolicy = new NameIdPolicy { AllowCreate = true, Format = nameIdFormat };
             }
@@ -275,7 +256,8 @@ namespace EasyReasy.Auth.Saml
                 return Refuse(state, SamlAuthFailureReason.UnknownIdentityProvider, null);
             }
 
-            if (identityProvider.EntityId != state.IdentityProviderEntityId)
+            SamlIdentityProviderMetadata metadata = identityProvider.Metadata;
+            if (metadata.EntityId != state.IdentityProviderEntityId)
             {
                 return Refuse(state, SamlAuthFailureReason.IdentityProviderChanged, null);
             }
@@ -283,11 +265,11 @@ namespace EasyReasy.Auth.Saml
             SamlValidatedAssertion assertion;
             try
             {
-                assertion = _validator.Validate(samlResponse, requestId, identityProvider);
+                assertion = _validator.Validate(samlResponse, requestId, metadata);
             }
             catch (SamlResponseRejectedException exception)
             {
-                _logger.LogWarning(exception, "A SAML response from '{IdentityProvider}' was refused: {Reason}", identityProvider.EntityId, exception.Message);
+                _logger.LogWarning(exception, "A SAML response from '{IdentityProvider}' was refused: {Reason}", metadata.EntityId, exception.Message);
                 return Refuse(state, SamlAuthFailureReason.InvalidResponse, null);
             }
 

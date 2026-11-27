@@ -73,8 +73,6 @@ namespace EasyReasy.Auth.Saml.Tests
             FakeTimeProvider clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
             SamlAuthOptions options = SamlValidationHarness.CreateOptions(decryptionCertificates ?? [], signingCertificate, sweepInterval);
             InMemorySamlAuthStore store = new InMemorySamlAuthStore();
-            FakeSamlIdentityProviderResolver resolver = new FakeSamlIdentityProviderResolver();
-            resolver.IdentityProviders[IdentityProviderKey] = new SamlIdentityProvider(IdentityProvider.MetadataXml(), identitySource);
             FakeSamlAuthHandler handler = new FakeSamlAuthHandler
             {
                 ResponseToReturn = new AuthResponse(
@@ -95,7 +93,8 @@ namespace EasyReasy.Auth.Saml.Tests
             builder.Services.AddEasyReasySamlAuth(options);
 
             builder.Services.AddSingleton<ISamlAuthStore>(store);
-            builder.Services.AddSingleton<ISamlIdentityProviderResolver>(resolver);
+            builder.Services.AddSingleton<FakeSamlIdentityProviderResolver>();
+            builder.Services.AddSingleton<ISamlIdentityProviderResolver>(serviceProvider => serviceProvider.GetRequiredService<FakeSamlIdentityProviderResolver>());
             builder.Services.AddSingleton<ISamlAuthHandler>(handler);
             if (auditLogger != null)
             {
@@ -103,6 +102,8 @@ namespace EasyReasy.Auth.Saml.Tests
             }
 
             WebApplication app = builder.Build();
+            FakeSamlIdentityProviderResolver resolver = app.Services.GetRequiredService<FakeSamlIdentityProviderResolver>();
+            resolver.IdentityProviders[IdentityProviderKey] = new ConfiguredSamlIdentityProvider(IdentityProvider.MetadataXml(), identitySource);
             SamlAuthEndpoints endpoints = app.AddSamlAuthEndpoints();
             configureEndpoints?.Invoke(endpoints);
             await app.StartAsync();

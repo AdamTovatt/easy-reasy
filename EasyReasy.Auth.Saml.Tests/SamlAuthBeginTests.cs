@@ -58,12 +58,12 @@ namespace EasyReasy.Auth.Saml.Tests
 
             SamlAuthBeginResult? result = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request => request.CallerBinding = "record-42"));
 
-            SamlPendingRequestRecord record = host.Store.PendingRequests.Single();
+            SamlAuthRecord record = host.Store.PendingRequests.Single();
             string requestId = new SamlRedirectReader(result!.RedirectUrl).RequestId;
-            Assert.AreEqual(SecureToken.Hash(requestId), record.RequestIdHash);
+            Assert.AreEqual(SecureToken.Hash(requestId), record.Hash);
             Assert.AreEqual((host.Clock.GetUtcNow() + host.Options.RequestLifetime).UtcDateTime, record.ExpiresAt);
-            Assert.IsFalse(record.SealedState.Contains("record-42", StringComparison.Ordinal));
-            Assert.IsFalse(record.SealedState.Contains(SamlFlowHost.IdentityProviderKey, StringComparison.Ordinal));
+            Assert.IsFalse(record.SealedValue.Contains("record-42", StringComparison.Ordinal));
+            Assert.IsFalse(record.SealedValue.Contains(SamlFlowHost.IdentityProviderKey, StringComparison.Ordinal));
         }
 
         [TestMethod]
@@ -130,7 +130,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task BeginAsync_IdentityProviderWantsSignedRequestsWithoutSigningCertificate_Throws()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            host.Resolver.IdentityProviders[SamlFlowHost.IdentityProviderKey] = new SamlIdentityProvider(SamlFlowHost.IdentityProvider.MetadataXml(wantsSignedRequests: true));
+            host.Resolver.IdentityProviders[SamlFlowHost.IdentityProviderKey] = new ConfiguredSamlIdentityProvider(SamlFlowHost.IdentityProvider.MetadataXml(wantsSignedRequests: true));
 
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest()));
         }

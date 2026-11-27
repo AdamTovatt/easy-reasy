@@ -38,18 +38,18 @@ namespace EasyReasy.Auth.OpenIdConnect
         /// </para>
         /// </remarks>
         /// <param name="app">The web application.</param>
-        /// <returns>The web application for chaining.</returns>
+        /// <returns>The endpoints, one builder each, to add a rate limiting policy or other metadata to one of them.</returns>
         /// <exception cref="InvalidOperationException">
         /// Thrown at startup if <see cref="IOpenIdConnectAuthService"/> (registered by <c>AddEasyReasyOpenIdConnectAuth</c>),
         /// the consumer-supplied <see cref="IOpenIdConnectProviderResolver"/> or <see cref="IOpenIdConnectAuthHandler"/>, or
         /// <see cref="IJwtTokenService"/> (registered by <c>AddEasyReasyAuth</c>) is missing from the DI container, so a
         /// misconfiguration fails fast instead of as a per-request 500.
         /// </exception>
-        public static WebApplication AddOpenIdConnectAuthEndpoints(this WebApplication app)
+        public static OpenIdConnectAuthEndpoints AddOpenIdConnectAuthEndpoints(this WebApplication app)
         {
             EnsureRequiredServicesRegistered(app);
 
-            app.MapPost("/api/auth/oidc/begin", async (
+            RouteHandlerBuilder begin = app.MapPost("/api/auth/oidc/begin", async (
                 OpenIdConnectSignInBeginRequest request,
                 IOpenIdConnectAuthService authService,
                 IOpenIdConnectAuthHandler handler,
@@ -62,7 +62,7 @@ namespace EasyReasy.Auth.OpenIdConnect
                 return response == null ? Results.BadRequest() : Results.Ok(response);
             }).AllowAnonymous();
 
-            app.MapPost("/api/auth/oidc", (
+            RouteHandlerBuilder signIn = app.MapPost("/api/auth/oidc", (
                 OpenIdConnectAuthorizationResponse request,
                 IOpenIdConnectAuthService authService,
                 IOpenIdConnectAuthHandler handler,
@@ -73,7 +73,11 @@ namespace EasyReasy.Auth.OpenIdConnect
                     signInService.AuthenticateAsync(request, jwtTokenService, refreshTokenService, httpContext));
             }).AllowAnonymous();
 
-            return app;
+            return new OpenIdConnectAuthEndpoints
+            {
+                Begin = begin,
+                SignIn = signIn,
+            };
         }
 
         /// <summary>
