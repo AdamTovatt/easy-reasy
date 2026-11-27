@@ -5,12 +5,6 @@ namespace EasyReasy.Auth
     /// </summary>
     internal sealed class OAuthServerSettings
     {
-        /// <summary>
-        /// The longest <see cref="OAuthServerOptions.SweepInterval"/>: a <see cref="PeriodicTimer"/> refuses a period over
-        /// about 49.7 days, so the bound is the whole days under that.
-        /// </summary>
-        internal static readonly TimeSpan MaxSweepInterval = TimeSpan.FromDays(49);
-
         private readonly string _resourceOrigin;
         private readonly string _resourcePath;
 
@@ -185,9 +179,9 @@ namespace EasyReasy.Auth
             AddIfNotPositive(errors, options.AuthorizationCodeLifetime, nameof(OAuthServerOptions.AuthorizationCodeLifetime));
             AddIfNotPositive(errors, options.AuthorizationRequestLifetime, nameof(OAuthServerOptions.AuthorizationRequestLifetime));
             AddIfNotPositive(errors, options.SweepInterval, nameof(OAuthServerOptions.SweepInterval));
-            if (options.SweepInterval > MaxSweepInterval)
+            if (options.SweepInterval > StoreSweep.MaxInterval)
             {
-                errors.Add($"{nameof(OAuthServerOptions.SweepInterval)} must be at most {MaxSweepInterval.TotalDays} days, a timer's longest period; got {options.SweepInterval}.");
+                errors.Add($"{nameof(OAuthServerOptions.SweepInterval)} must be at most {StoreSweep.MaxInterval.TotalDays} days, a timer's longest period; got {options.SweepInterval}.");
             }
 
             if (options.UnusedClientLifetime != null)

@@ -17,9 +17,9 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GenerateDocumentationFile>True</GenerateDocumentationFile>
-    <VersionPrefix>5.19.0</VersionPrefix>
+    <VersionPrefix>5.20.0</VersionPrefix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>Adds FlowBindingCookie, the cookie that binds a browser-redirect sign-in flow to the browser that began it, as a public helper for sign-in packages: Issue sets a __Host- prefixed, HttpOnly, Secure, SameSite=Lax cookie for a new flow and returns the flow id and value hash for its state, keeping at most five pending flows per prefix; Check says whether the completing browser sent it (Matches, Missing or Mismatch); Clear expires it. Adds JsonSealer, which seals a value's JSON with its own AES-256-GCM key as base64url text, for what a flow carries through the browser, such as an OAuth state. Makes SecureToken (a 256-bit random value, and the hash it is stored under) and OAuthPkce (S256, now with CreateS256Challenge for a client) public, for sign-in packages. Nothing existing changes.</PackageReleaseNotes>
+    <PackageReleaseNotes>Adds StoreSweep, the hosted service the OAuth server's sweep is built on, now public: derive from it to delete expired rows from a store of your own every interval, each sweep in a scope of its own, a failure logged and retried the next interval. The OAuth server's sweep behaves as before. The IdentityModel packages (JsonWebTokens, Protocols.OpenIdConnect, Tokens, System.IdentityModel.Tokens.Jwt) move from 8.19.1 to 8.23.0 together, so EasyReasy.Auth.Saml's SAML library and this package resolve one aligned set; move any of the four you reference yourself to 8.23.0 too. Nothing is removed. See https://github.com/AdamTovatt/easy-reasy/blob/auth-v$(VersionPrefix)/EasyReasy.Auth/README.md#migration-from-5180</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -43,11 +43,14 @@
     <!-- JwtBearer brings JsonWebTokens, System.IdentityModel.Tokens.Jwt and the Protocols packages at an older
          version than Tokens, and a mixed IdentityModel set rejects every token this package issues (IDX14102).
          The family is therefore referenced here at one version, directly or through these references, so a
-         consumer resolves an aligned set from this package alone. IdentityModelVersionAlignmentTests fails if they drift apart. -->
-    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.1" />
-    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.1" />
-    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.19.1" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.1" />
+         consumer resolves an aligned set from this package alone. Packages built on this one take the family from
+         here rather than referencing it again, so the version is set in this one place; it is kept at least at the
+         version EasyReasy.Auth.Saml's ITfoxtec.Identity.Saml2 pulls Microsoft.IdentityModel.Tokens.Saml in at.
+         IdentityModelVersionAlignmentTests fails if they drift apart. -->
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.23.0" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.23.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
   </ItemGroup>
 
   <ItemGroup>

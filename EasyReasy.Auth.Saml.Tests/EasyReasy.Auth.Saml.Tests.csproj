@@ -10,6 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.7" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0" />
     <PackageReference Include="MSTest.TestAdapter" Version="3.0.4" />
     <PackageReference Include="MSTest.TestFramework" Version="3.0.4" />
@@ -19,10 +21,12 @@
   <ItemGroup>
     <Compile Include="..\EasyReasy.Auth.Tests\IdentityModelVersionAlignmentTests.cs" Link="IdentityModelVersionAlignmentTests.cs" />
     <Compile Include="..\EasyReasy.Auth.Tests\FakeTimeProvider.cs" Link="FakeTimeProvider.cs" />
+    <Compile Include="..\EasyReasy.Auth.Tests\RecordingAuditLogger.cs" Link="RecordingAuditLogger.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\EasyReasy.Auth.Saml\EasyReasy.Auth.Saml.csproj" />
+    <ProjectReference Include="..\EasyReasy.Auth\EasyReasy.Auth.csproj" />
   </ItemGroup>
 
 </Project>

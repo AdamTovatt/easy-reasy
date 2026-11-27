@@ -23,19 +23,38 @@ namespace EasyReasy.Auth.Saml.Tests
 
             SamlResponseRejectedException rejection = harness.Reject(response.ToFormValue());
 
-            SamlRejectionAssert.ByPackage(rejection, "no AuthnStatement");
+            SamlRejectionAssert.ByPackage(rejection, "0 AuthnStatements");
         }
 
         [TestMethod]
-        public void Validate_NoNameId_IsRefused()
+        public void Validate_TwoAuthnStatements_IsRefused()
         {
+            // One, so the authentication time and class the rules check cannot be chosen among several.
+            SamlValidationHarness harness = new SamlValidationHarness();
+            FakeSamlResponse response = harness.Respond();
+            response.EditAssertionBeforeSigning = assertion =>
+            {
+                XmlElement statement = SamlXmlEdit.AssertionChild(assertion, "AuthnStatement");
+                assertion.InsertAfter(statement.CloneNode(true), statement);
+            };
+
+            SamlResponseRejectedException rejection = harness.Reject(response.ToFormValue());
+
+            SamlRejectionAssert.ByPackage(rejection, "2 AuthnStatements");
+        }
+
+        [TestMethod]
+        public void Validate_NoNameId_ReturnsNoNameIdForTheIdentitySourceToJudge()
+        {
+            // Whether the identity is a NameID or an attribute is the identity provider's identity source's to decide, so
+            // the validator returns the assertion without one; SamlAuthAssertionConsumerTests covers the refusal.
             SamlValidationHarness harness = new SamlValidationHarness();
             FakeSamlResponse response = harness.Respond();
             response.EditAssertionBeforeSigning = assertion => SamlXmlEdit.AssertionChild(assertion, "Subject").RemoveChild(SamlXmlEdit.NameId(assertion));
 
-            SamlResponseRejectedException rejection = harness.Reject(response.ToFormValue());
+            SamlValidatedAssertion result = harness.Validate(response.ToFormValue());
 
-            SamlRejectionAssert.ByPackage(rejection, "no NameID");
+            Assert.IsNull(result.NameId);
         }
 
         [TestMethod]
