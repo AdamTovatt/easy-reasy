@@ -3,9 +3,9 @@ using Microsoft.AspNetCore.Http;
 namespace EasyReasy.Auth.Saml
 {
     /// <summary>
-    /// Internal orchestrator behind the sign-in endpoints, built on <see cref="ISamlAuthService"/>: begins a sign-in with
-    /// the identity provider the browser chose and the rules the consumer's <see cref="ISamlAuthHandler"/> decides, and
-    /// completes one by delegating the verified user to that handler, surfacing the outcome as an
+    /// Internal orchestrator behind the sign-in endpoints, built on the registered <see cref="SamlAuthService"/>: begins a
+    /// sign-in with the identity provider the browser chose and the rules the consumer's <see cref="ISamlAuthHandler"/>
+    /// decides, and completes one by delegating the verified user to that handler, surfacing the outcome as an
     /// <see cref="ExternalAuthResult"/> for audit logging.
     /// </summary>
     internal sealed class SamlSignInService
@@ -23,18 +23,19 @@ namespace EasyReasy.Auth.Saml
         /// </summary>
         internal const string SignInCallerBinding = "easyreasy.auth.saml:sign-in";
 
-        private readonly ISamlAuthService _authService;
+        private readonly SamlAuthService _authService;
         private readonly ISamlIdentityProviderResolver _resolver;
         private readonly ISamlAuthHandler _handler;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SamlSignInService"/> class.
         /// </summary>
-        /// <param name="authService">The application's SAML auth service.</param>
-        /// <param name="resolver">The application's resolver, asked first so the handler is only asked about an identity
-        /// provider that exists.</param>
+        /// <param name="authService">The application's SAML auth service, whose begin takes the identity provider this
+        /// service already resolved.</param>
+        /// <param name="resolver">The application's resolver, asked once per begin, before the handler, so the handler is
+        /// only asked about an identity provider that exists.</param>
         /// <param name="handler">The consumer-provided handler for the sign-in's rules and the verified user.</param>
-        public SamlSignInService(ISamlAuthService authService, ISamlIdentityProviderResolver resolver, ISamlAuthHandler handler)
+        public SamlSignInService(SamlAuthService authService, ISamlIdentityProviderResolver resolver, ISamlAuthHandler handler)
         {
             _authService = authService;
             _resolver = resolver;
@@ -56,15 +57,16 @@ namespace EasyReasy.Auth.Saml
                 return null;
             }
 
-            // The handler is only asked about an identity provider that exists, never about a key the browser made up;
-            // the auth service resolves it again, and a key that vanished in between gives null there too.
-            if (await _resolver.FindIdentityProviderAsync(identityProviderKey, httpContext.RequestAborted) == null)
+            // Resolved once, here: the handler is only asked about an identity provider that exists, never about a key the
+            // browser made up, and the auth service begins with the provider resolved now.
+            SamlIdentityProvider? identityProvider = await _resolver.FindIdentityProviderAsync(identityProviderKey, httpContext.RequestAborted);
+            if (identityProvider == null)
             {
                 return null;
             }
 
             SamlSignInSettings settings = await _handler.GetSignInSettingsAsync(identityProviderKey, httpContext);
-            SamlAuthBeginResult? begun = await _authService.BeginAsync(new SamlAuthBeginRequest
+            SamlAuthBeginResult begun = await _authService.BeginWithResolvedAsync(identityProvider, new SamlAuthBeginRequest
             {
                 IdentityProviderKey = identityProviderKey,
                 CallerBinding = SignInCallerBinding,
@@ -74,7 +76,7 @@ namespace EasyReasy.Auth.Saml
                 AcceptedAuthnContextClassRefs = settings.AcceptedAuthnContextClassRefs,
             }, httpContext, httpContext.RequestAborted);
 
-            return begun == null ? null : new SamlSignInBeginResponse(begun.RedirectUrl);
+            return new SamlSignInBeginResponse(begun.RedirectUrl);
         }
 
         /// <summary>
@@ -95,17 +97,12 @@ namespace EasyReasy.Auth.Saml
             IRefreshTokenService? refreshTokenService,
             HttpContext httpContext)
         {
-            SamlAuthCompletionResult completion = await _authService.CompleteAsync(code, httpContext, httpContext.RequestAborted);
+            SamlAuthCompletionResult completion = await _authService.CompleteAsync(code, SignInCallerBinding, httpContext, httpContext.RequestAborted);
             string? attemptedSubject = completion.AttemptedIdentity?.ToString();
 
             if (!completion.Success)
             {
                 return Refuse(completion.FailureReason.Value, attemptedSubject);
-            }
-
-            if (!string.Equals(completion.CallerBinding, SignInCallerBinding, StringComparison.Ordinal))
-            {
-                return Refuse(SamlAuthFailureReason.CallerBindingMismatch, attemptedSubject);
             }
 
             AuthResponse? authResponse = await _handler.HandleSamlUserAsync(completion.UserInfo, jwtTokenService, refreshTokenService, httpContext);

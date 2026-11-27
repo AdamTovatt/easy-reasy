@@ -14,10 +14,10 @@ namespace EasyReasy.Auth.Saml.Tests
         private static readonly TimeSpan MaxAge = TimeSpan.FromMinutes(5);
 
         [TestMethod]
-        public async Task Complete_GenuineResponse_ReturnsTheVerifiedUserAndCallerBinding()
+        public async Task Complete_GenuineResponse_ReturnsTheVerifiedUser()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request => request.CallerBinding = "link:user-7"));
             DateTimeOffset authenticatedAt = TruncateToSeconds(DateTimeOffset.UtcNow.AddMinutes(-1));
 
@@ -28,10 +28,9 @@ namespace EasyReasy.Auth.Saml.Tests
                 response.Attributes["email"] = ["person@example.test"];
                 response.Attributes["groups"] = ["staff", "admins"];
             });
-            SamlAuthCompletionResult result = await host.ServiceCompleteAsync(browser, code);
+            SamlAuthCompletionResult result = await host.ServiceCompleteAsync(browser, code, "link:user-7");
 
             Assert.IsTrue(result.Success, result.ToString());
-            Assert.AreEqual("link:user-7", result.CallerBinding);
             Assert.AreEqual(SamlFlowHost.DefaultIdentity, result.UserInfo.Identity);
             Assert.AreEqual(authenticatedAt, result.UserInfo.AuthenticationInstant);
             Assert.AreEqual(MfaClass, result.UserInfo.AuthnContextClassRef);
@@ -44,7 +43,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task AssertionConsumer_GenuineResponse_RedirectsToTheCompletionPathWithACode()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest(request => request.CompletionPath = "/settings/linked?tab=sso"));
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest(request => request.CompletionPath = "/settings/linked?tab=sso"));
 
             HttpResponseMessage response = await host.PostAssertionAsync(host.Respond(begun!.RedirectUrl));
 
@@ -60,7 +59,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task AssertionConsumer_SameResponsePostedTwice_IsRefusedTheSecondTime()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest());
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
             string samlResponse = host.Respond(begun!.RedirectUrl);
 
             HttpResponseMessage first = await host.PostAssertionAsync(samlResponse);
@@ -87,7 +86,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task AssertionConsumer_UnsolicitedResponse_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest());
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
 
             HttpResponseMessage response = await host.PostAssertionAsync(host.Respond(begun!.RedirectUrl, samlResponse =>
             {
@@ -127,7 +126,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task AssertionConsumer_ExpiredPendingRequest_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest());
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
             host.Clock.Advance(host.Options.RequestLifetime);
 
             HttpResponseMessage response = await host.PostAssertionAsync(host.Respond(begun!.RedirectUrl));
@@ -139,7 +138,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task Complete_IdentityProviderRemovedAfterBegin_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
             host.Resolver.IdentityProviders.Clear();
 
@@ -152,7 +151,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task Complete_IdentityProviderEntityIdChangedAfterBegin_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
             FakeSamlIdentityProvider other = new FakeSamlIdentityProvider("https://other-idp.example.test/metadata", SamlTestCertificates.OtherIdentityProvider);
             host.Resolver.IdentityProviders[SamlFlowHost.IdentityProviderKey] = other.Provider;
@@ -177,7 +176,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             // A response the other identity provider signed for this very request id still fails: the request named acme.
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
             FakeSamlIdentityProvider other = new FakeSamlIdentityProvider("https://other-idp.example.test/metadata", SamlTestCertificates.OtherIdentityProvider);
             string samlResponse = other.Respond(new SamlRedirectReader(begun!.RedirectUrl).RequestId, host.Options).ToFormValue();
@@ -246,7 +245,7 @@ namespace EasyReasy.Auth.Saml.Tests
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
             FakeSamlIdentityProvider impostor = new FakeSamlIdentityProvider(SamlFlowHost.IdentityProvider.EntityId, SamlTestCertificates.OtherIdentityProvider);
             host.Resolver.IdentityProviders["other-customer"] = impostor.Provider;
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request => request.IdentityProviderKey = "other-customer"));
             string samlResponse = impostor.Respond(new SamlRedirectReader(begun!.RedirectUrl).RequestId, host.Options, SamlFlowHost.DefaultIdentity.Subject).ToFormValue();
 
@@ -388,7 +387,6 @@ namespace EasyReasy.Auth.Saml.Tests
             Assert.AreEqual(reason, result.FailureReason);
             Assert.AreEqual(attemptedIdentity, result.AttemptedIdentity);
             Assert.IsNull(result.UserInfo);
-            Assert.IsNull(result.CallerBinding);
         }
 
         private static DateTimeOffset TruncateToSeconds(DateTimeOffset time)

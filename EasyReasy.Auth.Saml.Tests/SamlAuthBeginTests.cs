@@ -16,7 +16,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task BeginAsync_KnownIdentityProvider_RedirectsToItsSingleSignOnUrlWithTheAuthnRequest()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
 
             SamlAuthBeginResult? result = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
 
@@ -38,7 +38,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task BeginAsync_KnownIdentityProvider_SetsAHostOnlyLaxBindingCookie()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
 
             await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
 
@@ -55,7 +55,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task BeginAsync_KnownIdentityProvider_StoresThePendingRequestSealedUnderTheHashOfItsId()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
 
             SamlAuthBeginResult? result = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request => request.CallerBinding = "record-42"));
 
@@ -71,7 +71,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task BeginAsync_UnknownIdentityProvider_ReturnsNullWithoutCookieOrPendingRequest()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
 
             SamlAuthBeginResult? result = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request => request.IdentityProviderKey = "nobody"));
 
@@ -85,7 +85,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
 
-            SamlAuthBeginResult? result = await host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest(request =>
+            SamlAuthBeginResult? result = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest(request =>
             {
                 request.ForceAuthentication = true;
                 request.AcceptedAuthnContextClassRefs = ["urn:example:mfa", "urn:example:hardware-key"];
@@ -105,7 +105,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync(identitySource: SamlIdentitySource.Attribute("employeeId"));
 
-            SamlAuthBeginResult? result = await host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest());
+            SamlAuthBeginResult? result = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
 
             Assert.IsNull(new SamlRedirectReader(result!.RedirectUrl).Child("NameIDPolicy"));
         }
@@ -115,7 +115,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync(signingCertificate: SamlTestCertificates.ServiceProviderDecryption);
 
-            SamlAuthBeginResult? result = await host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest());
+            SamlAuthBeginResult? result = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
 
             // The HTTP-Redirect binding signs the URL-encoded SAMLRequest, RelayState and SigAlg exactly as they appear.
             string query = new Uri(result!.RedirectUrl).Query.TrimStart('?');
@@ -133,7 +133,7 @@ namespace EasyReasy.Auth.Saml.Tests
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
             host.Resolver.IdentityProviders[SamlFlowHost.IdentityProviderKey] = new SamlIdentityProvider(SamlFlowHost.IdentityProvider.MetadataXml(wantsSignedRequests: true));
 
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest()));
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest()));
         }
 
         [TestMethod]
@@ -146,7 +146,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task BeginAsync_CompletionPathOffThisSiteOrWithAFragment_Throws(string completionPath)
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
 
             ArgumentException exception = await Assert.ThrowsExceptionAsync<ArgumentException>(
                 () => host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request => request.CompletionPath = completionPath)));
@@ -160,7 +160,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
 
-            ArgumentException exception = await Assert.ThrowsExceptionAsync<ArgumentException>(() => host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest(request =>
+            ArgumentException exception = await Assert.ThrowsExceptionAsync<ArgumentException>(() => host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest(request =>
             {
                 request.CompletionPath = "relative";
                 request.MaxAuthenticationAge = TimeSpan.Zero;
@@ -177,7 +177,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
 
-            ArgumentException exception = await Assert.ThrowsExceptionAsync<ArgumentException>(() => host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest(
+            ArgumentException exception = await Assert.ThrowsExceptionAsync<ArgumentException>(() => host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest(
                 request => request.ExpectedIdentity = new SamlIdentity(SamlFlowHost.IdentityProviderKey, "https://other-idp.example.test/metadata", FakeSamlIdentityProvider.DefaultNameId))));
 
             StringAssert.Contains(exception.Message, nameof(SamlAuthBeginRequest.ExpectedIdentity));
@@ -189,7 +189,7 @@ namespace EasyReasy.Auth.Saml.Tests
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
             SamlIdentity otherKeysIdentity = new SamlIdentity("other-customer", SamlFlowHost.IdentityProvider.EntityId, FakeSamlIdentityProvider.DefaultNameId);
 
-            ArgumentException exception = await Assert.ThrowsExceptionAsync<ArgumentException>(() => host.ServiceBeginAsync(new SamlBrowser(), SamlFlowHost.AppRequest(
+            ArgumentException exception = await Assert.ThrowsExceptionAsync<ArgumentException>(() => host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest(
                 request => request.ExpectedIdentity = otherKeysIdentity)));
 
             StringAssert.Contains(exception.Message, nameof(SamlAuthBeginRequest.ExpectedIdentity));
@@ -200,7 +200,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task BeginAsync_BrowserAlreadyHoldingTheMostPendingFlows_ClearsThemAndKeepsOnlyTheNewOne()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
             List<string> abandoned = new List<string>();
             for (int flow = 0; flow < SamlBindingCookie.MaxPendingFlows; flow++)
             {
@@ -222,7 +222,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task BeginAsync_BrowserHoldingFewerThanTheMostPendingFlows_KeepsThemAll()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlBrowser browser = new SamlBrowser();
+            BrowserCookieJar browser = new BrowserCookieJar();
             for (int flow = 0; flow < SamlBindingCookie.MaxPendingFlows - 1; flow++)
             {
                 await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());

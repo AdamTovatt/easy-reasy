@@ -62,6 +62,65 @@ namespace EasyReasy.Auth.Saml.Tests
         }
 
         [TestMethod]
+        public void Validate_KeyWrappedWithXmlEncryption11RsaOaep_IsDecryptedAndAccepted()
+        {
+            SamlValidationHarness harness = new SamlValidationHarness(decryptionCertificates: [SamlTestCertificates.ServiceProviderDecryption]);
+            FakeSamlResponse response = harness.Respond();
+            response.EncryptFor = SamlTestCertificates.PublicOnly(SamlTestCertificates.ServiceProviderDecryption);
+            response.KeyTransportMethod = SamlAlgorithms.RsaOaep11;
+
+            SamlValidatedAssertion assertion = harness.Validate(response.ToFormValue());
+
+            Assert.AreEqual(FakeSamlIdentityProvider.DefaultNameId, assertion.NameId);
+        }
+
+        [TestMethod]
+        public void Validate_KeyWrappedWithXmlEncryption11RsaOaepNamingSha1_IsDecryptedAndAccepted()
+        {
+            SamlValidationHarness harness = new SamlValidationHarness(decryptionCertificates: [SamlTestCertificates.ServiceProviderDecryption]);
+            FakeSamlResponse response = harness.Respond();
+            response.EncryptFor = SamlTestCertificates.PublicOnly(SamlTestCertificates.ServiceProviderDecryption);
+            response.KeyTransportMethod = SamlAlgorithms.RsaOaep11;
+            response.Oaep11DigestMethod = SignedXml.XmlDsigSHA1Url;
+            response.Oaep11MaskGenerationFunction = FakeXmlEncryptor.Mgf1Sha1;
+
+            SamlValidatedAssertion assertion = harness.Validate(response.ToFormValue());
+
+            Assert.AreEqual(FakeSamlIdentityProvider.DefaultNameId, assertion.NameId);
+        }
+
+        [TestMethod]
+        public void Validate_KeyWrappedWithXmlEncryption11RsaOaepNamingNoParameters_IsRefused()
+        {
+            // The specification's defaults are SHA-1 and MGF1-SHA1, but ITfoxtec reads a missing MGF as MGF1-SHA256, so a key
+            // wrapped with the defaults fails to decrypt: refused, never accepted. The README asks for the parameters named.
+            SamlValidationHarness harness = new SamlValidationHarness(decryptionCertificates: [SamlTestCertificates.ServiceProviderDecryption]);
+            FakeSamlResponse response = harness.Respond();
+            response.EncryptFor = SamlTestCertificates.PublicOnly(SamlTestCertificates.ServiceProviderDecryption);
+            response.KeyTransportMethod = SamlAlgorithms.RsaOaep11;
+            response.Oaep11DigestMethod = null;
+            response.Oaep11MaskGenerationFunction = null;
+
+            SamlResponseRejectedException rejection = harness.Reject(response.ToFormValue());
+
+            SamlRejectionAssert.ByLibrary<AggregateException>(rejection, "Failed to decrypt");
+        }
+
+        [TestMethod]
+        public void Validate_KeyWrappedWithXmlEncryption11RsaOaepNamingAnotherMaskGenerationFunction_IsRefused()
+        {
+            SamlValidationHarness harness = new SamlValidationHarness(decryptionCertificates: [SamlTestCertificates.ServiceProviderDecryption]);
+            FakeSamlResponse response = harness.Respond();
+            response.EncryptFor = SamlTestCertificates.PublicOnly(SamlTestCertificates.ServiceProviderDecryption);
+            response.KeyTransportMethod = SamlAlgorithms.RsaOaep11;
+            response.Oaep11MaskGenerationFunction = FakeXmlEncryptor.Mgf1Sha512;
+
+            SamlResponseRejectedException rejection = harness.Reject(response.ToFormValue());
+
+            SamlRejectionAssert.ByLibrary<AggregateException>(rejection, "Failed to decrypt");
+        }
+
+        [TestMethod]
         public void Validate_KeyWrappedWithRsaPkcs1V15_IsRefusedBeforeDecrypting()
         {
             SamlValidationHarness harness = new SamlValidationHarness(decryptionCertificates: [SamlTestCertificates.ServiceProviderDecryption]);

@@ -17,5 +17,12 @@ namespace EasyReasy.Auth.Saml
         public required string BindingCookieHash { get; init; }
 
         public required string CallerBinding { get; init; }
+
+        /// <summary>
+        /// The account the response named, when it was verified far enough to know it: what a refusal of the code at
+        /// completion reports as attempted, whichever the outcome.
+        /// </summary>
+        [JsonIgnore]
+        public abstract SamlIdentity? AttemptedIdentity { get; }
     }
 }

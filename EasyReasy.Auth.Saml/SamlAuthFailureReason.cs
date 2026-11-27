@@ -38,7 +38,8 @@ namespace EasyReasy.Auth.Saml
         InvalidResponse,
 
         /// <summary>
-        /// The completed sign-in was begun with another caller binding than the completing endpoint accepts.
+        /// The completed sign-in was begun with another caller binding than the one the completing endpoint passed to
+        /// <see cref="ISamlAuthService.CompleteAsync"/>, so its rules were another endpoint's.
         /// </summary>
         CallerBindingMismatch,
 

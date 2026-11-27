@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace EasyReasy.Auth.Saml
 {
     /// <summary>
@@ -7,6 +9,10 @@ namespace EasyReasy.Auth.Saml
     {
         public required SamlAuthFailureReason Reason { get; init; }
 
-        public required SamlIdentity? AttemptedIdentity { get; init; }
+        public required SamlIdentity? Identity { get; init; }
+
+        /// <inheritdoc />
+        [JsonIgnore]
+        public override SamlIdentity? AttemptedIdentity => Identity;
     }
 }

@@ -3,11 +3,12 @@ using Microsoft.Net.Http.Headers;
 namespace EasyReasy.Auth.Saml.Tests
 {
     /// <summary>
-    /// A browser's cookie jar for the application's origin: keeps what responses set, drops what they expire, and sends
-    /// the rest. The identity provider's cross-site post to the assertion consumer service is sent without it, as a
-    /// browser does with <c>SameSite=Lax</c> cookies.
+    /// A browser's cookie jar for one origin: keeps what responses set, drops what they expire, and sends the rest, whatever
+    /// their <c>Secure</c> flag, so it serves a plain-http test server as well. For the application, the identity
+    /// provider's cross-site post to the assertion consumer service is sent without it, as a browser does with
+    /// <c>SameSite=Lax</c> cookies; <see cref="KeycloakBrowser"/> keeps one for Keycloak.
     /// </summary>
-    internal sealed class SamlBrowser
+    internal sealed class BrowserCookieJar
     {
         public Dictionary<string, SetCookieHeaderValue> Cookies { get; } = new Dictionary<string, SetCookieHeaderValue>(StringComparer.Ordinal);
 

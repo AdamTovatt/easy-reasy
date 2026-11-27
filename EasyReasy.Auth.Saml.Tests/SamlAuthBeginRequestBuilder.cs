@@ -6,9 +6,11 @@ namespace EasyReasy.Auth.Saml.Tests
     /// </summary>
     internal sealed class SamlAuthBeginRequestBuilder
     {
+        public const string DefaultCallerBinding = "link-account:user-7";
+
         public string IdentityProviderKey { get; set; } = SamlFlowHost.IdentityProviderKey;
 
-        public string CallerBinding { get; set; } = "link-account:user-7";
+        public string CallerBinding { get; set; } = DefaultCallerBinding;
 
         public string CompletionPath { get; set; } = "/settings/linked";
 

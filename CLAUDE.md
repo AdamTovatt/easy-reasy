@@ -15,12 +15,13 @@ dotnet test EasyReasy.Auth.Tests                # Run tests for a specific proje
 dotnet test --filter "FullyQualifiedName~ClassName.MethodName" EasyReasy.Auth.Tests  # Run a single test
 ```
 
-CI's main test job skips every `*IntegrationTests` class. The exception is the `*KeycloakIntegrationTests`, which run against a Keycloak container in the `keycloak` job of `tests.yml`, and in `publish.yml` before any package built on EasyReasy.Auth.OpenIdConnect's flow is packed (`publish.yml` lists them). Without `KEYCLOAK_URL` they are inconclusive, so a plain `dotnet test` passes without Keycloak. `.github/scripts/keycloak.sh` holds the image, port and admin, and how the tests are run:
+CI's main test job skips every `*IntegrationTests` class. The exception is the `*KeycloakIntegrationTests`, which run against a Keycloak container in the `keycloak` job of `tests.yml`, and in `publish.yml` before a package with a real sign-in flow is packed (`publish.yml` lists them). Without `KEYCLOAK_URL` they are inconclusive, so a plain `dotnet test` passes without Keycloak. `.github/scripts/keycloak.sh` holds the image, port and admin, and how the tests are run:
 
 ```bash
 export KEYCLOAK_PORT=18080   # optional, default 8080; export it so start, wait and test all use it
 .github/scripts/keycloak.sh start && .github/scripts/keycloak.sh wait
 dotnet build -c Release && .github/scripts/keycloak.sh test EasyReasy.Auth.OpenIdConnect.Tests
+.github/scripts/keycloak.sh test EasyReasy.Auth.Saml.Tests
 ```
 
 Pushing a tag `<package>-v<version>` publishes that package through `publish.yml`, and the version must match the csproj's. A prerelease's tag carries its `<VersionSuffix>` too: `auth-openidconnect-v1.0.0-preview.1`.
@@ -39,7 +40,7 @@ Each library project has a corresponding test project:
 | `EasyReasy.Auth.Google` | Google Sign-In integration for EasyReasy.Auth | `EasyReasy.Auth` |
 | `EasyReasy.Auth.OpenIdConnect` | Sign-in with any OpenID Connect provider through the server-side code flow with PKCE, for EasyReasy.Auth: providers resolved per request by the app, and the public code flow engine a provider package builds on | `EasyReasy.Auth` |
 | `EasyReasy.Auth.Microsoft` | Microsoft (Entra ID) sign-in for EasyReasy.Auth, on `EasyReasy.Auth.OpenIdConnect`'s code flow with Entra's tenants as providers and the tenant, authentication context and `tid` plus `oid` rules on top | `EasyReasy.Auth.OpenIdConnect` |
-| `EasyReasy.Auth.Saml` | SAML 2.0 service-provider sign-in for EasyReasy.Auth: SP-initiated over HTTP-Redirect with identity providers resolved per request from app-supplied metadata, an app-owned store of sealed pending requests and completions consumed atomically, and its own checks of each response over ITfoxtec.Identity.Saml2's parsing, signatures and decryption; its tests drive an in-process fake identity provider through hostile responses | `EasyReasy.Auth` |
+| `EasyReasy.Auth.Saml` | SAML 2.0 service-provider sign-in for EasyReasy.Auth: SP-initiated over HTTP-Redirect with identity providers resolved per request from app-supplied metadata, an app-owned store of sealed pending requests and completions consumed atomically, and its own checks of each response over ITfoxtec.Identity.Saml2's parsing, signatures and decryption; its tests drive an in-process fake identity provider through hostile responses, and its real flows run against Keycloak in a CI job of their own | `EasyReasy.Auth` |
 | `EasyReasy.Auth.Testing` | Test helpers for consumers' test projects: a software WebAuthn authenticator verified against the real `WebAuthnVerifier`, and an OAuth test client and in-memory store that drive the OAuth authorization server; built on `EasyReasy.Auth`'s public API only, with no `InternalsVisibleTo` | `EasyReasy.Auth` |
 | `EasyReasy.VectorStorage` | In-memory cosine similarity vector search | — |
 

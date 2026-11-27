@@ -20,13 +20,14 @@ namespace EasyReasy.Auth.Tests
         }
 
         /// <summary>
-        /// One logged entry, with its message formatted.
+        /// One logged entry, with its message formatted and the exception logged with it.
         /// </summary>
         internal sealed class Entry
         {
             public required string Category { get; init; }
             public required LogLevel Level { get; init; }
             public required string Message { get; init; }
+            public required Exception? Exception { get; init; }
         }
 
         private sealed class RecordingLogger : ILogger
@@ -46,7 +47,7 @@ namespace EasyReasy.Auth.Tests
 
             public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
             {
-                _entries.Enqueue(new Entry { Category = _category, Level = logLevel, Message = formatter(state, exception) });
+                _entries.Enqueue(new Entry { Category = _category, Level = logLevel, Message = formatter(state, exception), Exception = exception });
             }
         }
     }

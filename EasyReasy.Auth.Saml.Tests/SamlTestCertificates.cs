@@ -14,6 +14,7 @@ namespace EasyReasy.Auth.Saml.Tests
         private static readonly Lazy<X509Certificate2> _otherIdentityProvider = new Lazy<X509Certificate2>(() => Create("CN=Other IdP"));
         private static readonly Lazy<X509Certificate2> _attacker = new Lazy<X509Certificate2>(() => Create("CN=Attacker"));
         private static readonly Lazy<X509Certificate2> _serviceProviderDecryption = new Lazy<X509Certificate2>(() => Create("CN=Fake SP"));
+        private static readonly Lazy<X509Certificate2> _serviceProviderSigning = new Lazy<X509Certificate2>(() => Create("CN=Fake SP signing"));
 
         /// <summary>
         /// Gets the expected identity provider's signing certificate, with its private key.
@@ -39,6 +40,11 @@ namespace EasyReasy.Auth.Saml.Tests
         /// Gets the service provider's decryption certificate, with its private key.
         /// </summary>
         public static X509Certificate2 ServiceProviderDecryption => _serviceProviderDecryption.Value;
+
+        /// <summary>
+        /// Gets the service provider's request signing certificate, with its private key.
+        /// </summary>
+        public static X509Certificate2 ServiceProviderSigning => _serviceProviderSigning.Value;
 
         /// <summary>
         /// Returns the certificate without its private key, as an app pins it from the identity provider's metadata.

@@ -4,15 +4,14 @@ using System.Text.Json.Serialization;
 namespace EasyReasy.Auth.Saml
 {
     /// <summary>
-    /// The outcome of <see cref="ISamlAuthService.CompleteAsync"/>: the verified user and the caller binding from Begin, or
-    /// the reason the sign-in was refused.
+    /// The outcome of <see cref="ISamlAuthService.CompleteAsync"/>: the verified user, or the reason the sign-in was
+    /// refused.
     /// </summary>
     public sealed class SamlAuthCompletionResult
     {
-        private SamlAuthCompletionResult(SamlUserInfo? userInfo, string? callerBinding, SamlAuthFailureReason? failureReason, SamlIdentity? attemptedIdentity)
+        private SamlAuthCompletionResult(SamlUserInfo? userInfo, SamlAuthFailureReason? failureReason, SamlIdentity? attemptedIdentity)
         {
             UserInfo = userInfo;
-            CallerBinding = callerBinding;
             FailureReason = failureReason;
             AttemptedIdentity = attemptedIdentity;
         }
@@ -20,7 +19,7 @@ namespace EasyReasy.Auth.Saml
         /// <summary>
         /// Whether every check passed.
         /// </summary>
-        [MemberNotNullWhen(true, nameof(UserInfo), nameof(CallerBinding), nameof(AttemptedIdentity))]
+        [MemberNotNullWhen(true, nameof(UserInfo), nameof(AttemptedIdentity))]
         [MemberNotNullWhen(false, nameof(FailureReason))]
         public bool Success => FailureReason == null;
 
@@ -30,14 +29,6 @@ namespace EasyReasy.Auth.Saml
         /// </summary>
         [JsonIgnore]
         public SamlUserInfo? UserInfo { get; }
-
-        /// <summary>
-        /// The <see cref="SamlAuthBeginRequest.CallerBinding"/> the sign-in was begun with. Only populated when
-        /// <see cref="Success"/> is true. Compare it with what the completing endpoint expects before acting on the user.
-        /// The application's own value, so it is left out of <see cref="ToString"/> and of JSON serialization.
-        /// </summary>
-        [JsonIgnore]
-        public string? CallerBinding { get; }
 
         /// <summary>
         /// Why the sign-in was refused. Only populated when <see cref="Success"/> is false.
@@ -51,19 +42,19 @@ namespace EasyReasy.Auth.Saml
         /// </summary>
         public SamlIdentity? AttemptedIdentity { get; }
 
-        internal static SamlAuthCompletionResult Succeeded(SamlUserInfo userInfo, string callerBinding)
+        internal static SamlAuthCompletionResult Succeeded(SamlUserInfo userInfo)
         {
-            return new SamlAuthCompletionResult(userInfo, callerBinding, null, userInfo.Identity);
+            return new SamlAuthCompletionResult(userInfo, null, userInfo.Identity);
         }
 
         internal static SamlAuthCompletionResult Refused(SamlAuthFailureReason reason, SamlIdentity? attemptedIdentity)
         {
-            return new SamlAuthCompletionResult(null, null, reason, attemptedIdentity);
+            return new SamlAuthCompletionResult(null, reason, attemptedIdentity);
         }
 
         /// <summary>
-        /// Describes the outcome without the caller binding or the user's details, so the result is safe to log. JSON
-        /// serialization leaves out the same two.
+        /// Describes the outcome without the user's details, so the result is safe to log. JSON serialization leaves them
+        /// out too.
         /// </summary>
         /// <returns>The outcome, the failure reason and the account when they are known.</returns>
         public override string ToString()
