@@ -9,15 +9,20 @@ namespace EasyReasy.Auth.Saml
     /// The registered <see cref="ISamlAuthService"/> and the one home of the SAML sign-in flow: builds the AuthnRequest and
     /// binds it to the browser, checks a response at the assertion consumer service and keeps its outcome under a
     /// single-use code, and hands the outcome to the browser that began the sign-in. Scoped, with the application's resolver
-    /// and store injected, so either may be scoped; the options, sealer and validator are singletons built at registration.
+    /// and store injected, so either may be scoped; the options and validator are singletons built at registration.
     /// </summary>
     internal sealed class SamlAuthService : ISamlAuthService
     {
-        private const int FlowIdSize = 16;
-        private const int CompletionCodeSize = 32;
+        /// <summary>
+        /// The name prefix of the binding cookie every SAML sign-in sets, so one browser holds at most
+        /// <see cref="FlowBindingCookie.MaxPendingFlows"/> of them, apart from other kinds of flow.
+        /// </summary>
+        private const string BindingCookieNamePrefix = "__Host-easyreasy-saml-";
+
+        private static readonly FlowBindingCookie BindingCookie = new FlowBindingCookie(BindingCookieNamePrefix);
 
         private readonly SamlAuthOptions _options;
-        private readonly SamlSealer _sealer;
+        private readonly JsonSealer _sealer;
         private readonly SamlResponseValidator _validator;
         private readonly ISamlIdentityProviderResolver _resolver;
         private readonly ISamlAuthStore _store;
@@ -27,8 +32,8 @@ namespace EasyReasy.Auth.Saml
         /// <summary>
         /// Initializes a new instance of the <see cref="SamlAuthService"/> class.
         /// </summary>
-        /// <param name="options">The validated options, copied at registration.</param>
-        /// <param name="sealer">Seals what the store keeps, with the options' state key.</param>
+        /// <param name="options">The validated options, copied at registration, whose state key seals what the store
+        /// keeps.</param>
         /// <param name="validator">Checks a response against the options.</param>
         /// <param name="resolver">The application's resolver.</param>
         /// <param name="store">The application's store.</param>
@@ -36,7 +41,6 @@ namespace EasyReasy.Auth.Saml
         /// <param name="logger">Records why a response was refused, for the operator.</param>
         public SamlAuthService(
             SamlAuthOptions options,
-            SamlSealer sealer,
             SamlResponseValidator validator,
             ISamlIdentityProviderResolver resolver,
             ISamlAuthStore store,
@@ -44,7 +48,7 @@ namespace EasyReasy.Auth.Saml
             ILogger<SamlAuthService> logger)
         {
             _options = options;
-            _sealer = sealer;
+            _sealer = new JsonSealer(options.StateKey);
             _validator = validator;
             _resolver = resolver;
             _store = store;
@@ -102,11 +106,11 @@ namespace EasyReasy.Auth.Saml
             Saml2RedirectBinding binding = new Saml2RedirectBinding().Bind(authnRequest);
 
             DateTimeOffset now = _timeProvider.GetUtcNow();
-            string flowId = SamlRandomValue.Create(FlowIdSize);
+            FlowBinding flowBinding = BindingCookie.Issue(httpContext, _options.RequestLifetime);
             SamlPendingState state = new SamlPendingState
             {
-                FlowId = flowId,
-                BindingCookieHash = SamlBindingCookie.Issue(httpContext, flowId, _options.RequestLifetime),
+                FlowId = flowBinding.FlowId,
+                BindingCookieHash = flowBinding.ValueHash,
                 IdentityProviderKey = request.IdentityProviderKey,
                 IdentityProviderEntityId = identityProvider.EntityId,
                 CallerBinding = request.CallerBinding,
@@ -117,7 +121,7 @@ namespace EasyReasy.Auth.Saml
             };
 
             await _store.StorePendingRequestAsync(
-                new SamlPendingRequestRecord(SamlHash.Sha256(authnRequest.IdAsString), _sealer.Seal(state), (now + _options.RequestLifetime).UtcDateTime),
+                new SamlPendingRequestRecord(SecureToken.Hash(authnRequest.IdAsString), _sealer.Seal(state), (now + _options.RequestLifetime).UtcDateTime),
                 cancellationToken);
 
             return new SamlAuthBeginResult(binding.RedirectLocation.OriginalString);
@@ -134,17 +138,21 @@ namespace EasyReasy.Auth.Saml
                 return SamlAuthCompletionResult.Refused(SamlAuthFailureReason.UnknownCompletionCode, null);
             }
 
-            string? sealedOutcome = await _store.ConsumeCompletionAsync(SamlHash.Sha256(code), _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+            string? sealedOutcome = await _store.ConsumeCompletionAsync(SecureToken.Hash(code), _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
             SamlCompletionOutcome? outcome = sealedOutcome == null ? null : _sealer.Open<SamlCompletionOutcome>(sealedOutcome);
             if (outcome == null)
             {
                 return SamlAuthCompletionResult.Refused(SamlAuthFailureReason.UnknownCompletionCode, null);
             }
 
-            SamlAuthFailureReason? bindingFailure = SamlBindingCookie.Check(httpContext, outcome.FlowId, outcome.BindingCookieHash);
-            SamlBindingCookie.Clear(httpContext, outcome.FlowId);
-            if (bindingFailure is SamlAuthFailureReason cookieReason)
+            FlowBinding flowBinding = new FlowBinding(outcome.FlowId, outcome.BindingCookieHash);
+            FlowBindingCookieCheck bindingCheck = BindingCookie.Check(httpContext, flowBinding);
+            BindingCookie.Clear(httpContext, flowBinding);
+            if (bindingCheck != FlowBindingCookieCheck.Matches)
             {
+                SamlAuthFailureReason cookieReason = bindingCheck == FlowBindingCookieCheck.Missing
+                    ? SamlAuthFailureReason.BindingCookieMissing
+                    : SamlAuthFailureReason.BindingCookieMismatch;
                 return SamlAuthCompletionResult.Refused(cookieReason, null);
             }
 
@@ -195,7 +203,7 @@ namespace EasyReasy.Auth.Saml
             }
 
             // Consumed before anything else: whatever the response turns out to be, its request is answered once.
-            string? sealedState = await _store.ConsumePendingRequestAsync(SamlHash.Sha256(claimedRequestId), _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+            string? sealedState = await _store.ConsumePendingRequestAsync(SecureToken.Hash(claimedRequestId), _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
             SamlPendingState? state = sealedState == null ? null : _sealer.Open<SamlPendingState>(sealedState);
             if (state == null)
             {
@@ -205,10 +213,10 @@ namespace EasyReasy.Auth.Saml
 
             SamlCompletionOutcome outcome = await EvaluateAsync(samlResponse, claimedRequestId, state, cancellationToken);
 
-            string code = SamlRandomValue.Create(CompletionCodeSize);
+            string code = SecureToken.Generate();
             DateTimeOffset now = _timeProvider.GetUtcNow();
             await _store.StoreCompletionAsync(
-                new SamlCompletionRecord(SamlHash.Sha256(code), _sealer.Seal(outcome), (now + _options.CompletionLifetime).UtcDateTime),
+                new SamlCompletionRecord(SecureToken.Hash(code), _sealer.Seal(outcome), (now + _options.CompletionLifetime).UtcDateTime),
                 cancellationToken);
 
             string separator = state.CompletionPath.Contains('?') ? "&" : "?";

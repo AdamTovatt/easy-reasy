@@ -1705,7 +1705,7 @@ Token introspection, revoking an access token, `private_key_jwt`, OpenID Connect
 
 ### 18. Building Blocks for Sign-in Packages
 
-The sign-in packages that run a browser-redirect flow (EasyReasy.Auth.OpenIdConnect, and EasyReasy.Auth.Microsoft on it) are built on four public pieces of this library. An application using those packages needs none of them directly; they are here for a package, or an application's own flow, that redirects the browser to an identity provider and back.
+The sign-in packages that run a browser-redirect flow (EasyReasy.Auth.OpenIdConnect, EasyReasy.Auth.Microsoft on it, and EasyReasy.Auth.Saml) are built on the public pieces of this library below. An application using those packages needs none of them directly; they are here for a package, or an application's own flow, that redirects the browser to an identity provider and back.
 
 #### `FlowBindingCookie`
 
@@ -1930,19 +1930,9 @@ The progressive delay middleware helps protect your API from brute-force attacks
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
 
-## Migration from 5.19.0
-
-Version 5.20.0 adds `StoreSweep` and moves the IdentityModel packages to 8.23.0. Nothing is removed.
-
-### New: `StoreSweep`
-- **The hosted service the OAuth server's sweep is built on, now public.** Derive from it to delete expired rows from a store of your own. See [Sweeping Expired Rows](#sweeping-expired-rows-from-a-store-of-your-own-storesweep). The OAuth server's sweep behaves as before.
-
-### Changed: the IdentityModel packages are at 8.23.0
-- **`Microsoft.IdentityModel.JsonWebTokens`, `Microsoft.IdentityModel.Protocols.OpenIdConnect`, `Microsoft.IdentityModel.Tokens` and `System.IdentityModel.Tokens.Jwt` move from 8.19.1 to 8.23.0**, together, so `EasyReasy.Auth.Saml`'s SAML library and this package resolve one aligned set. A mixed set rejects every token this package issues (IDX14102). If you reference any of the four yourself, move it to 8.23.0 too, or drop the reference and take it from this package.
-
 ## Migration from 5.18.0
 
-Version 5.19.0 adds the building blocks the browser-redirect sign-in packages are built on. Nothing existing changes.
+Version 5.19.0 adds the building blocks the browser-redirect sign-in packages are built on and `StoreSweep`, and moves the IdentityModel packages to 8.23.0. Nothing is removed.
 
 ### New: `FlowBindingCookie`, `FlowBinding` and `FlowBindingCookieCheck`
 - **The binding cookie of a browser-redirect sign-in**, with a `__Host-` name prefix per kind of flow and at most five pending flows per prefix. See [section 18](#18-building-blocks-for-sign-in-packages).
@@ -1954,6 +1944,12 @@ Version 5.19.0 adds the building blocks the browser-redirect sign-in packages ar
 - **`SecureToken`** (`Generate`, `Hash`, `HashBytes`, `MatchesHash`) generates a 256-bit random value and hashes it for storage. It was internal; its behaviour is unchanged.
 - **`OAuthPkce`** (`VerifierMatchesChallenge`, `IsS256Challenge` and the three length constants) is the OAuth server's S256 rule. It was internal; its behaviour is unchanged.
 - **`OAuthPkce.CreateS256Challenge`** is new: it computes a client's S256 challenge from its verifier.
+
+### New: `StoreSweep`
+- **The hosted service the OAuth server's sweep is built on, now public.** Derive from it to delete expired rows from a store of your own. See [Sweeping Expired Rows](#sweeping-expired-rows-from-a-store-of-your-own-storesweep). The OAuth server's sweep behaves as before.
+
+### Changed: the IdentityModel packages are at 8.23.0
+- **`Microsoft.IdentityModel.JsonWebTokens`, `Microsoft.IdentityModel.Protocols.OpenIdConnect`, `Microsoft.IdentityModel.Tokens` and `System.IdentityModel.Tokens.Jwt` move from 8.19.1 to 8.23.0**, together, so `EasyReasy.Auth.Saml`'s SAML library and this package resolve one aligned set. A mixed set rejects every token this package issues (IDX14102). If you reference any of the four yourself, move it to 8.23.0 too, or drop the reference and take it from this package.
 
 ## Migration from 5.17.0
 

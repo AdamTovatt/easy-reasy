@@ -1,4 +1,3 @@
-using EasyReasy.Auth.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -22,7 +21,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             RecordingAuditLogger auditLogger = new RecordingAuditLogger();
             await using SamlFlowHost host = await SamlFlowHost.StartAsync(auditLogger: auditLogger);
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
 
             string redirectUrl = await host.BeginAsync(browser);
             string code = await host.AnswerAsync(redirectUrl);
@@ -50,7 +49,7 @@ namespace EasyReasy.Auth.Saml.Tests
                 ForceAuthentication = true,
                 AcceptedAuthnContextClassRefs = ["urn:example:mfa"],
             };
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
 
             string redirectUrl = await host.BeginAsync(browser);
             HttpResponseMessage answered = await host.PostAssertionAsync(host.Respond(redirectUrl, response => response.AuthnContextClassRef = "urn:example:mfa"));
@@ -68,7 +67,7 @@ namespace EasyReasy.Auth.Saml.Tests
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
             host.Handler.Settings = new SamlSignInSettings { CompletionPath = "//evil.example/steal" };
 
-            ArgumentException exception = await Assert.ThrowsExceptionAsync<ArgumentException>(() => host.PostBeginAsync(new BrowserCookieJar()));
+            ArgumentException exception = await Assert.ThrowsExceptionAsync<ArgumentException>(() => host.PostBeginAsync(new FakeBrowser(host.Clock)));
 
             StringAssert.Contains(exception.Message, nameof(SamlAuthBeginRequest.CompletionPath));
             Assert.AreEqual(0, host.Store.PendingRequests.Count);
@@ -79,7 +78,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
 
-            HttpResponseMessage response = await host.PostBeginAsync(new BrowserCookieJar());
+            HttpResponseMessage response = await host.PostBeginAsync(new FakeBrowser(host.Clock));
 
             Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
             Assert.AreEqual(1, host.Resolver.Calls);
@@ -92,7 +91,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task Begin_UnknownIdentityProvider_Returns400WithoutAskingTheHandler(string? identityProviderKey)
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
 
             HttpResponseMessage response = await host.PostBeginAsync(browser, identityProviderKey);
 
@@ -106,7 +105,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             RecordingAuditLogger auditLogger = new RecordingAuditLogger();
             await using SamlFlowHost host = await SamlFlowHost.StartAsync(auditLogger: auditLogger);
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
             string code = await host.AnswerAsync(begun!.RedirectUrl);
 
@@ -125,7 +124,7 @@ namespace EasyReasy.Auth.Saml.Tests
             RecordingAuditLogger auditLogger = new RecordingAuditLogger();
             await using SamlFlowHost host = await SamlFlowHost.StartAsync(auditLogger: auditLogger);
             host.Handler.Settings = new SamlSignInSettings { CompletionPath = "/signed-in", AcceptedAuthnContextClassRefs = ["urn:example:mfa"] };
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
 
             string code = await host.AnswerAsync(await host.BeginAsync(browser));
             HttpResponseMessage response = await host.PostSignInAsync(browser, code);
@@ -142,7 +141,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
             host.Handler.ResponseToReturn = null;
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
 
             string code = await host.AnswerAsync(await host.BeginAsync(browser));
             HttpResponseMessage response = await host.PostSignInAsync(browser, code);
@@ -156,7 +155,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
 
-            HttpResponseMessage response = await host.PostSignInAsync(new BrowserCookieJar(), "never-issued");
+            HttpResponseMessage response = await host.PostSignInAsync(new FakeBrowser(host.Clock), "never-issued");
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         }
@@ -224,11 +223,11 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task Sweep_ExpiredAndLiveRows_DeletesOnlyTheExpired()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
-            await host.BeginAndAnswerAsync(new BrowserCookieJar());
+            await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest());
+            await host.BeginAndAnswerAsync(new FakeBrowser(host.Clock));
             host.Clock.Advance(host.Options.RequestLifetime);
-            await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
-            await host.BeginAndAnswerAsync(new BrowserCookieJar());
+            await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest());
+            await host.BeginAndAnswerAsync(new FakeBrowser(host.Clock));
 
             await HostedSweep(host).SweepOnceAsync(CancellationToken.None);
 
@@ -243,7 +242,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             // The rows' time is the test clock; the sweep's timer runs on real time, so the interval is short.
             await using SamlFlowHost host = await SamlFlowHost.StartAsync(sweepInterval: TimeSpan.FromMilliseconds(20));
-            await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
+            await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest());
             host.Clock.Advance(host.Options.RequestLifetime);
 
             DateTime deadline = DateTime.UtcNow.AddSeconds(10);
@@ -262,7 +261,7 @@ namespace EasyReasy.Auth.Saml.Tests
             RecordingAuditLogger auditLogger = new RecordingAuditLogger();
             await using SamlFlowHost host = await SamlFlowHost.StartAsync(auditLogger: auditLogger);
             host.Handler.Settings = new SamlSignInSettings { CompletionPath = "/signed-in", MaxAuthenticationAge = TimeSpan.FromMinutes(5) };
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
 
             string redirectUrl = await host.BeginAsync(browser);
             string code = await host.AnswerAsync(redirectUrl, response => response.AuthenticationInstant = host.Clock.GetUtcNow().AddMinutes(-6));
@@ -278,7 +277,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
 
-            HttpResponseMessage response = await host.PostBeginAsync(new BrowserCookieJar());
+            HttpResponseMessage response = await host.PostBeginAsync(new FakeBrowser(host.Clock));
 
             Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
             Assert.AreEqual("no-store", response.Headers.CacheControl?.ToString());

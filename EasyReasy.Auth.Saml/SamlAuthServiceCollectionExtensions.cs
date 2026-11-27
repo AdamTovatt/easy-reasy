@@ -49,7 +49,6 @@ namespace EasyReasy.Auth.Saml
 
             services.TryAddSingleton(TimeProvider.System);
             services.AddSingleton(copy);
-            services.AddSingleton(new SamlSealer(copy.StateKey));
             services.AddSingleton(serviceProvider => new SamlResponseValidator(
                 copy.ServiceProviderEntityId,
                 copy.AssertionConsumerServiceUrl,

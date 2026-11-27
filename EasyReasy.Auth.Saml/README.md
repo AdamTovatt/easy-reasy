@@ -19,7 +19,7 @@ The package never creates users. Your handler links a verified `SamlIdentity` to
    - It keeps the outcome under a random single-use code and redirects (303) to your completion page with `?code=`.
 3. **Completion.** Your completion page posts the code as JSON, same-site. The `SameSite=Lax` binding cookie comes with it, which it never does on the identity provider's cross-site post. The package redeems the code once, checks and clears the cookie, and returns the outcome.
 
-The browser that completes must be the browser that began. One browser holds at most 5 binding cookies: a sixth sign-in begun while 5 are unfinished clears the 5, and those sign-ins then fail as `BindingCookieMissing`. A response that answers no request this server began, or one already answered, is refused. That covers unsolicited, replayed and IdP-initiated responses.
+The browser that completes must be the browser that began. Begin sets a `__Host-easyreasy-saml-` binding cookie (HttpOnly, Secure, SameSite=Lax) for each sign-in, through EasyReasy.Auth's `FlowBindingCookie`. One browser holds at most 5 of them, counted for SAML sign-ins alone, apart from OpenID Connect's: a sixth SAML sign-in begun while 5 are unfinished clears the 5, and those sign-ins then fail as `BindingCookieMissing`. A response that answers no request this server began, or one already answered, is refused. That covers unsolicited, replayed and IdP-initiated responses.
 
 ## Quick start
 

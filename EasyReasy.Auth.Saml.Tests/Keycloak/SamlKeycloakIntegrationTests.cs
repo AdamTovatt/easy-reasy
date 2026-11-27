@@ -1,4 +1,3 @@
-using EasyReasy.Auth.Tests;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
@@ -28,7 +27,7 @@ namespace EasyReasy.Auth.Saml.Tests
         [ClassInitialize]
         public static async Task ClassInitialize(TestContext context)
         {
-            if (!KeycloakServer.IsConfigured)
+            if (!KeycloakAdmin.IsConfigured)
             {
                 Assert.Inconclusive("KEYCLOAK_URL is not set; CLAUDE.md says how to start Keycloak for these tests.");
             }
@@ -60,7 +59,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await StartHostAsync(_signedRealm);
             using KeycloakBrowser keycloak = new KeycloakBrowser();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
 
             string code = await AnswerAsync(host, await keycloak.SignInAsync(await host.BeginAsync(browser, KeycloakKey)));
             HttpResponseMessage signedIn = await host.PostSignInAsync(browser, code);
@@ -119,7 +118,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await StartHostAsync(_signedRealm);
             using KeycloakBrowser keycloak = new KeycloakBrowser();
-            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest(request => request.IdentityProviderKey = KeycloakKey));
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest(request => request.IdentityProviderKey = KeycloakKey));
             string samlResponse = await keycloak.SignInAsync(begun!.RedirectUrl);
             await AnswerAsync(host, samlResponse);
 
@@ -133,7 +132,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await StartHostAsync(_encryptedRealm, decrypt: true);
             using KeycloakBrowser keycloak = new KeycloakBrowser();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request => request.IdentityProviderKey = KeycloakKey));
             string samlResponse = await keycloak.SignInAsync(begun!.RedirectUrl);
 
@@ -163,7 +162,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await StartHostAsync(_sha1Realm);
             using KeycloakBrowser keycloak = new KeycloakBrowser();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
 
             // The assertion consumer service seals the refusal and still redirects; the completion reports it.
             string code = await AnswerAsync(host, await keycloak.SignInAsync(await host.BeginAsync(browser, KeycloakKey)));
@@ -188,7 +187,7 @@ namespace EasyReasy.Auth.Saml.Tests
 
         private static async Task<SamlAuthCompletionResult> SignInAsync(SamlFlowHost host, KeycloakBrowser keycloak, Action<SamlAuthBeginRequestBuilder>? customize = null)
         {
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request =>
             {
                 request.IdentityProviderKey = KeycloakKey;

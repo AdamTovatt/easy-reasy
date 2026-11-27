@@ -17,7 +17,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task Complete_GenuineResponse_ReturnsTheVerifiedUser()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request => request.CallerBinding = "link:user-7"));
             DateTimeOffset authenticatedAt = TruncateToSeconds(DateTimeOffset.UtcNow.AddMinutes(-1));
 
@@ -43,7 +43,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task AssertionConsumer_GenuineResponse_RedirectsToTheCompletionPathWithACode()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest(request => request.CompletionPath = "/settings/linked?tab=sso"));
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest(request => request.CompletionPath = "/settings/linked?tab=sso"));
 
             HttpResponseMessage response = await host.PostAssertionAsync(host.Respond(begun!.RedirectUrl));
 
@@ -59,7 +59,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task AssertionConsumer_SameResponsePostedTwice_IsRefusedTheSecondTime()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest());
             string samlResponse = host.Respond(begun!.RedirectUrl);
 
             HttpResponseMessage first = await host.PostAssertionAsync(samlResponse);
@@ -86,7 +86,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task AssertionConsumer_UnsolicitedResponse_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest());
 
             HttpResponseMessage response = await host.PostAssertionAsync(host.Respond(begun!.RedirectUrl, samlResponse =>
             {
@@ -126,7 +126,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task AssertionConsumer_ExpiredPendingRequest_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new BrowserCookieJar(), SamlFlowHost.AppRequest());
+            SamlAuthBeginResult? begun = await host.ServiceBeginAsync(new FakeBrowser(host.Clock), SamlFlowHost.AppRequest());
             host.Clock.Advance(host.Options.RequestLifetime);
 
             HttpResponseMessage response = await host.PostAssertionAsync(host.Respond(begun!.RedirectUrl));
@@ -138,7 +138,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task Complete_IdentityProviderRemovedAfterBegin_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
             host.Resolver.IdentityProviders.Clear();
 
@@ -151,7 +151,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task Complete_IdentityProviderEntityIdChangedAfterBegin_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
             FakeSamlIdentityProvider other = new FakeSamlIdentityProvider("https://other-idp.example.test/metadata", SamlTestCertificates.OtherIdentityProvider);
             host.Resolver.IdentityProviders[SamlFlowHost.IdentityProviderKey] = other.Provider;
@@ -176,7 +176,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             // A response the other identity provider signed for this very request id still fails: the request named acme.
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
             FakeSamlIdentityProvider other = new FakeSamlIdentityProvider("https://other-idp.example.test/metadata", SamlTestCertificates.OtherIdentityProvider);
             string samlResponse = other.Respond(new SamlRedirectReader(begun!.RedirectUrl).RequestId, host.Options).ToFormValue();
@@ -245,7 +245,7 @@ namespace EasyReasy.Auth.Saml.Tests
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
             FakeSamlIdentityProvider impostor = new FakeSamlIdentityProvider(SamlFlowHost.IdentityProvider.EntityId, SamlTestCertificates.OtherIdentityProvider);
             host.Resolver.IdentityProviders["other-customer"] = impostor.Provider;
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request => request.IdentityProviderKey = "other-customer"));
             string samlResponse = impostor.Respond(new SamlRedirectReader(begun!.RedirectUrl).RequestId, host.Options, SamlFlowHost.DefaultIdentity.Subject).ToFormValue();
 
