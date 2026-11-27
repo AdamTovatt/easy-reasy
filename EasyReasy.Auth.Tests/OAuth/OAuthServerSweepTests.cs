@@ -144,7 +144,7 @@ namespace EasyReasy.Auth.Tests
         [TestMethod]
         public async Task ExecuteAsync_SweepIntervalAtItsLongest_StartsTheTimer()
         {
-            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync(HostedOAuthServer.DefaultOptions() with { SweepInterval = OAuthServerSettings.MaxSweepInterval });
+            await using HostedOAuthServer server = await HostedOAuthServer.StartAsync(HostedOAuthServer.DefaultOptions() with { SweepInterval = StoreSweep.MaxInterval });
 
             Assert.IsNotNull(HostedSweep(server).ExecuteTask);
             Assert.IsFalse(HostedSweep(server).ExecuteTask!.IsCompleted);

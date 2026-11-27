@@ -16,9 +16,9 @@ namespace EasyReasy.Auth.Saml
         public required string IdentityProviderEntityId { get; init; }
 
         /// <summary>
-        /// Gets the subject's NameID value.
+        /// Gets the subject's NameID value, or <see langword="null"/> when the subject has none.
         /// </summary>
-        public required string NameId { get; init; }
+        public required string? NameId { get; init; }
 
         /// <summary>
         /// Gets the NameID's format, or <see langword="null"/> when it names none.
@@ -34,5 +34,20 @@ namespace EasyReasy.Auth.Saml
         /// Gets the NameID's <c>SPNameQualifier</c>, or <see langword="null"/> when it has none.
         /// </summary>
         public required string? ServiceProviderNameQualifier { get; init; }
+
+        /// <summary>
+        /// Gets when the identity provider says the person authenticated (the AuthnStatement's <c>AuthnInstant</c>).
+        /// </summary>
+        public required DateTimeOffset AuthenticationInstant { get; init; }
+
+        /// <summary>
+        /// Gets the AuthnStatement's <c>AuthnContextClassRef</c>, or <see langword="null"/> when it names none.
+        /// </summary>
+        public required string? AuthnContextClassRef { get; init; }
+
+        /// <summary>
+        /// Gets the assertion's attributes by <c>Name</c>, each with its values in order.
+        /// </summary>
+        public required IReadOnlyDictionary<string, IReadOnlyList<string>> Attributes { get; init; }
     }
 }

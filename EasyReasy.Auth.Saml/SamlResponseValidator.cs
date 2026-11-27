@@ -33,20 +33,35 @@ namespace EasyReasy.Auth.Saml
         private const string AssertionNamespace = "urn:oasis:names:tc:SAML:2.0:assertion";
         private const string AssertionElementName = "Assertion";
 
-        private readonly SamlServiceProviderSettings _serviceProvider;
+        private readonly string _serviceProviderEntityId;
+        private readonly Uri _assertionConsumerServiceUrl;
+        private readonly IReadOnlyList<X509Certificate2> _decryptionCertificates;
         private readonly TimeProvider _timeProvider;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="SamlResponseValidator"/> class.
+        /// Initializes a new instance of the <see cref="SamlResponseValidator"/> class with the parts of
+        /// <see cref="SamlAuthOptions"/> a response is checked against, already validated.
         /// </summary>
-        /// <param name="serviceProvider">This app as a service provider.</param>
+        /// <param name="serviceProviderEntityId">The audience every assertion must name.</param>
+        /// <param name="assertionConsumerServiceUrl">The URL the response's Destination and the bearer Recipient must
+        /// equal.</param>
+        /// <param name="decryptionCertificates">The keys that decrypt assertions; when any is given, a plaintext assertion
+        /// is refused.</param>
         /// <param name="timeProvider">The clock the assertion's times are checked against.</param>
-        public SamlResponseValidator(SamlServiceProviderSettings serviceProvider, TimeProvider timeProvider)
+        public SamlResponseValidator(
+            string serviceProviderEntityId,
+            Uri assertionConsumerServiceUrl,
+            IReadOnlyList<X509Certificate2> decryptionCertificates,
+            TimeProvider timeProvider)
         {
-            ArgumentNullException.ThrowIfNull(serviceProvider);
+            ArgumentException.ThrowIfNullOrWhiteSpace(serviceProviderEntityId);
+            ArgumentNullException.ThrowIfNull(assertionConsumerServiceUrl);
+            ArgumentNullException.ThrowIfNull(decryptionCertificates);
             ArgumentNullException.ThrowIfNull(timeProvider);
 
-            _serviceProvider = serviceProvider;
+            _serviceProviderEntityId = serviceProviderEntityId;
+            _assertionConsumerServiceUrl = assertionConsumerServiceUrl;
+            _decryptionCertificates = decryptionCertificates;
             _timeProvider = timeProvider;
         }
 
@@ -58,13 +73,13 @@ namespace EasyReasy.Auth.Saml
         /// <param name="identityProvider">The identity provider that request named.</param>
         /// <returns>What the verified assertion says.</returns>
         /// <exception cref="SamlResponseRejectedException">Any check failed.</exception>
-        public SamlValidatedAssertion Validate(string samlResponse, string expectedRequestId, SamlIdentityProviderTrust identityProvider)
+        public SamlValidatedAssertion Validate(string samlResponse, string expectedRequestId, SamlIdentityProvider identityProvider)
         {
             ArgumentNullException.ThrowIfNull(samlResponse);
             ArgumentException.ThrowIfNullOrWhiteSpace(expectedRequestId);
             ArgumentNullException.ThrowIfNull(identityProvider);
 
-            if (_serviceProvider.DecryptionCertificates.Count > 0)
+            if (_decryptionCertificates.Count > 0)
             {
                 RequireAllowedEncryptionAlgorithms(samlResponse);
             }
@@ -78,7 +93,7 @@ namespace EasyReasy.Auth.Saml
             }
 
             RequireEqual("response's InResponseTo", response.InResponseTo?.Value, expectedRequestId);
-            RequireSameUrl("response's Destination", response.Destination, _serviceProvider.AssertionConsumerServiceUrl);
+            RequireSameUrl("response's Destination", response.Destination, _assertionConsumerServiceUrl);
             RequireEqual("response's Issuer", response.Issuer, identityProvider.EntityId);
 
             Saml2Assertion assertion = response.Saml2SecurityToken.Assertion;
@@ -87,19 +102,38 @@ namespace EasyReasy.Auth.Saml
             RequireEncryptedAssertionWhenDecrypting(response.XmlDocument);
             RequireBearerConfirmation(assertion.Subject, expectedRequestId, now);
             RequireConditions(assertion.Conditions, now);
-            RequireAuthenticationStatement(assertion);
+            Saml2AuthenticationStatement authentication = RequireAuthenticationStatement(assertion);
 
-            Saml2NameIdentifier nameId = assertion.Subject.NameId
-                ?? throw new SamlResponseRejectedException("The assertion's subject has no NameID.");
+            // Whether the subject's identity is a NameID or an attribute is the identity provider's identity source's to
+            // decide, so the NameID is returned as it is, absent or not.
+            Saml2NameIdentifier? nameId = assertion.Subject.NameId;
             return new SamlValidatedAssertion
             {
                 AssertionId = assertion.Id.Value,
                 IdentityProviderEntityId = identityProvider.EntityId,
-                NameId = nameId.Value,
-                NameIdFormat = nameId.Format?.OriginalString,
-                NameQualifier = nameId.NameQualifier,
-                ServiceProviderNameQualifier = nameId.SPNameQualifier,
+                NameId = nameId?.Value,
+                NameIdFormat = nameId?.Format?.OriginalString,
+                NameQualifier = nameId?.NameQualifier,
+                ServiceProviderNameQualifier = nameId?.SPNameQualifier,
+                AuthenticationInstant = ToUtc(authentication.AuthenticationInstant),
+                AuthnContextClassRef = authentication.AuthenticationContext?.ClassReference?.OriginalString,
+                Attributes = ReadAttributes(assertion),
             };
+        }
+
+        /// <summary>
+        /// Reads the <c>InResponseTo</c> a response claims to answer, before anything about it is verified: only to find
+        /// the pending request, which <see cref="Validate"/> then checks the signed confirmation against.
+        /// </summary>
+        /// <param name="samlResponse">The base64 <c>SAMLResponse</c> form value, as posted.</param>
+        /// <returns>The response's <c>InResponseTo</c>, or null when it names none.</returns>
+        /// <exception cref="SamlResponseRejectedException">The value is not base64-encoded XML without a DTD.</exception>
+        public static string? ReadClaimedInResponseTo(string samlResponse)
+        {
+            ArgumentNullException.ThrowIfNull(samlResponse);
+
+            string inResponseTo = ParseWithoutDtd(samlResponse).DocumentElement?.GetAttribute("InResponseTo") ?? string.Empty;
+            return inResponseTo.Length == 0 ? null : inResponseTo;
         }
 
         private static void RequireAllowedEncryptionAlgorithms(string samlResponse)
@@ -144,11 +178,11 @@ namespace EasyReasy.Auth.Saml
             return encryptionMethod?.GetAttribute("Algorithm");
         }
 
-        private Saml2AuthnResponse ReadWithLibrary(string samlResponse, SamlIdentityProviderTrust identityProvider)
+        private Saml2AuthnResponse ReadWithLibrary(string samlResponse, SamlIdentityProvider identityProvider)
         {
             Saml2Configuration configuration = new Saml2Configuration
             {
-                Issuer = _serviceProvider.EntityId,
+                Issuer = _serviceProviderEntityId,
                 AllowedIssuer = identityProvider.EntityId,
                 SignatureValidationCertificates = identityProvider.SigningCertificates.ToList(),
                 SignatureValidationAlgorithms = SamlAlgorithms.SignatureMethods.ToList(),
@@ -157,8 +191,8 @@ namespace EasyReasy.Auth.Saml
                 CertificateValidationMode = X509CertificateValidationMode.None,
                 RevocationMode = X509RevocationMode.NoCheck,
                 AudienceRestricted = true,
-                AllowedAudienceUris = [_serviceProvider.EntityId],
-                DecryptionCertificates = _serviceProvider.DecryptionCertificates.ToList(),
+                AllowedAudienceUris = [_serviceProviderEntityId],
+                DecryptionCertificates = _decryptionCertificates.ToList(),
             };
 
             SamlHttpRequest request = new SamlHttpRequest
@@ -209,7 +243,7 @@ namespace EasyReasy.Auth.Saml
 
         private void RequireEncryptedAssertionWhenDecrypting(XmlDocument document)
         {
-            if (_serviceProvider.DecryptionCertificates.Count == 0)
+            if (_decryptionCertificates.Count == 0)
             {
                 return;
             }
@@ -241,7 +275,7 @@ namespace EasyReasy.Auth.Saml
                 throw new SamlResponseRejectedException("The bearer confirmation has no SubjectConfirmationData.");
             }
 
-            RequireSameUrl("bearer confirmation's Recipient", data.Recipient, _serviceProvider.AssertionConsumerServiceUrl);
+            RequireSameUrl("bearer confirmation's Recipient", data.Recipient, _assertionConsumerServiceUrl);
             RequireEqual("bearer confirmation's InResponseTo", data.InResponseTo?.Value, expectedRequestId);
             if (data.NotBefore != null)
             {
@@ -273,20 +307,41 @@ namespace EasyReasy.Auth.Saml
 
             foreach (Saml2AudienceRestriction restriction in conditions.AudienceRestrictions)
             {
-                if (!restriction.Audiences.Contains(_serviceProvider.EntityId, StringComparer.Ordinal))
+                if (!restriction.Audiences.Contains(_serviceProviderEntityId, StringComparer.Ordinal))
                 {
                     throw new SamlResponseRejectedException($"An AudienceRestriction does not name this service provider ({string.Join(", ", restriction.Audiences)}).");
                 }
             }
         }
 
-        private static void RequireAuthenticationStatement(Saml2Assertion assertion)
+        private static Saml2AuthenticationStatement RequireAuthenticationStatement(Saml2Assertion assertion)
         {
-            // The web browser SSO profile requires an AuthnStatement in the bearer assertion a sign-in rests on.
-            if (!assertion.Statements.OfType<Saml2AuthenticationStatement>().Any())
+            // The web browser SSO profile requires an AuthnStatement in the bearer assertion a sign-in rests on. One, so
+            // the authentication time and class the rules check cannot be chosen among several.
+            List<Saml2AuthenticationStatement> statements = assertion.Statements.OfType<Saml2AuthenticationStatement>().ToList();
+            if (statements.Count != 1)
             {
-                throw new SamlResponseRejectedException("The assertion has no AuthnStatement.");
+                throw new SamlResponseRejectedException($"The assertion has {statements.Count} AuthnStatements, not one.");
             }
+
+            return statements[0];
+        }
+
+        private static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadAttributes(Saml2Assertion assertion)
+        {
+            Dictionary<string, List<string>> attributes = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (Saml2Attribute attribute in assertion.Statements.OfType<Saml2AttributeStatement>().SelectMany(statement => statement.Attributes))
+            {
+                if (!attributes.TryGetValue(attribute.Name, out List<string>? values))
+                {
+                    values = new List<string>();
+                    attributes[attribute.Name] = values;
+                }
+
+                values.AddRange(attribute.Values.Where(value => value != null));
+            }
+
+            return attributes.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<string>)pair.Value, StringComparer.Ordinal);
         }
 
         private static void RequireNotExpired(string what, DateTime? notOnOrAfter, DateTimeOffset now)

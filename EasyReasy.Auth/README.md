@@ -1809,6 +1809,33 @@ This is useful for:
 - **Multiple configurations**: Register different JWT services for different purposes
 - **Performance optimization**: Control the service lifetime (singleton vs scoped vs transient)
 
+### Sweeping Expired Rows from a Store of Your Own (`StoreSweep`)
+
+`StoreSweep` is the hosted service the OAuth server and the provider packages delete expired rows with. Derive from it for a store of your own: give the base the interval, implement `SweepAsync` with the store's delete, and register it with `AddHostedService`.
+
+```csharp
+public sealed class InviteSweep : StoreSweep
+{
+    public InviteSweep(IServiceScopeFactory scopeFactory, TimeProvider timeProvider, ILogger<InviteSweep> logger)
+        : base(scopeFactory, TimeSpan.FromHours(1), timeProvider, logger)
+    {
+    }
+
+    protected override Task SweepAsync(IServiceProvider services, DateTime now, CancellationToken cancellationToken)
+    {
+        return services.GetRequiredService<IInviteStore>().DeleteExpiredAsync(now, cancellationToken);
+    }
+}
+
+builder.Services.AddHostedService<InviteSweep>();
+```
+
+- **Each sweep runs in a scope of its own**, so the store may be scoped. `now` comes from the registered `TimeProvider`.
+- **A failed sweep is logged** under your logger's category and the next interval sweeps again.
+- **The interval is positive and at most `StoreSweep.MaxInterval`** (49 days, a timer's longest period). The constructor throws otherwise. The first sweep runs one interval after start.
+- **`SweepOnceAsync` sweeps now**, for a test or an admin action.
+- **Every app instance runs its own sweep**, so the delete must be safe beside another running at the same time, as plain `DELETE` statements are.
+
 ## Progressive Delay Middleware
 
 The progressive delay middleware helps protect your API from brute-force attacks by introducing a delay for repeated unauthorized requests from the same IP address.
@@ -1902,6 +1929,16 @@ The progressive delay middleware helps protect your API from brute-force attacks
 ---
 
 For more details, see XML comments in the code or explore the source. This library is designed to be easy to use and secure enough for most uses cases by default.
+
+## Migration from 5.19.0
+
+Version 5.20.0 adds `StoreSweep` and moves the IdentityModel packages to 8.23.0. Nothing is removed.
+
+### New: `StoreSweep`
+- **The hosted service the OAuth server's sweep is built on, now public.** Derive from it to delete expired rows from a store of your own. See [Sweeping Expired Rows](#sweeping-expired-rows-from-a-store-of-your-own-storesweep). The OAuth server's sweep behaves as before.
+
+### Changed: the IdentityModel packages are at 8.23.0
+- **`Microsoft.IdentityModel.JsonWebTokens`, `Microsoft.IdentityModel.Protocols.OpenIdConnect`, `Microsoft.IdentityModel.Tokens` and `System.IdentityModel.Tokens.Jwt` move from 8.19.1 to 8.23.0**, together, so `EasyReasy.Auth.Saml`'s SAML library and this package resolve one aligned set. A mixed set rejects every token this package issues (IDX14102). If you reference any of the four yourself, move it to 8.23.0 too, or drop the reference and take it from this package.
 
 ## Migration from 5.18.0
 

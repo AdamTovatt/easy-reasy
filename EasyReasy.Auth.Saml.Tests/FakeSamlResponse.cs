@@ -56,6 +56,18 @@ namespace EasyReasy.Auth.Saml.Tests
         public string? NameQualifier { get; set; }
         public string? ServiceProviderNameQualifier { get; set; }
 
+        /// <summary>The AuthnStatement's <c>AuthnInstant</c>; <see cref="IssueInstant"/> when null.</summary>
+        public DateTimeOffset? AuthenticationInstant { get; set; }
+
+        /// <summary>The AuthnStatement's <c>AuthnContextClassRef</c>; omitted when null.</summary>
+        public string? AuthnContextClassRef { get; set; } = "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport";
+
+        /// <summary>The AuthnStatement's <c>AuthnContextDeclRef</c>; omitted when null.</summary>
+        public string? AuthnContextDeclRef { get; set; }
+
+        /// <summary>The attributes, each with its values; no AttributeStatement when empty.</summary>
+        public Dictionary<string, List<string>> Attributes { get; set; } = new Dictionary<string, List<string>>();
+
         public bool SignAssertion { get; set; } = true;
         public bool SignResponse { get; set; }
         public required X509Certificate2 SigningCertificate { get; set; }
@@ -185,10 +197,32 @@ namespace EasyReasy.Auth.Saml.Tests
             }
 
             XmlElement authnStatement = AppendAssertionElement(assertion, "AuthnStatement");
-            authnStatement.SetAttribute("AuthnInstant", FormatTime(IssueInstant));
+            authnStatement.SetAttribute("AuthnInstant", FormatTime(AuthenticationInstant ?? IssueInstant));
             authnStatement.SetAttribute("SessionIndex", "_session-" + AssertionId);
             XmlElement authnContext = AppendAssertionElement(authnStatement, "AuthnContext");
-            AppendAssertionElement(authnContext, "AuthnContextClassRef", "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport");
+            if (AuthnContextClassRef != null)
+            {
+                AppendAssertionElement(authnContext, "AuthnContextClassRef", AuthnContextClassRef);
+            }
+
+            if (AuthnContextDeclRef != null)
+            {
+                AppendAssertionElement(authnContext, "AuthnContextDeclRef", AuthnContextDeclRef);
+            }
+
+            if (Attributes.Count > 0)
+            {
+                XmlElement attributeStatement = AppendAssertionElement(assertion, "AttributeStatement");
+                foreach (KeyValuePair<string, List<string>> attribute in Attributes)
+                {
+                    XmlElement attributeElement = AppendAssertionElement(attributeStatement, "Attribute");
+                    attributeElement.SetAttribute("Name", attribute.Key);
+                    foreach (string value in attribute.Value)
+                    {
+                        AppendAssertionElement(attributeElement, "AttributeValue", value);
+                    }
+                }
+            }
 
             return assertion;
         }

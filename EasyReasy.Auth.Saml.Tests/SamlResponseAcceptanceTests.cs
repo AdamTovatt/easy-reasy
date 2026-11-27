@@ -60,14 +60,10 @@ namespace EasyReasy.Auth.Saml.Tests
             SamlValidationHarness harness = new SamlValidationHarness();
             FakeSamlResponse response = harness.Respond();
             response.SigningCertificate = SamlTestCertificates.IdentityProviderRollover;
-            SamlIdentityProviderTrust trust = new SamlIdentityProviderTrust(
-                harness.IdentityProvider.EntityId,
-                [
-                    SamlTestCertificates.PublicOnly(SamlTestCertificates.IdentityProvider),
-                    SamlTestCertificates.PublicOnly(SamlTestCertificates.IdentityProviderRollover),
-                ]);
+            SamlIdentityProvider provider = new SamlIdentityProvider(
+                harness.IdentityProvider.MetadataXml(SamlTestCertificates.IdentityProvider, SamlTestCertificates.IdentityProviderRollover));
 
-            SamlValidatedAssertion result = harness.Validator.Validate(response.ToFormValue(), harness.RequestId, trust);
+            SamlValidatedAssertion result = harness.Validator.Validate(response.ToFormValue(), harness.RequestId, provider);
 
             Assert.AreEqual("user-1234", result.NameId);
         }

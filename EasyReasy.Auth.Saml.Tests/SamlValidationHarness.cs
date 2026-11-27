@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace EasyReasy.Auth.Saml.Tests
@@ -13,11 +14,15 @@ namespace EasyReasy.Auth.Saml.Tests
 
         public SamlValidationHarness(IReadOnlyList<X509Certificate2>? decryptionCertificates = null, TimeProvider? timeProvider = null)
         {
-            ServiceProvider = new SamlServiceProviderSettings(ServiceProviderEntityId, new Uri(AssertionConsumerServiceUrl), decryptionCertificates ?? []);
-            Validator = new SamlResponseValidator(ServiceProvider, timeProvider ?? TimeProvider.System);
+            ServiceProvider = CreateOptions(decryptionCertificates ?? []);
+            Validator = new SamlResponseValidator(
+                ServiceProvider.ServiceProviderEntityId,
+                ServiceProvider.AssertionConsumerServiceUrl,
+                ServiceProvider.DecryptionCertificates,
+                timeProvider ?? TimeProvider.System);
         }
 
-        public SamlServiceProviderSettings ServiceProvider { get; }
+        public SamlAuthOptions ServiceProvider { get; }
 
         public SamlResponseValidator Validator { get; }
 
@@ -43,7 +48,24 @@ namespace EasyReasy.Auth.Saml.Tests
         /// </summary>
         public SamlValidatedAssertion Validate(string samlResponse)
         {
-            return Validator.Validate(samlResponse, RequestId, IdentityProvider.Trust);
+            return Validator.Validate(samlResponse, RequestId, IdentityProvider.Provider);
+        }
+
+        /// <summary>
+        /// The service provider's options the tests share: this harness's entity id and assertion consumer service URL, a
+        /// fresh state key, and the given decryption certificates.
+        /// </summary>
+        public static SamlAuthOptions CreateOptions(IReadOnlyList<X509Certificate2> decryptionCertificates, X509Certificate2? signingCertificate = null, TimeSpan? sweepInterval = null)
+        {
+            return new SamlAuthOptions
+            {
+                SweepInterval = sweepInterval ?? TimeSpan.FromHours(1),
+                ServiceProviderEntityId = ServiceProviderEntityId,
+                AssertionConsumerServiceUrl = new Uri(AssertionConsumerServiceUrl),
+                StateKey = RandomNumberGenerator.GetBytes(32),
+                DecryptionCertificates = decryptionCertificates,
+                SigningCertificate = signingCertificate,
+            };
         }
 
         /// <summary>
