@@ -22,6 +22,7 @@
     <Compile Include="..\EasyReasy.Auth.Tests\IdentityModelVersionAlignmentTests.cs" Link="IdentityModelVersionAlignmentTests.cs" />
     <Compile Include="..\EasyReasy.Auth.Tests\ThrowingExternalAuthLogger.cs" Link="ThrowingExternalAuthLogger.cs" />
     <Compile Include="..\EasyReasy.Auth.Tests\InertRefreshTokenService.cs" Link="InertRefreshTokenService.cs" />
+    <Compile Include="..\EasyReasy.Auth.Tests\EndpointBuilderMarks.cs" Link="EndpointBuilderMarks.cs" />
   </ItemGroup>
 
   <ItemGroup>

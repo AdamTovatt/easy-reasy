@@ -49,7 +49,7 @@ namespace EasyReasy.Auth
         /// </summary>
         /// <param name="services">The application's root service provider.</param>
         /// <param name="mapMethodName">The provider's endpoint-mapping method, named in each message (for example
-        /// <c>AddGoogleAuthEndpoint</c>).</param>
+        /// <c>AddGoogleAuthEndpoints</c>).</param>
         /// <returns>One message per missing service; empty when all are registered.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="services"/> is null.</exception>
         /// <exception cref="ArgumentException"><paramref name="mapMethodName"/> is blank.</exception>

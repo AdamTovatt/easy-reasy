@@ -17,7 +17,7 @@ namespace EasyReasy.Auth.Google.Tests
 {
     /// <summary>
     /// Integration tests that spin up an in-process <see cref="TestServer"/> hosting the real
-    /// <see cref="GoogleAuthApplicationBuilderExtensions.AddGoogleAuthEndpoint"/> and verify that a registered
+    /// <see cref="GoogleAuthApplicationBuilderExtensions.AddGoogleAuthEndpoints"/> and verify that a registered
     /// <see cref="IAuthAuditLogger"/> receives exactly one <see cref="IAuthAuditLogger.OnExternalAuthAsync"/>
     /// invocation per endpoint hit (on both the success and failure paths), that the endpoint sets the
     /// <c>Cache-Control: no-store</c> header, that it works when no audit logger is registered, and that it
@@ -146,7 +146,8 @@ namespace EasyReasy.Auth.Google.Tests
 
             await using WebApplication app = builder.Build();
 
-            Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoint());
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoints());
+            AssertNamesOnly(exception, nameof(IGoogleAuthHandler));
         }
 
         [TestMethod]
@@ -157,10 +158,19 @@ namespace EasyReasy.Auth.Google.Tests
 
             await using WebApplication app = builder.Build();
 
-            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoint());
-            StringAssert.Contains(exception.Message, nameof(IGoogleIdTokenValidator));
-            StringAssert.Contains(exception.Message, nameof(IGoogleAuthHandler));
-            StringAssert.Contains(exception.Message, nameof(IJwtTokenService));
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoints());
+            // The wording is EasyReasy.Auth's (ExternalSignInEndpointTests pins it); this pins which services Google
+            // checks, in what order, and the Google names each message gives.
+            string[] lines = exception.Message.Split('\n');
+            Assert.AreEqual(3, lines.Length, exception.Message);
+            StringAssert.StartsWith(lines[0], nameof(IGoogleIdTokenValidator));
+            StringAssert.Contains(lines[0], "AddEasyReasyGoogleAuth");
+            StringAssert.Contains(lines[0], "AddGoogleAuthEndpoints");
+            StringAssert.StartsWith(lines[1], nameof(IGoogleAuthHandler));
+            StringAssert.Contains(lines[1], "MyGoogleAuthHandler");
+            StringAssert.Contains(lines[1], "AddGoogleAuthEndpoints");
+            StringAssert.StartsWith(lines[2], nameof(IJwtTokenService));
+            StringAssert.Contains(lines[2], "AddGoogleAuthEndpoints");
         }
 
         [TestMethod]
@@ -169,11 +179,13 @@ namespace EasyReasy.Auth.Google.Tests
             WebApplicationBuilder builder = WebApplication.CreateBuilder();
             builder.Logging.ClearProviders();
             builder.Services.AddEasyReasyAuth(Secret);
+            builder.Services.AddScoped<IGoogleAuthHandler, FakeGoogleAuthHandler>();
             // Deliberately not calling AddEasyReasyGoogleAuth, so IGoogleIdTokenValidator is absent.
 
             await using WebApplication app = builder.Build();
 
-            Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoint());
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoints());
+            AssertNamesOnly(exception, nameof(IGoogleIdTokenValidator));
         }
 
         [TestMethod]
@@ -187,7 +199,8 @@ namespace EasyReasy.Auth.Google.Tests
 
             await using WebApplication app = builder.Build();
 
-            Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoint());
+            InvalidOperationException exception = Assert.ThrowsException<InvalidOperationException>(() => app.AddGoogleAuthEndpoints());
+            AssertNamesOnly(exception, nameof(IJwtTokenService));
         }
 
         [TestMethod]
@@ -290,6 +303,26 @@ namespace EasyReasy.Auth.Google.Tests
             StringAssert.Contains(message, "4096");
         }
 
+        [TestMethod]
+        public async Task AddGoogleAuthEndpoints_MetadataOnTheBuilder_ReachesOnlyThatEndpoint()
+        {
+            Dictionary<string, RouteHandlerBuilder> byEndpoint = new Dictionary<string, RouteHandlerBuilder>();
+            await using HostedApp host = await HostedApp.StartAsync(
+                AcceptingValidator(), new FakeGoogleAuthHandler(), auditLogger: null, configureEndpoints: endpoints =>
+                {
+                    byEndpoint["POST /api/auth/google"] = endpoints.SignIn;
+                    EndpointBuilderMarks.Mark(byEndpoint);
+                });
+
+            EndpointBuilderMarks.AssertEachReachesOnlyItsEndpoint(host.App.Services, byEndpoint.Keys);
+        }
+
+        private static void AssertNamesOnly(InvalidOperationException exception, string serviceName)
+        {
+            Assert.IsFalse(exception.Message.Contains('\n'), exception.Message);
+            StringAssert.StartsWith(exception.Message, serviceName);
+        }
+
         private static FakeGoogleIdTokenValidator AcceptingValidator()
         {
             return new FakeGoogleIdTokenValidator
@@ -304,7 +337,7 @@ namespace EasyReasy.Auth.Google.Tests
         }
 
         /// <summary>
-        /// Builds a real <see cref="WebApplication"/> with <see cref="GoogleAuthApplicationBuilderExtensions.AddGoogleAuthEndpoint"/>
+        /// Builds a real <see cref="WebApplication"/> with <see cref="GoogleAuthApplicationBuilderExtensions.AddGoogleAuthEndpoints"/>
         /// wired to test fakes, and exposes a <see cref="TestServer"/>-backed <see cref="HttpClient"/>.
         /// </summary>
         private sealed class HostedApp : IAsyncDisposable
@@ -324,7 +357,8 @@ namespace EasyReasy.Auth.Google.Tests
                 IAuthAuditLogger? auditLogger,
                 IRefreshTokenService? refreshTokenService = null,
                 IReadOnlyList<string>? cookieTokenPaths = null,
-                ILoggerProvider? loggerProvider = null)
+                ILoggerProvider? loggerProvider = null,
+                Action<GoogleAuthEndpoints>? configureEndpoints = null)
             {
                 WebApplicationBuilder builder = WebApplication.CreateBuilder();
                 builder.WebHost.UseTestServer();
@@ -351,7 +385,8 @@ namespace EasyReasy.Auth.Google.Tests
                 }
 
                 WebApplication app = builder.Build();
-                app.AddGoogleAuthEndpoint();
+                GoogleAuthEndpoints endpoints = app.AddGoogleAuthEndpoints();
+                configureEndpoints?.Invoke(endpoints);
 
                 await app.StartAsync();
                 TestServer server = (TestServer)app.Services.GetRequiredService<IServer>();

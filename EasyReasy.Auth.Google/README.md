@@ -67,8 +67,10 @@ builder.Services.AddScoped<IGoogleAuthHandler, MyGoogleAuthHandler>();
 WebApplication app = builder.Build();
 
 app.UseEasyReasyAuth();
-app.AddGoogleAuthEndpoint();   // POST /api/auth/google
+app.AddGoogleAuthEndpoints();   // POST /api/auth/google
 ```
+
+`AddGoogleAuthEndpoints` fails at startup when `AddEasyReasyGoogleAuth`'s services, your handler or EasyReasy.Auth's `IJwtTokenService` is not registered, naming every missing one in one exception.
 
 The built-in EasyReasy.Auth endpoints are added separately with `app.AddAuthEndpoints(...)`, which needs an `IAuthRequestValidationService` for API key and username/password sign-in and an `IRefreshTokenService` for refresh and logout; see the EasyReasy.Auth README.
 
@@ -108,12 +110,19 @@ Either way, the verification state is exposed on `GoogleUserInfo.EmailVerified` 
 
 ## Endpoint Behavior
 
-`AddGoogleAuthEndpoint` maps `POST /api/auth/google`, sharing two properties with the built-in EasyReasy.Auth endpoints:
+`AddGoogleAuthEndpoints` maps `POST /api/auth/google`, sharing two properties with the built-in EasyReasy.Auth endpoints:
 
 - It is **anonymous**, so it stays reachable even when the application applies a global authorization policy.
 - It sets **`Cache-Control: no-store`**, so the issued token is never cached by browsers or proxies.
 
 Beyond those two, read each endpoint's own contract rather than assuming parity: this endpoint passes the supplied `idToken` to the validator as it stands, and the EasyReasy.Auth credential endpoints document their own request handling in [that package's README](../EasyReasy.Auth/README.md).
+
+`AddGoogleAuthEndpoints` returns `GoogleAuthEndpoints`, one builder per endpoint, so you can add a rate limiting policy or other metadata to the sign-in endpoint without matching its path:
+
+```csharp
+GoogleAuthEndpoints endpoints = app.AddGoogleAuthEndpoints();
+endpoints.SignIn.RequireRateLimiting("sign-in");
+```
 
 ### Access-token cookie
 
@@ -165,3 +174,12 @@ The `ExternalAuthResult.FailureReason` is `InvalidToken` when the Google ID toke
 | `IdToken` | `string` | The Google ID token from the frontend |
 
 Follows the standard EasyReasy serialization pattern: `ToJson()`, `FromJson(string)`, `ToString()`.
+
+## Migration from 1.x
+
+Version 2.0.0 returns the sign-in endpoint's builder from the endpoint mapping. It requires EasyReasy.Auth 5.19.0.
+
+### Breaking: `AddGoogleAuthEndpoint` is now `AddGoogleAuthEndpoints`
+- **Renamed, and returns `GoogleAuthEndpoints`** instead of the `WebApplication`. Its `SignIn` property is the `RouteHandlerBuilder` of `POST /api/auth/google`; see [Endpoint Behavior](#endpoint-behavior).
+- **Replace** `app.AddGoogleAuthEndpoint();` with `app.AddGoogleAuthEndpoints();`. Code that chained another call on the returned `WebApplication` calls it on `app` instead.
+- **Unchanged:** the endpoint's path, request body, response, anonymity, `Cache-Control: no-store`, access-token cookie and audit record, and the startup check, which still names every missing service in one exception (now naming `AddGoogleAuthEndpoints`).

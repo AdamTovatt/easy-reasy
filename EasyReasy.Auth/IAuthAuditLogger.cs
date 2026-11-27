@@ -78,7 +78,7 @@ namespace EasyReasy.Auth
         /// <remarks>
         /// Like <see cref="OnLoginAsync"/> and <see cref="OnApiKeyAuthAsync"/>, this hook is invoked from the
         /// HTTP endpoint layer — here, a provider integration package's endpoint (such as
-        /// <c>EasyReasy.Auth.Google</c>'s <c>AddGoogleAuthEndpoint</c>) — rather than from inside the core
+        /// <c>EasyReasy.Auth.Google</c>'s <c>AddGoogleAuthEndpoints</c>) — rather than from inside the core
         /// services, because the identity decision is made by consumer-supplied code that the core cannot
         /// guarantee will call the logger itself.
         /// </remarks>
