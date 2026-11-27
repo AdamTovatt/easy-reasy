@@ -14,7 +14,7 @@ namespace EasyReasy.Auth.Saml
         /// <summary>
         /// Initializes a new instance of the <see cref="SamlCompletionRecord"/> class.
         /// </summary>
-        /// <param name="codeHash">The SHA-256 hash of the completion code, base64url-encoded.</param>
+        /// <param name="codeHash">The SHA-256 hash of the completion code, lowercase hex, as <see cref="SecureToken.Hash"/> computes it.</param>
         /// <param name="sealedOutcome">The sealed outcome.</param>
         /// <param name="expiresAt">The UTC time from which the record is never accepted.</param>
         public SamlCompletionRecord(string codeHash, string sealedOutcome, DateTime expiresAt)
@@ -28,7 +28,7 @@ namespace EasyReasy.Auth.Saml
         }
 
         /// <summary>
-        /// The SHA-256 hash of the completion code, base64url-encoded: the record's key.
+        /// The SHA-256 hash of the completion code, lowercase hex, as <see cref="SecureToken.Hash"/> computes it: the record's key.
         /// </summary>
         public string CodeHash { get; }
 

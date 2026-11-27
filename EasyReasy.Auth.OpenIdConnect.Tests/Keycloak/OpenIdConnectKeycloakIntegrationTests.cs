@@ -24,7 +24,7 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
         [ClassInitialize]
         public static async Task ClassInitialize(TestContext context)
         {
-            if (!KeycloakServer.IsConfigured)
+            if (!KeycloakAdmin.IsConfigured)
             {
                 Assert.Inconclusive("KEYCLOAK_URL is not set; CLAUDE.md says how to start Keycloak for these tests.");
             }

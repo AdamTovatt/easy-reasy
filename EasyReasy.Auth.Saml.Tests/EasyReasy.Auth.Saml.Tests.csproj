@@ -23,6 +23,9 @@
     <Compile Include="..\EasyReasy.Auth.Tests\FakeTimeProvider.cs" Link="FakeTimeProvider.cs" />
     <Compile Include="..\EasyReasy.Auth.Tests\RecordingAuditLogger.cs" Link="RecordingAuditLogger.cs" />
     <Compile Include="..\EasyReasy.Auth.Tests\RecordingLoggerProvider.cs" Link="RecordingLoggerProvider.cs" />
+    <Compile Include="..\EasyReasy.Auth.Tests\FakeBrowser.cs" Link="FakeBrowser.cs" />
+    <Compile Include="..\EasyReasy.Auth.Tests\Keycloak\KeycloakAdmin.cs" Link="Keycloak\KeycloakAdmin.cs" />
+    <Compile Include="..\EasyReasy.Auth.Tests\Keycloak\KeycloakLoginBrowser.cs" Link="Keycloak\KeycloakLoginBrowser.cs" />
   </ItemGroup>
 
   <ItemGroup>

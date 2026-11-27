@@ -14,7 +14,7 @@ namespace EasyReasy.Auth.Saml
         /// <summary>
         /// Initializes a new instance of the <see cref="SamlPendingRequestRecord"/> class.
         /// </summary>
-        /// <param name="requestIdHash">The SHA-256 hash of the AuthnRequest's ID, base64url-encoded.</param>
+        /// <param name="requestIdHash">The SHA-256 hash of the AuthnRequest's ID, lowercase hex, as <see cref="SecureToken.Hash"/> computes it.</param>
         /// <param name="sealedState">The sealed state of the sign-in.</param>
         /// <param name="expiresAt">The UTC time from which the record is never accepted.</param>
         public SamlPendingRequestRecord(string requestIdHash, string sealedState, DateTime expiresAt)
@@ -28,7 +28,7 @@ namespace EasyReasy.Auth.Saml
         }
 
         /// <summary>
-        /// The SHA-256 hash of the AuthnRequest's ID, base64url-encoded: the record's key.
+        /// The SHA-256 hash of the AuthnRequest's ID, lowercase hex, as <see cref="SecureToken.Hash"/> computes it: the record's key.
         /// </summary>
         public string RequestIdHash { get; }
 

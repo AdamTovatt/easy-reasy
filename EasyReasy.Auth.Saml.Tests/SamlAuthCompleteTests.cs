@@ -11,7 +11,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task CompleteAsync_CodeRedeemedTwice_IsRefusedTheSecondTime()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             string code = await host.BeginAndAnswerAsync(browser);
 
             SamlAuthCompletionResult first = await host.ServiceCompleteAsync(browser, code);
@@ -25,7 +25,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task CompleteAsync_Success_ClearsTheBindingCookie()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             string code = await host.BeginAndAnswerAsync(browser);
             Assert.AreEqual(1, browser.Cookies.Count);
 
@@ -39,10 +39,10 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             // Login CSRF, or a stolen code: another browser holds no cookie for the flow.
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar starter = new BrowserCookieJar();
+            FakeBrowser starter = new FakeBrowser(host.Clock);
             string code = await host.BeginAndAnswerAsync(starter);
 
-            SamlAuthCompletionResult result = await host.ServiceCompleteAsync(new BrowserCookieJar(), code);
+            SamlAuthCompletionResult result = await host.ServiceCompleteAsync(new FakeBrowser(host.Clock), code);
             SamlAuthCompletionResult retry = await host.ServiceCompleteAsync(starter, code);
 
             Assert.AreEqual(SamlAuthFailureReason.BindingCookieMissing, result.FailureReason);
@@ -54,10 +54,10 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task CompleteAsync_BindingCookieOfAnotherFlow_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             string code = await host.BeginAndAnswerAsync(browser);
             string name = browser.Cookies.Keys.Single();
-            browser.Receive([$"{name}=forged-value; path=/; secure; httponly; samesite=lax"]);
+            browser.Set(name, "forged-value");
 
             SamlAuthCompletionResult result = await host.ServiceCompleteAsync(browser, code);
 
@@ -68,7 +68,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task CompleteAsync_CodePastItsLifetime_IsRefused()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             string code = await host.BeginAndAnswerAsync(browser);
             host.Clock.Advance(host.Options.CompletionLifetime);
 
@@ -84,7 +84,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
 
-            SamlAuthCompletionResult result = await host.ServiceCompleteAsync(new BrowserCookieJar(), code);
+            SamlAuthCompletionResult result = await host.ServiceCompleteAsync(new FakeBrowser(host.Clock), code);
 
             Assert.AreEqual(SamlAuthFailureReason.UnknownCompletionCode, result.FailureReason);
         }
@@ -98,7 +98,7 @@ namespace EasyReasy.Auth.Saml.Tests
                 "bm90LXNlYWxlZA",
                 host.Clock.GetUtcNow().UtcDateTime.AddMinutes(1)));
 
-            SamlAuthCompletionResult result = await host.ServiceCompleteAsync(new BrowserCookieJar(), "planted");
+            SamlAuthCompletionResult result = await host.ServiceCompleteAsync(new FakeBrowser(host.Clock), "planted");
 
             Assert.AreEqual(SamlAuthFailureReason.UnknownCompletionCode, result.FailureReason);
         }
@@ -121,7 +121,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             // A re-check endpoint handed the code of a plain sign-in, which carried none of the re-check's rules.
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             string code = await host.BeginAndAnswerAsync(browser, request => request.CallerBinding = "plain-sign-in");
 
             SamlAuthCompletionResult result = await host.ServiceCompleteAsync(browser, code, "re-check:user-7:record-9");
@@ -137,7 +137,7 @@ namespace EasyReasy.Auth.Saml.Tests
         public async Task CompleteAsync_RefusedResponseBegunWithAnotherCallerBinding_IsRefusedAsCallerBindingMismatch()
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
-            BrowserCookieJar browser = new BrowserCookieJar();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
             string code = await host.BeginAndAnswerAsync(
                 browser,
                 request =>
@@ -157,7 +157,7 @@ namespace EasyReasy.Auth.Saml.Tests
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
 
-            ArgumentNullException exception = await Assert.ThrowsExceptionAsync<ArgumentNullException>(() => host.ServiceCompleteAsync(new BrowserCookieJar(), "any-code", null!));
+            ArgumentNullException exception = await Assert.ThrowsExceptionAsync<ArgumentNullException>(() => host.ServiceCompleteAsync(new FakeBrowser(host.Clock), "any-code", null!));
 
             Assert.AreEqual("expectedCallerBinding", exception.ParamName);
         }

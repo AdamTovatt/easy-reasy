@@ -21,7 +21,7 @@
     <VersionPrefix>1.0.0</VersionPrefix>
     <VersionSuffix>preview.1</VersionSuffix>
     <PackageIcon>BaseIcon.png</PackageIcon>
-    <PackageReleaseNotes>First preview: SAML 2.0 service-provider sign-in for EasyReasy.Auth. Requires EasyReasy.Auth 5.20.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-saml-v$(VersionPrefix)-$(VersionSuffix)/EasyReasy.Auth.Saml/README.md</PackageReleaseNotes>
+    <PackageReleaseNotes>First preview: SAML 2.0 service-provider sign-in for EasyReasy.Auth. Requires EasyReasy.Auth 5.19.0. See https://github.com/AdamTovatt/easy-reasy/blob/auth-saml-v$(VersionPrefix)-$(VersionSuffix)/EasyReasy.Auth.Saml/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

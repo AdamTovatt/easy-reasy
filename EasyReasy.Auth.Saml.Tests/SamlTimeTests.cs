@@ -1,4 +1,3 @@
-using EasyReasy.Auth.Tests;
 using ITfoxtec.Identity.Saml2;
 using Microsoft.IdentityModel.Tokens;
 
