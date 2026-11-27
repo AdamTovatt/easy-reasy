@@ -11,8 +11,10 @@ namespace EasyReasy.Auth.Saml
         /// <summary>
         /// Registers <see cref="ISamlAuthService"/> (scoped) and what it needs, and the sweep that deletes expired rows
         /// every <see cref="SamlAuthOptions.SweepInterval"/>. Register an <see cref="ISamlIdentityProviderResolver"/> and an
-        /// <see cref="ISamlAuthStore"/> too. To serve the sign-in endpoints and the assertion consumer service, register an
-        /// <see cref="ISamlAuthHandler"/> and call <see cref="SamlAuthApplicationBuilderExtensions.AddSamlAuthEndpoints"/>.
+        /// <see cref="ISamlAuthStore"/> too; the resolver builds its identity providers with the registered
+        /// <see cref="SamlIdentityProviderFactory"/>. To serve the sign-in endpoints and the assertion consumer service,
+        /// register an <see cref="ISamlAuthHandler"/> and call
+        /// <see cref="SamlAuthApplicationBuilderExtensions.AddSamlAuthEndpoints"/>.
         /// </summary>
         /// <remarks>
         /// Registers <see cref="TimeProvider.System"/> as the clock unless one is registered already; expiry, the assertion's
@@ -49,6 +51,7 @@ namespace EasyReasy.Auth.Saml
 
             services.TryAddSingleton(TimeProvider.System);
             services.AddSingleton(copy);
+            services.AddSingleton<SamlIdentityProviderFactory>();
             services.AddSingleton(serviceProvider => new SamlResponseValidator(
                 copy.ServiceProviderEntityId,
                 copy.AssertionConsumerServiceUrl,

@@ -516,6 +516,20 @@ namespace EasyReasy.Auth.Microsoft.Tests
             Assert.IsNotNull(app.Services.GetRequiredService<IMicrosoftAuthService>());
         }
 
+        [TestMethod]
+        public async Task AddMicrosoftAuthEndpoints_MetadataOnOneBuilder_ReachesOnlyThatEndpoint()
+        {
+            Dictionary<string, RouteHandlerBuilder> byEndpoint = new Dictionary<string, RouteHandlerBuilder>();
+            await using MicrosoftAuthEndpointHost host = await MicrosoftAuthEndpointHost.StartAsync(configureEndpoints: endpoints =>
+            {
+                byEndpoint["POST /api/auth/microsoft/begin"] = endpoints.Begin;
+                byEndpoint["POST /api/auth/microsoft"] = endpoints.SignIn;
+                EndpointBuilderMarks.Mark(byEndpoint);
+            });
+
+            EndpointBuilderMarks.AssertEachReachesOnlyItsEndpoint(host.App.Services, byEndpoint.Keys);
+        }
+
         private static ExternalAuthResult AssertAudited(
             RecordingAuditLogger auditLogger,
             ExternalAuthFailureReason category,

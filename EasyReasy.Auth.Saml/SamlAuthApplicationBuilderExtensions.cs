@@ -20,8 +20,8 @@ namespace EasyReasy.Auth.Saml
         /// browser back to. It serves every sign-in, the application's own flows through <see cref="ISamlAuthService"/>
         /// included.</item>
         /// <item><see cref="SamlAuthPaths.Begin"/> (<c>POST /api/auth/saml/begin</c>) takes a JSON body with the <c>identityProviderKey</c> the person chose,
-        /// sets the sign-in's binding cookie and returns the <c>redirectUrl</c> to send the browser to, or 400 when the key
-        /// resolves to no identity provider.</item>
+        /// sets the sign-in's binding cookie and returns the <c>redirectUrl</c> to send the browser to, or 400 when the
+        /// handler does not offer the key for sign-in or it resolves to no identity provider.</item>
         /// <item><see cref="SamlAuthPaths.SignIn"/> (<c>POST /api/auth/saml</c>) takes a JSON body with the <c>code</c> the completion page received, and
         /// answers like the other sign-in endpoints: 200 with the <see cref="AuthResponse"/>, or 401.</item>
         /// </list>
@@ -84,26 +84,24 @@ namespace EasyReasy.Auth.Saml
 
             RouteHandlerBuilder begin = app.MapPost(SamlAuthPaths.Begin, async (
                 SamlSignInBeginRequest request,
-                SamlAuthService authService,
-                ISamlIdentityProviderResolver resolver,
+                ISamlAuthService authService,
                 ISamlAuthHandler handler,
                 HttpContext httpContext) =>
             {
                 httpContext.SetNoStoreCacheControl();
 
-                SamlSignInService signInService = new SamlSignInService(authService, resolver, handler);
+                SamlSignInService signInService = new SamlSignInService(authService, handler);
                 SamlSignInBeginResponse? response = await signInService.BeginAsync(request.IdentityProviderKey, httpContext);
                 return response == null ? Results.BadRequest() : Results.Ok(response);
             }).AllowAnonymous();
 
             RouteHandlerBuilder signIn = app.MapPost(SamlAuthPaths.SignIn, (
                 SamlSignInRequest request,
-                SamlAuthService authService,
-                ISamlIdentityProviderResolver resolver,
+                ISamlAuthService authService,
                 ISamlAuthHandler handler,
                 HttpContext httpContext) =>
             {
-                SamlSignInService signInService = new SamlSignInService(authService, resolver, handler);
+                SamlSignInService signInService = new SamlSignInService(authService, handler);
                 return ExternalSignInEndpoint.HandleAsync(httpContext, (jwtTokenService, refreshTokenService) =>
                     signInService.AuthenticateAsync(request.Code, jwtTokenService, refreshTokenService, httpContext));
             }).AllowAnonymous();

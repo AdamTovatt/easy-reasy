@@ -67,10 +67,12 @@ Identity providers are resolved per request by a stable key you choose, such as 
 public class MyIdentityProviderResolver : ISamlIdentityProviderResolver
 {
     private readonly ICustomerRepository _customers;
+    private readonly SamlIdentityProviderFactory _identityProviders;
 
-    public MyIdentityProviderResolver(ICustomerRepository customers)
+    public MyIdentityProviderResolver(ICustomerRepository customers, SamlIdentityProviderFactory identityProviders)
     {
         _customers = customers;
+        _identityProviders = identityProviders;
     }
 
     public async Task<SamlIdentityProvider?> FindIdentityProviderAsync(string identityProviderKey, CancellationToken cancellationToken)
@@ -83,15 +85,20 @@ public class MyIdentityProviderResolver : ISamlIdentityProviderResolver
 
         // An attribute that never changes for the person, when the IdP cannot send a persistent NameID:
         // SamlIdentitySource identitySource = SamlIdentitySource.Attribute("http://schemas.example/employeeid");
-        return new SamlIdentityProvider(customer.SamlMetadataXml);
+        return _identityProviders.Create(customer.SamlMetadataXml);
     }
 }
 ```
 
 **Supplying the metadata**
-- `SamlIdentityProvider` takes the identity provider's metadata XML, which **you supply and refresh**: the package never fetches it.
-- It is valid by construction. The constructor reads one `md:EntityDescriptor` (an aggregate is refused), its entity id, its HTTP-Redirect single sign-on URL and its signing certificates, and throws one `ArgumentException` listing every problem.
-- Parsed metadata is cached by its SHA-256, so an unchanged configuration is not parsed again and a changed one takes effect at once.
+- `SamlIdentityProviderFactory`, which `AddEasyReasySamlAuth` registers as a singleton, builds a `SamlIdentityProvider` from the identity provider's metadata XML. **You supply and refresh the XML**: the package never fetches it.
+- The factory reads one `md:EntityDescriptor` from it (an aggregate is refused): its entity id, its HTTP-Redirect single sign-on URL and its signing certificates.
+- It keeps the metadata parsed per distinct XML, so building the provider on every call is cheap, an unchanged configuration is not parsed again, and a changed one takes effect at once.
+- Metadata it cannot use makes `Create` throw one `ArgumentException` listing every problem, so every `SamlIdentityProvider` can be signed in with. An exception from your resolver fails the request it serves with a 500, so check metadata when you accept it, to report the problems to whoever supplied it:
+
+```csharp
+IReadOnlyList<string> problems = SamlIdentityProvider.FindMetadataProblems(uploadedMetadataXml);
+```
 
 **Trusting the metadata**
 - The signing certificates in the metadata are the pins. Several are accepted at once, so the identity provider can roll its key over by publishing the new certificate beside the old one.
@@ -100,18 +107,24 @@ public class MyIdentityProviderResolver : ISamlIdentityProviderResolver
 
 ### 4. Implement the store
 
-The store keeps the sign-ins in progress. Every record holds only a hash, a value sealed with `StateKey`, and an expiry. Your database never holds an identity, a rule or a caller binding in plaintext.
+The store keeps the sign-ins in progress, in one table. Every record holds only its kind, a hash, a value sealed with `StateKey`, and an expiry. Your database never holds an identity, a rule or a caller binding in plaintext. Store `SamlAuthRecordKind` as its number, which never changes.
 
-The two consume methods must be atomic: each removes the record and returns its sealed value to the first caller only. That is what makes a response and a completion code usable once.
+`ConsumeAsync` must be atomic: it removes the record and returns its sealed value to the first caller only. That is what makes a response and a completion code usable once.
 
 ```sql
-CREATE TABLE saml_pending_requests (request_id_hash TEXT PRIMARY KEY, sealed_state TEXT NOT NULL, expires_at TIMESTAMP NOT NULL);
-CREATE TABLE saml_completions (code_hash TEXT PRIMARY KEY, sealed_outcome TEXT NOT NULL, expires_at TIMESTAMP NOT NULL);
+CREATE TABLE saml_auth_records (
+    kind SMALLINT NOT NULL,
+    hash TEXT NOT NULL,
+    sealed_value TEXT NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    PRIMARY KEY (kind, hash));
 
--- ConsumePendingRequestAsync
-DELETE FROM saml_pending_requests WHERE request_id_hash = @hash AND expires_at > @now RETURNING sealed_state;
--- ConsumeCompletionAsync
-DELETE FROM saml_completions WHERE code_hash = @hash AND expires_at > @now RETURNING sealed_outcome;
+-- StoreAsync
+INSERT INTO saml_auth_records (kind, hash, sealed_value, expires_at) VALUES (@kind, @hash, @sealed_value, @expires_at);
+-- ConsumeAsync
+DELETE FROM saml_auth_records WHERE kind = @kind AND hash = @hash AND expires_at > @now RETURNING sealed_value;
+-- DeleteExpiredAsync
+DELETE FROM saml_auth_records WHERE expires_at <= @now;
 ```
 
 The package deletes expired rows through `DeleteExpiredAsync`, every `SweepInterval` (an hour by default).
@@ -128,9 +141,11 @@ public class MySamlAuthHandler : ISamlAuthHandler
         _users = users;
     }
 
-    public Task<SamlSignInSettings> GetSignInSettingsAsync(string identityProviderKey, HttpContext httpContext)
+    public Task<SamlSignInSettings?> GetSignInSettingsAsync(string identityProviderKey, HttpContext httpContext)
     {
-        return Task.FromResult(new SamlSignInSettings { CompletionPath = "/auth/saml/done" });
+        // The key is the browser's: return null for one you do not offer for sign-in, such as a provider kept only for
+        // linking accounts, and the begin endpoint answers 400.
+        return Task.FromResult<SamlSignInSettings?>(new SamlSignInSettings { CompletionPath = "/auth/saml/done" });
     }
 
     public async Task<AuthResponse?> HandleSamlUserAsync(
@@ -209,11 +224,12 @@ The metadata names your entity id and assertion consumer service (HTTP-POST). It
 
 | Endpoint | Body | Answer |
 |---|---|---|
-| `POST /api/auth/saml/begin` | `{ "identityProviderKey": "…" }` | 200 `{ "redirectUrl": "…" }`, or 400 when the key resolves to no identity provider |
+| `POST /api/auth/saml/begin` | `{ "identityProviderKey": "…" }` | 200 `{ "redirectUrl": "…" }`, or 400 when your handler returns no settings for the key or it resolves to no identity provider |
 | `POST /api/auth/saml/acs` | the identity provider's form post (`SAMLResponse`) | 303 to the sign-in's completion path with `?code=`; 400 when the post is not a form or has no `SAMLResponse`, when that is not base64 XML or names no `InResponseTo`, or when it answers no pending request (unknown, already answered or expired) |
 | `POST /api/auth/saml` | `{ "code": "…" }` | 200 with the `AuthResponse`, or 401 |
 
 - All three are anonymous and `no-store`. Their paths are constants on `SamlAuthPaths`.
+- The begin endpoint fails with a 500 when the identity provider wants signed requests and `SigningCertificate` is not set, or when your handler's settings are ones `BeginAsync` refuses: both are configuration errors. Any endpoint fails with a 500 when your resolver, store or handler throws. None of these is a refusal, and none is audited.
 - The assertion consumer service opts out of antiforgery, because it is a cross-site post by design. What stands in for it is the response answering a request this server began, once, completed by the browser that began it.
 - The browser chooses only the identity provider. The completion page and the rules come from your handler.
 - The sign-in endpoint is audited through `IAuthAuditLogger.OnExternalAuthAsync`:
@@ -336,6 +352,8 @@ In Keycloak, the SAML client settings the tests use are:
 | Encrypt assertions (optional) | on, with a certificate from your `DecryptionCertificates`; encryption algorithm AES-256-GCM (`http://www.w3.org/2009/xmlenc11#aes256-gcm`), key algorithm XML Encryption 1.1's RSA-OAEP (`http://www.w3.org/2009/xmlenc11#rsa-oaep`), digest method SHA-256 (`http://www.w3.org/2001/04/xmlenc#sha256`) |
 
 ## Failure reasons
+
+The category is the `ExternalAuthFailureReason` the sign-in endpoint audits a refusal under. `reason.ToExternalAuthFailureReason()` gives it, so an endpoint of your own on `ISamlAuthService` can audit the same way.
 
 | `SamlAuthFailureReason` | Category | When |
 |---|---|---|

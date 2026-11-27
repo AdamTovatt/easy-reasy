@@ -154,11 +154,31 @@ namespace EasyReasy.Auth.Saml.Tests
             FakeBrowser browser = new FakeBrowser(host.Clock);
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
             FakeSamlIdentityProvider other = new FakeSamlIdentityProvider("https://other-idp.example.test/metadata", SamlTestCertificates.OtherIdentityProvider);
-            host.Resolver.IdentityProviders[SamlFlowHost.IdentityProviderKey] = other.Provider;
+            host.Resolver.IdentityProviders[SamlFlowHost.IdentityProviderKey] = other.Configured;
 
             SamlAuthCompletionResult result = await host.ServiceCompleteAsync(browser, await host.AnswerAsync(begun!.RedirectUrl));
 
             AssertRefused(result, SamlAuthFailureReason.IdentityProviderChanged, attemptedIdentity: null);
+        }
+
+        [TestMethod]
+        public async Task Complete_SigningKeyRetiredAfterBegin_RefusesTheRetiredKeyAndAcceptsTheNewOne()
+        {
+            // The identity provider rolls its key: the metadata, same entity id, now pins only the new certificate.
+            await using SamlFlowHost host = await SamlFlowHost.StartAsync();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
+            SamlAuthBeginResult? signedWithRetired = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
+            SamlAuthBeginResult? signedWithNew = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest());
+            host.Resolver.IdentityProviders[SamlFlowHost.IdentityProviderKey] = new ConfiguredSamlIdentityProvider(
+                SamlFlowHost.IdentityProvider.MetadataXml(SamlTestCertificates.IdentityProviderRollover));
+
+            SamlAuthCompletionResult retired = await host.ServiceCompleteAsync(browser, await host.AnswerAsync(signedWithRetired!.RedirectUrl));
+            SamlAuthCompletionResult rolled = await host.ServiceCompleteAsync(
+                browser,
+                await host.AnswerAsync(signedWithNew!.RedirectUrl, response => response.SigningCertificate = SamlTestCertificates.IdentityProviderRollover));
+
+            AssertRefused(retired, SamlAuthFailureReason.InvalidResponse, attemptedIdentity: null);
+            Assert.IsTrue(rolled.Success, rolled.ToString());
         }
 
         [TestMethod]
@@ -244,7 +264,7 @@ namespace EasyReasy.Auth.Saml.Tests
             // signs an assertion for acme's user: it verifies against their key's certificate, under their key.
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
             FakeSamlIdentityProvider impostor = new FakeSamlIdentityProvider(SamlFlowHost.IdentityProvider.EntityId, SamlTestCertificates.OtherIdentityProvider);
-            host.Resolver.IdentityProviders["other-customer"] = impostor.Provider;
+            host.Resolver.IdentityProviders["other-customer"] = impostor.Configured;
             FakeBrowser browser = new FakeBrowser(host.Clock);
             SamlAuthBeginResult? begun = await host.ServiceBeginAsync(browser, SamlFlowHost.AppRequest(request => request.IdentityProviderKey = "other-customer"));
             string samlResponse = impostor.Respond(new SamlRedirectReader(begun!.RedirectUrl).RequestId, host.Options, SamlFlowHost.DefaultIdentity.Subject).ToFormValue();

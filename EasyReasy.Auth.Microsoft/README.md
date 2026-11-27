@@ -246,6 +246,13 @@ app.MapPost("/api/sign/{recordId}/microsoft", async (string recordId, OpenIdConn
 - They are **anonymous**, so they stay reachable even when the application applies a global authorization policy.
 - They set **`Cache-Control: no-store`**, so the authorize URL and the issued token are never cached by browsers or proxies.
 
+It returns `MicrosoftAuthEndpoints`, one builder per endpoint, so you can add a rate limiting policy or other metadata to one of them without matching paths:
+
+```csharp
+MicrosoftAuthEndpoints endpoints = app.AddMicrosoftAuthEndpoints();
+endpoints.Begin.RequireRateLimiting("sign-in");
+```
+
 `POST /api/auth/microsoft/begin` takes an optional body `{ "loginHint": "..." }` and nothing else (a blank hint, or one over 256 characters, is not sent): any other field is ignored, so the browser cannot choose the tenant, prompt, authentication context, max age or redirect URI. It returns `{ "authorizationUrl": "..." }`. Settings that `BeginAsync` refuses (a redirect URI outside `RedirectUris`, the personal accounts tenant, an undefined `Prompt` value, a blank `RequiredAuthenticationContextId`, a max age under one second) are a configuration error, and the request fails with the `ArgumentException`. While Microsoft's OpenID configuration cannot be retrieved, the request fails with a 500.
 
 `POST /api/auth/microsoft` takes `{ "code": "...", "state": "...", "iss": "...", "redirectUri": "..." }` and returns 200 with the `AuthResponse` or 401. It accepts only a `state` its own begin endpoint issued. A code and state can be completed once: the binding cookie is cleared on the first attempt, and Microsoft refuses a code redeemed before. If Microsoft's token endpoint cannot be reached or answers with a status other than 400 or 401 (a server error, a 429), refuses the client itself, or its OpenID configuration or signing keys cannot be retrieved, the request fails with a 500; that is not a refusal and is not audited.
@@ -374,11 +381,12 @@ The begin endpoint takes `MicrosoftSignInBeginRequest` (`{ loginHint }`) and ret
 3. **`Begin` is `BeginAsync`** and returns `OpenIdConnectAuthBeginResult` (same `AuthorizationUrl` and `State`) instead of `MicrosoftAuthBeginResult`, since it reads Microsoft's OpenID configuration.
 4. **`CompleteAsync(code, state, httpContext)` is `CompleteAsync(response, expectedCallerBinding, httpContext)`**, taking an `OpenIdConnectAuthorizationResponse` and the caller binding your endpoint expects. The result no longer has `CallerBinding`: drop your own comparison, since a flow begun with another binding is refused as `CallerBindingMismatch`. `MicrosoftSignInRequest` is gone; your endpoints bind `OpenIdConnectAuthorizationResponse`.
 5. **`MicrosoftAuthPrompt` is `OpenIdConnectPrompt`**, with the same members.
-6. **The named `HttpClient`** is `OpenIdConnectCodeFlow.HttpClientName`, replacing `MicrosoftAuthServiceCollectionExtensions.HttpClientName`.
-7. **Signing evidence**: keep `IdTokenSigningKey` with a sealed `IdToken` instead of looking the key up by `kid` yourself.
-8. **The failure reason is split in two.** `MicrosoftAuthFailureReason` keeps only the four Entra refusals (`PersonalAccount`, `TenantMismatch`, `TenantNotAllowed`, `MissingAuthenticationContext`), in the result's `MicrosoftFailureReason`; every other refusal is the shared flow's `OpenIdConnectAuthFailureReason`, in `FlowFailureReason`. The result's `FailureReason` is gone: test the reason you handle on its own property, or read `FailureDetail` for the name. The names are unchanged, so stored audit records keep their meaning.
-9. **New refusal reasons** `RedirectUriMismatch`, `IssuerParameterMismatch`, `IssuerParameterMissing` and `ProviderChanged` appear in `FailureDetail`.
-10. **Behaviour**:
+6. **`AddMicrosoftAuthEndpoints` returns `MicrosoftAuthEndpoints`** instead of the `WebApplication`: one builder per endpoint (`Begin`, `SignIn`), to add a rate limiting policy or other metadata to one of them. Code that chained other calls on the returned application calls them on `app` instead.
+7. **The named `HttpClient`** is `OpenIdConnectCodeFlow.HttpClientName`, replacing `MicrosoftAuthServiceCollectionExtensions.HttpClientName`.
+8. **Signing evidence**: keep `IdTokenSigningKey` with a sealed `IdToken` instead of looking the key up by `kid` yourself.
+9. **The failure reason is split in two.** `MicrosoftAuthFailureReason` keeps only the four Entra refusals (`PersonalAccount`, `TenantMismatch`, `TenantNotAllowed`, `MissingAuthenticationContext`), in the result's `MicrosoftFailureReason`; every other refusal is the shared flow's `OpenIdConnectAuthFailureReason`, in `FlowFailureReason`. The result's `FailureReason` is gone: test the reason you handle on its own property, or read `FailureDetail` for the name. The names are unchanged, so stored audit records keep their meaning.
+10. **New refusal reasons** `RedirectUriMismatch`, `IssuerParameterMismatch`, `IssuerParameterMissing` and `ProviderChanged` appear in `FailureDetail`.
+11. **Behaviour**:
    - A refusal of the client itself (`invalid_client`, such as an expired client secret) now throws instead of returning `CodeRedemptionFailed`, so it surfaces as a 500 rather than a refused user.
    - On a flow that named a tenant, a token issued by another tenant is now `InvalidIssuer` with no subject, where it was `TenantMismatch` with the account.
    - `CallerBindingMismatch` is now refused before the code is redeemed, with no subject.

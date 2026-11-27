@@ -43,7 +43,8 @@ namespace EasyReasy.Auth.Microsoft.Tests
             IAuthAuditLogger? auditLogger = null,
             IRefreshTokenService? refreshTokenService = null,
             IReadOnlyList<string>? cookieTokenPaths = null,
-            MicrosoftAuthOptions? options = null)
+            MicrosoftAuthOptions? options = null,
+            Action<MicrosoftAuthEndpoints>? configureEndpoints = null)
         {
             FakeTimeProvider clock = new FakeTimeProvider(MicrosoftAuthHarness.StartTime);
             FakeMicrosoftIdentityProvider identityProvider = new FakeMicrosoftIdentityProvider(clock);
@@ -72,7 +73,8 @@ namespace EasyReasy.Auth.Microsoft.Tests
             }
 
             WebApplication app = builder.Build();
-            app.AddMicrosoftAuthEndpoints();
+            MicrosoftAuthEndpoints endpoints = app.AddMicrosoftAuthEndpoints();
+            configureEndpoints?.Invoke(endpoints);
             await app.StartAsync();
 
             TestServer server = (TestServer)app.Services.GetRequiredService<IServer>();

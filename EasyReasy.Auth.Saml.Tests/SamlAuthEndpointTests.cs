@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -85,10 +84,10 @@ namespace EasyReasy.Auth.Saml.Tests
         }
 
         [TestMethod]
-        [DataRow("nobody")]
         [DataRow("")]
+        [DataRow("   ")]
         [DataRow(null)]
-        public async Task Begin_UnknownIdentityProvider_Returns400WithoutAskingTheHandler(string? identityProviderKey)
+        public async Task Begin_BlankIdentityProviderKey_Returns400WithoutAskingTheHandler(string? identityProviderKey)
         {
             await using SamlFlowHost host = await SamlFlowHost.StartAsync();
             FakeBrowser browser = new FakeBrowser(host.Clock);
@@ -97,6 +96,35 @@ namespace EasyReasy.Auth.Saml.Tests
 
             Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
             Assert.AreEqual(0, host.Handler.SettingsRequestedFor.Count);
+            Assert.AreEqual(0, browser.Cookies.Count);
+        }
+
+        [TestMethod]
+        public async Task Begin_KeyTheHandlerDoesNotOffer_Returns400WithoutResolvingIt()
+        {
+            await using SamlFlowHost host = await SamlFlowHost.StartAsync();
+            host.Handler.Settings = null;
+            FakeBrowser browser = new FakeBrowser(host.Clock);
+
+            HttpResponseMessage response = await host.PostBeginAsync(browser);
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.AreEqual(0, host.Resolver.Calls);
+            Assert.AreEqual(0, host.Store.PendingRequests.Count);
+            Assert.AreEqual(0, browser.Cookies.Count);
+        }
+
+        [TestMethod]
+        public async Task Begin_KeyTheResolverDoesNotKnow_Returns400AndBeginsNothing()
+        {
+            await using SamlFlowHost host = await SamlFlowHost.StartAsync();
+            FakeBrowser browser = new FakeBrowser(host.Clock);
+
+            HttpResponseMessage response = await host.PostBeginAsync(browser, "nobody");
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+            CollectionAssert.AreEqual(new[] { "nobody" }, host.Handler.SettingsRequestedFor);
+            Assert.AreEqual(0, host.Store.PendingRequests.Count);
             Assert.AreEqual(0, browser.Cookies.Count);
         }
 
@@ -158,16 +186,6 @@ namespace EasyReasy.Auth.Saml.Tests
             HttpResponseMessage response = await host.PostSignInAsync(new FakeBrowser(host.Clock), "never-issued");
 
             Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
-        }
-
-        [TestMethod]
-        public void GetCategory_EveryFailureReason_HasACategory()
-        {
-            foreach (SamlAuthFailureReason reason in Enum.GetValues<SamlAuthFailureReason>())
-            {
-                ExternalAuthFailureReason category = SamlSignInService.GetCategory(reason);
-                Assert.IsTrue(category is ExternalAuthFailureReason.InvalidToken or ExternalAuthFailureReason.Rejected, reason.ToString());
-            }
         }
 
         [TestMethod]
@@ -286,27 +304,21 @@ namespace EasyReasy.Auth.Saml.Tests
         [TestMethod]
         public async Task AddSamlAuthEndpoints_MetadataOnOneBuilder_ReachesOnlyThatEndpoint()
         {
-            RateLimitMarker marker = new RateLimitMarker();
-            await using SamlFlowHost host = await SamlFlowHost.StartAsync(configureEndpoints: endpoints => endpoints.AssertionConsumerService.WithMetadata(marker));
+            Dictionary<string, RouteHandlerBuilder> byEndpoint = new Dictionary<string, RouteHandlerBuilder>();
+            await using SamlFlowHost host = await SamlFlowHost.StartAsync(configureEndpoints: endpoints =>
+            {
+                byEndpoint["POST " + SamlAuthPaths.Begin] = endpoints.Begin;
+                byEndpoint["POST " + SamlAuthPaths.AssertionConsumerService] = endpoints.AssertionConsumerService;
+                byEndpoint["POST " + SamlAuthPaths.SignIn] = endpoints.SignIn;
+                EndpointBuilderMarks.Mark(byEndpoint);
+            });
 
-            Dictionary<string, bool> marked = host.App.Services.GetRequiredService<EndpointDataSource>().Endpoints
-                .OfType<RouteEndpoint>()
-                .Where(endpoint => endpoint.RoutePattern.RawText!.StartsWith("/api/auth/saml", StringComparison.Ordinal))
-                .ToDictionary(endpoint => endpoint.RoutePattern.RawText!, endpoint => endpoint.Metadata.GetMetadata<RateLimitMarker>() != null);
-
-            Assert.AreEqual(3, marked.Count);
-            Assert.IsTrue(marked[SamlAuthPaths.AssertionConsumerService]);
-            Assert.IsFalse(marked[SamlAuthPaths.Begin]);
-            Assert.IsFalse(marked[SamlAuthPaths.SignIn]);
+            EndpointBuilderMarks.AssertEachReachesOnlyItsEndpoint(host.App.Services, byEndpoint.Keys);
         }
 
         private static SamlAuthSweep HostedSweep(SamlFlowHost host)
         {
             return host.App.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>().OfType<SamlAuthSweep>().Single();
-        }
-
-        private sealed class RateLimitMarker
-        {
         }
     }
 }

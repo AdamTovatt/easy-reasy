@@ -48,7 +48,7 @@ namespace EasyReasy.Auth.Saml.Tests
         /// </summary>
         public SamlValidatedAssertion Validate(string samlResponse)
         {
-            return Validator.Validate(samlResponse, RequestId, IdentityProvider.Provider);
+            return Validator.Validate(samlResponse, RequestId, IdentityProvider.Metadata);
         }
 
         /// <summary>

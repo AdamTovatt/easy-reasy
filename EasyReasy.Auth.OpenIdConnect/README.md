@@ -288,6 +288,13 @@ app.MapPost("/api/sign/{recordId}/oidc", async (string recordId, OpenIdConnectAu
 - They are **anonymous**, so they stay reachable even when the application applies a global authorization policy.
 - They set **`Cache-Control: no-store`**, so the authorize URL and the issued token are never cached by browsers or proxies.
 
+It returns `OpenIdConnectAuthEndpoints`, one builder per endpoint, so you can add a rate limiting policy or other metadata to one of them without matching paths:
+
+```csharp
+OpenIdConnectAuthEndpoints endpoints = app.AddOpenIdConnectAuthEndpoints();
+endpoints.Begin.RequireRateLimiting("sign-in");
+```
+
 `POST /api/auth/oidc/begin` takes `{ "providerKey": "...", "loginHint": "..." }` (the hint optional; a blank one, or one over 256 characters, is not sent, by `OpenIdConnectLoginHint.FromBrowser`) and nothing else: the browser chooses the provider, never the redirect URI, prompt, max age or accepted values. It returns `{ "authorizationUrl": "..." }`, or 400 when the key is missing or blank, your handler does not offer it, or it resolves to no provider. Settings that `BeginAsync` refuses are a configuration error, and the request fails with the `ArgumentException`.
 
 `POST /api/auth/oidc` takes `{ "code": "...", "state": "...", "iss": "...", "redirectUri": "..." }` and returns 200 with the `AuthResponse` or 401. It accepts only a `state` its own begin endpoint issued. If the provider's token endpoint cannot be reached or refuses the client, or its discovery document or keys cannot be retrieved, the request fails with a 500; that is not a refusal and is not audited.

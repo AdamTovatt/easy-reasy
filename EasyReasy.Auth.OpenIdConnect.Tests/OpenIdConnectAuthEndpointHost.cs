@@ -49,7 +49,8 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
         public static async Task<OpenIdConnectAuthEndpointHost> StartAsync(
             IAuthAuditLogger? auditLogger = null,
             IRefreshTokenService? refreshTokenService = null,
-            IReadOnlyList<string>? cookieTokenPaths = null)
+            IReadOnlyList<string>? cookieTokenPaths = null,
+            Action<OpenIdConnectAuthEndpoints>? configureEndpoints = null)
         {
             FakeTimeProvider clock = new FakeTimeProvider(OpenIdConnectAuthHarness.StartTime);
             FakeNetwork network = new FakeNetwork();
@@ -83,7 +84,8 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
             }
 
             WebApplication app = builder.Build();
-            app.AddOpenIdConnectAuthEndpoints();
+            OpenIdConnectAuthEndpoints endpoints = app.AddOpenIdConnectAuthEndpoints();
+            configureEndpoints?.Invoke(endpoints);
             await app.StartAsync();
 
             TestServer server = (TestServer)app.Services.GetRequiredService<IServer>();

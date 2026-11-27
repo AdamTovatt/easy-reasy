@@ -23,22 +23,17 @@ namespace EasyReasy.Auth.Saml
         /// </summary>
         internal const string SignInCallerBinding = "easyreasy.auth.saml:sign-in";
 
-        private readonly SamlAuthService _authService;
-        private readonly ISamlIdentityProviderResolver _resolver;
+        private readonly ISamlAuthService _authService;
         private readonly ISamlAuthHandler _handler;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SamlSignInService"/> class.
         /// </summary>
-        /// <param name="authService">The application's SAML auth service, whose begin takes the identity provider this
-        /// service already resolved.</param>
-        /// <param name="resolver">The application's resolver, asked once per begin, before the handler, so the handler is
-        /// only asked about an identity provider that exists.</param>
+        /// <param name="authService">The application's SAML auth service.</param>
         /// <param name="handler">The consumer-provided handler for the sign-in's rules and the verified user.</param>
-        public SamlSignInService(SamlAuthService authService, ISamlIdentityProviderResolver resolver, ISamlAuthHandler handler)
+        public SamlSignInService(ISamlAuthService authService, ISamlAuthHandler handler)
         {
             _authService = authService;
-            _resolver = resolver;
             _handler = handler;
         }
 
@@ -47,7 +42,8 @@ namespace EasyReasy.Auth.Saml
         /// </summary>
         /// <param name="identityProviderKey">The identity provider key from the browser.</param>
         /// <param name="httpContext">The begin request, which the binding cookie is set on.</param>
-        /// <returns>Where to send the browser, or null when the key resolves to no identity provider.</returns>
+        /// <returns>Where to send the browser, or null when the key is blank, not offered for sign-in by the handler, or
+        /// resolves to no identity provider.</returns>
         /// <exception cref="ArgumentException">The handler's settings are refused by
         /// <see cref="ISamlAuthService.BeginAsync"/>.</exception>
         public async Task<SamlSignInBeginResponse?> BeginAsync(string? identityProviderKey, HttpContext httpContext)
@@ -57,16 +53,13 @@ namespace EasyReasy.Auth.Saml
                 return null;
             }
 
-            // Resolved once, here: the handler is only asked about an identity provider that exists, never about a key the
-            // browser made up, and the auth service begins with the provider resolved now.
-            SamlIdentityProvider? identityProvider = await _resolver.FindIdentityProviderAsync(identityProviderKey, httpContext.RequestAborted);
-            if (identityProvider == null)
+            SamlSignInSettings? settings = await _handler.GetSignInSettingsAsync(identityProviderKey, httpContext);
+            if (settings == null)
             {
                 return null;
             }
 
-            SamlSignInSettings settings = await _handler.GetSignInSettingsAsync(identityProviderKey, httpContext);
-            SamlAuthBeginResult begun = await _authService.BeginWithResolvedAsync(identityProvider, new SamlAuthBeginRequest
+            SamlAuthBeginResult? begun = await _authService.BeginAsync(new SamlAuthBeginRequest
             {
                 IdentityProviderKey = identityProviderKey,
                 CallerBinding = SignInCallerBinding,
@@ -76,7 +69,7 @@ namespace EasyReasy.Auth.Saml
                 AcceptedAuthnContextClassRefs = settings.AcceptedAuthnContextClassRefs,
             }, httpContext, httpContext.RequestAborted);
 
-            return new SamlSignInBeginResponse(begun.RedirectUrl);
+            return begun == null ? null : new SamlSignInBeginResponse(begun.RedirectUrl);
         }
 
         /// <summary>
@@ -115,36 +108,9 @@ namespace EasyReasy.Auth.Saml
             return ExternalAuthResult.Succeeded(ProviderName, authResponse, completion.AttemptedIdentity.Value.ToString());
         }
 
-        /// <summary>
-        /// The provider-neutral category of a refusal: a failure of the code, the binding cookie, the identity provider or
-        /// the response is <see cref="ExternalAuthFailureReason.InvalidToken"/>; a verified assertion refused by the
-        /// sign-in's rules is <see cref="ExternalAuthFailureReason.Rejected"/>.
-        /// </summary>
-        /// <exception cref="ArgumentOutOfRangeException">A reason with no category, so a new member cannot ship
-        /// unclassified.</exception>
-        internal static ExternalAuthFailureReason GetCategory(SamlAuthFailureReason reason)
-        {
-            return reason switch
-            {
-                SamlAuthFailureReason.UnknownCompletionCode
-                    or SamlAuthFailureReason.BindingCookieMissing
-                    or SamlAuthFailureReason.BindingCookieMismatch
-                    or SamlAuthFailureReason.UnknownIdentityProvider
-                    or SamlAuthFailureReason.IdentityProviderChanged
-                    or SamlAuthFailureReason.InvalidResponse
-                    or SamlAuthFailureReason.CallerBindingMismatch => ExternalAuthFailureReason.InvalidToken,
-                SamlAuthFailureReason.MissingIdentity
-                    or SamlAuthFailureReason.IdentityMismatch
-                    or SamlAuthFailureReason.StaleAuthentication
-                    or SamlAuthFailureReason.MissingAuthnContextClass
-                    or SamlAuthFailureReason.AuthnContextClassNotAccepted => ExternalAuthFailureReason.Rejected,
-                _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "The refusal reason has no category."),
-            };
-        }
-
         private static ExternalAuthResult Refuse(SamlAuthFailureReason reason, string? attemptedSubject)
         {
-            return ExternalAuthResult.Failed(ProviderName, GetCategory(reason), attemptedSubject, reason.ToString());
+            return ExternalAuthResult.Failed(ProviderName, reason.ToExternalAuthFailureReason(), attemptedSubject, reason.ToString());
         }
     }
 }

@@ -8,50 +8,37 @@ namespace EasyReasy.Auth.Saml.Tests
     /// </summary>
     internal sealed class InMemorySamlAuthStore : ISamlAuthStore
     {
-        private readonly ConcurrentDictionary<string, SamlPendingRequestRecord> _pendingRequests = new ConcurrentDictionary<string, SamlPendingRequestRecord>(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, SamlCompletionRecord> _completions = new ConcurrentDictionary<string, SamlCompletionRecord>(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<(SamlAuthRecordKind Kind, string Hash), SamlAuthRecord> _records = new ConcurrentDictionary<(SamlAuthRecordKind Kind, string Hash), SamlAuthRecord>();
 
-        public IReadOnlyCollection<SamlPendingRequestRecord> PendingRequests => _pendingRequests.Values.ToList();
+        public IReadOnlyCollection<SamlAuthRecord> PendingRequests => RecordsOf(SamlAuthRecordKind.PendingRequest);
 
-        public IReadOnlyCollection<SamlCompletionRecord> Completions => _completions.Values.ToList();
+        public IReadOnlyCollection<SamlAuthRecord> Completions => RecordsOf(SamlAuthRecordKind.Completion);
 
-        public Task StorePendingRequestAsync(SamlPendingRequestRecord record, CancellationToken cancellationToken = default)
+        public Task StoreAsync(SamlAuthRecord record, CancellationToken cancellationToken = default)
         {
-            _pendingRequests[record.RequestIdHash] = record;
+            _records[(record.Kind, record.Hash)] = record;
             return Task.CompletedTask;
         }
 
-        public Task<string?> ConsumePendingRequestAsync(string requestIdHash, DateTime now, CancellationToken cancellationToken = default)
+        public Task<string?> ConsumeAsync(SamlAuthRecordKind kind, string hash, DateTime now, CancellationToken cancellationToken = default)
         {
-            bool removed = _pendingRequests.TryRemove(requestIdHash, out SamlPendingRequestRecord? record);
-            return Task.FromResult(removed && record!.ExpiresAt > now ? record.SealedState : null);
-        }
-
-        public Task StoreCompletionAsync(SamlCompletionRecord record, CancellationToken cancellationToken = default)
-        {
-            _completions[record.CodeHash] = record;
-            return Task.CompletedTask;
-        }
-
-        public Task<string?> ConsumeCompletionAsync(string codeHash, DateTime now, CancellationToken cancellationToken = default)
-        {
-            bool removed = _completions.TryRemove(codeHash, out SamlCompletionRecord? record);
-            return Task.FromResult(removed && record!.ExpiresAt > now ? record.SealedOutcome : null);
+            bool removed = _records.TryRemove((kind, hash), out SamlAuthRecord? record);
+            return Task.FromResult(removed && record!.ExpiresAt > now ? record.SealedValue : null);
         }
 
         public Task DeleteExpiredAsync(DateTime now, CancellationToken cancellationToken = default)
         {
-            foreach (KeyValuePair<string, SamlPendingRequestRecord> pair in _pendingRequests.Where(pair => pair.Value.ExpiresAt <= now))
+            foreach (KeyValuePair<(SamlAuthRecordKind Kind, string Hash), SamlAuthRecord> pair in _records.Where(pair => pair.Value.ExpiresAt <= now))
             {
-                _pendingRequests.TryRemove(pair.Key, out _);
-            }
-
-            foreach (KeyValuePair<string, SamlCompletionRecord> pair in _completions.Where(pair => pair.Value.ExpiresAt <= now))
-            {
-                _completions.TryRemove(pair.Key, out _);
+                _records.TryRemove(pair.Key, out _);
             }
 
             return Task.CompletedTask;
+        }
+
+        private IReadOnlyCollection<SamlAuthRecord> RecordsOf(SamlAuthRecordKind kind)
+        {
+            return _records.Values.Where(record => record.Kind == kind).ToList();
         }
     }
 }

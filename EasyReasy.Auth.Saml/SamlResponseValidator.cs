@@ -70,21 +70,21 @@ namespace EasyReasy.Auth.Saml
         /// </summary>
         /// <param name="samlResponse">The base64 <c>SAMLResponse</c> form value, as posted.</param>
         /// <param name="expectedRequestId">The ID of the AuthnRequest this server sent, which the response must answer.</param>
-        /// <param name="identityProvider">The identity provider that request named.</param>
+        /// <param name="metadata">The metadata of the identity provider that request named.</param>
         /// <returns>What the verified assertion says.</returns>
         /// <exception cref="SamlResponseRejectedException">Any check failed.</exception>
-        public SamlValidatedAssertion Validate(string samlResponse, string expectedRequestId, SamlIdentityProvider identityProvider)
+        public SamlValidatedAssertion Validate(string samlResponse, string expectedRequestId, SamlIdentityProviderMetadata metadata)
         {
             ArgumentNullException.ThrowIfNull(samlResponse);
             ArgumentException.ThrowIfNullOrWhiteSpace(expectedRequestId);
-            ArgumentNullException.ThrowIfNull(identityProvider);
+            ArgumentNullException.ThrowIfNull(metadata);
 
             if (_decryptionCertificates.Count > 0)
             {
                 RequireAllowedEncryptionAlgorithms(samlResponse);
             }
 
-            Saml2AuthnResponse response = ReadWithLibrary(samlResponse, identityProvider);
+            Saml2AuthnResponse response = ReadWithLibrary(samlResponse, metadata);
             DateTimeOffset now = _timeProvider.GetUtcNow();
 
             if (response.Status != Saml2StatusCodes.Success)
@@ -94,10 +94,10 @@ namespace EasyReasy.Auth.Saml
 
             RequireEqual("response's InResponseTo", response.InResponseTo?.Value, expectedRequestId);
             RequireSameUrl("response's Destination", response.Destination, _assertionConsumerServiceUrl);
-            RequireEqual("response's Issuer", response.Issuer, identityProvider.EntityId);
+            RequireEqual("response's Issuer", response.Issuer, metadata.EntityId);
 
             Saml2Assertion assertion = response.Saml2SecurityToken.Assertion;
-            RequireEqual("assertion's Issuer", assertion.Issuer?.Value, identityProvider.EntityId);
+            RequireEqual("assertion's Issuer", assertion.Issuer?.Value, metadata.EntityId);
             RequireSignedAssertion(assertion);
             RequireEncryptedAssertionWhenDecrypting(response.XmlDocument);
             RequireBearerConfirmation(assertion.Subject, expectedRequestId, now);
@@ -110,7 +110,7 @@ namespace EasyReasy.Auth.Saml
             return new SamlValidatedAssertion
             {
                 AssertionId = assertion.Id.Value,
-                IdentityProviderEntityId = identityProvider.EntityId,
+                IdentityProviderEntityId = metadata.EntityId,
                 NameId = nameId?.Value,
                 NameIdFormat = nameId?.Format?.OriginalString,
                 NameQualifier = nameId?.NameQualifier,
@@ -178,13 +178,13 @@ namespace EasyReasy.Auth.Saml
             return encryptionMethod?.GetAttribute("Algorithm");
         }
 
-        private Saml2AuthnResponse ReadWithLibrary(string samlResponse, SamlIdentityProvider identityProvider)
+        private Saml2AuthnResponse ReadWithLibrary(string samlResponse, SamlIdentityProviderMetadata metadata)
         {
             Saml2Configuration configuration = new Saml2Configuration
             {
                 Issuer = _serviceProviderEntityId,
-                AllowedIssuer = identityProvider.EntityId,
-                SignatureValidationCertificates = identityProvider.SigningCertificates.ToList(),
+                AllowedIssuer = metadata.EntityId,
+                SignatureValidationCertificates = metadata.SigningCertificates.ToList(),
                 SignatureValidationAlgorithms = SamlAlgorithms.SignatureMethods.ToList(),
                 XmlCanonicalizationValidationMethods = SamlAlgorithms.CanonicalizationMethods.ToList(),
                 // The certificates are pinned per identity provider, so trust comes from the pin, not from a chain.

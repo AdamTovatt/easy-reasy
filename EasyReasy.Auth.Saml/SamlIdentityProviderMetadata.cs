@@ -1,29 +1,20 @@
 using ITfoxtec.Identity.Saml2;
 using ITfoxtec.Identity.Saml2.Schemas.Metadata;
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using System.Xml;
 
 namespace EasyReasy.Auth.Saml
 {
     /// <summary>
     /// What the package reads from an identity provider's metadata XML: its entity id, its HTTP-Redirect single sign-on
-    /// URL, its RSA signing certificates and whether it wants signed requests. Parsed once per distinct XML and cached by
-    /// its SHA-256, so resolving an unchanged configuration does not parse again and a changed one takes effect at once.
+    /// URL, its RSA signing certificates and whether it wants signed requests. <see cref="SamlIdentityProviderFactory"/>
+    /// keeps it parsed per distinct XML.
     /// </summary>
     internal sealed class SamlIdentityProviderMetadata
     {
-        /// <summary>
-        /// The most distinct metadata documents kept parsed. Past it the cache starts again, which only costs a parse.
-        /// </summary>
-        internal const int MaxCachedDocuments = 256;
-
         private const string RedirectBinding = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect";
         private const string MetadataNamespace = "urn:oasis:names:tc:SAML:2.0:metadata";
-
-        private static readonly ConcurrentDictionary<string, ParseResult> _cache = new ConcurrentDictionary<string, ParseResult>(StringComparer.Ordinal);
 
         private SamlIdentityProviderMetadata(string entityId, Uri singleSignOnUrl, IReadOnlyList<X509Certificate2> signingCertificates, bool wantsSignedRequests)
         {
@@ -49,31 +40,14 @@ namespace EasyReasy.Auth.Saml
         /// <returns>The metadata, or null when there are problems.</returns>
         public static SamlIdentityProviderMetadata? Parse(string metadataXml, out IReadOnlyList<string> problems)
         {
-            string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(metadataXml)));
-            if (!_cache.TryGetValue(key, out ParseResult? result))
-            {
-                result = ParseUncached(metadataXml);
-                if (_cache.Count >= MaxCachedDocuments)
-                {
-                    _cache.Clear();
-                }
-
-                _cache[key] = result;
-            }
-
-            problems = result.Problems;
-            return result.Metadata;
-        }
-
-        private static ParseResult ParseUncached(string metadataXml)
-        {
-            List<string> problems = new List<string>();
+            List<string> found = new List<string>();
+            problems = found;
 
             // An aggregate (EntitiesDescriptor) holds many identity providers, and ITfoxtec would take the first; one
             // provider's own EntityDescriptor leaves no doubt which entity is trusted.
-            if (!IsSingleEntityDescriptor(metadataXml, problems))
+            if (!IsSingleEntityDescriptor(metadataXml, found))
             {
-                return new ParseResult(null, problems);
+                return null;
             }
 
             EntityDescriptor descriptor;
@@ -83,20 +57,20 @@ namespace EasyReasy.Auth.Saml
             }
             catch (Exception exception) when (exception is Saml2RequestException or XmlException or CryptographicException or FormatException or UriFormatException)
             {
-                problems.Add($"The metadata could not be read: {exception.Message}");
-                return new ParseResult(null, problems);
+                found.Add($"The metadata could not be read: {exception.Message}");
+                return null;
             }
 
             if (string.IsNullOrWhiteSpace(descriptor.EntityId))
             {
-                problems.Add("The metadata's EntityDescriptor has no entityID.");
+                found.Add("The metadata's EntityDescriptor has no entityID.");
             }
 
             IdPSsoDescriptor? idp = descriptor.IdPSsoDescriptor;
             if (idp == null)
             {
-                problems.Add("The metadata has no IDPSSODescriptor.");
-                return new ParseResult(null, problems);
+                found.Add("The metadata has no IDPSSODescriptor.");
+                return null;
             }
 
             Uri? singleSignOnUrl = (idp.SingleSignOnServices ?? [])
@@ -105,7 +79,7 @@ namespace EasyReasy.Auth.Saml
                 .FirstOrDefault(location => location != null && location.IsAbsoluteUri);
             if (singleSignOnUrl == null)
             {
-                problems.Add("The metadata has no SingleSignOnService with the HTTP-Redirect binding and an absolute Location.");
+                found.Add("The metadata has no SingleSignOnService with the HTTP-Redirect binding and an absolute Location.");
             }
 
             List<X509Certificate2> signingCertificates = (idp.SigningCertificates ?? [])
@@ -113,16 +87,24 @@ namespace EasyReasy.Auth.Saml
                 .ToList();
             if (signingCertificates.Count == 0)
             {
-                problems.Add("The metadata has no signing KeyDescriptor with an RSA certificate.");
+                found.Add("The metadata has no signing KeyDescriptor with an RSA certificate.");
             }
 
-            if (problems.Count > 0)
-            {
-                return new ParseResult(null, problems);
-            }
+            return found.Count > 0
+                ? null
+                : new SamlIdentityProviderMetadata(descriptor.EntityId, singleSignOnUrl!, signingCertificates, idp.WantAuthnRequestsSigned == true);
+        }
 
-            SamlIdentityProviderMetadata metadata = new SamlIdentityProviderMetadata(descriptor.EntityId, singleSignOnUrl!, signingCertificates, idp.WantAuthnRequestsSigned == true);
-            return new ParseResult(metadata, problems);
+        /// <summary>
+        /// Parses metadata, or throws reporting every problem with it.
+        /// </summary>
+        /// <param name="metadataXml">The metadata XML.</param>
+        /// <returns>The metadata.</returns>
+        /// <exception cref="ArgumentException">The metadata is unusable.</exception>
+        public static SamlIdentityProviderMetadata Read(string metadataXml)
+        {
+            return Parse(metadataXml, out IReadOnlyList<string> problems)
+                ?? throw new ArgumentException($"Invalid identity provider metadata:\n{string.Join("\n", problems)}", nameof(metadataXml));
         }
 
         private static bool IsSingleEntityDescriptor(string metadataXml, List<string> problems)
@@ -147,7 +129,5 @@ namespace EasyReasy.Auth.Saml
                 return false;
             }
         }
-
-        private sealed record ParseResult(SamlIdentityProviderMetadata? Metadata, IReadOnlyList<string> Problems);
     }
 }

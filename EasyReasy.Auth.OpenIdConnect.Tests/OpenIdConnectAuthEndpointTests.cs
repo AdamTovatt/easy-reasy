@@ -394,6 +394,20 @@ namespace EasyReasy.Auth.OpenIdConnect.Tests
             Assert.IsNotNull(scope.ServiceProvider.GetRequiredService<IOpenIdConnectAuthService>());
         }
 
+        [TestMethod]
+        public async Task AddOpenIdConnectAuthEndpoints_MetadataOnOneBuilder_ReachesOnlyThatEndpoint()
+        {
+            Dictionary<string, RouteHandlerBuilder> byEndpoint = new Dictionary<string, RouteHandlerBuilder>();
+            await using OpenIdConnectAuthEndpointHost host = await OpenIdConnectAuthEndpointHost.StartAsync(configureEndpoints: endpoints =>
+            {
+                byEndpoint["POST /api/auth/oidc/begin"] = endpoints.Begin;
+                byEndpoint["POST /api/auth/oidc"] = endpoints.SignIn;
+                EndpointBuilderMarks.Mark(byEndpoint);
+            });
+
+            EndpointBuilderMarks.AssertEachReachesOnlyItsEndpoint(host.App.Services, byEndpoint.Keys);
+        }
+
         private static ExternalAuthResult AssertAudited(
             RecordingAuditLogger auditLogger,
             ExternalAuthFailureReason category,
